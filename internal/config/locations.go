@@ -2,51 +2,70 @@
 package config
 
 import (
-	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 )
 
+// Error is a problem with lg's configuration or the environment that locates it.
+type Error string
+
+func (e Error) Error() string { return string(e) }
+
 type Roots struct {
-	Home       string
-	Data       string
-	State      string
-	Tmp        string
-	ConfigFile string
+	Store string
+	Data  string
+	State string
+	Tmp   string
 }
 
-// Locations resolves lg's roots from env, where an empty value counts as unset.
+// Locations resolves the store as LG_HOME > XDG_DATA_HOME/lg > HOME/.local/share/lg.
 func Locations(env map[string]string) (Roots, error) {
-	home := firstSet(env["LG_HOME"],
-		under(env["XDG_DATA_HOME"], "lg"),
-		under(env["HOME"], ".local", "share", "lg"))
-	configFile := firstSet(env["LG_CONFIG"],
-		under(env["XDG_CONFIG_HOME"], "lg", "config.yaml"),
-		under(env["HOME"], ".config", "lg", "config.yaml"))
-	if home == "" || configFile == "" {
-		return Roots{}, errors.New("HOME is not set")
+	store, err := resolve(env, "the store",
+		source{name: "LG_HOME"},
+		source{name: "XDG_DATA_HOME", elems: []string{"lg"}, xdg: true},
+		source{name: "HOME", elems: []string{".local", "share", "lg"}})
+	if err != nil {
+		return Roots{}, err
 	}
 	return Roots{
-		Home:       home,
-		Data:       filepath.Join(home, "data"),
-		State:      filepath.Join(home, "state"),
-		Tmp:        filepath.Join(home, "tmp"),
-		ConfigFile: configFile,
+		Store: store,
+		Data:  filepath.Join(store, "data"),
+		State: filepath.Join(store, "state"),
+		Tmp:   filepath.Join(store, "tmp"),
 	}, nil
 }
 
-// under joins dir and elems, or returns "" when dir is unset.
-func under(dir string, elems ...string) string {
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(append([]string{dir}, elems...)...)
+// File resolves the config file as LG_CONFIG > XDG_CONFIG_HOME/lg/config.yaml > HOME/.config/lg/config.yaml.
+func File(env map[string]string) (string, error) {
+	return resolve(env, "config.yaml",
+		source{name: "LG_CONFIG"},
+		source{name: "XDG_CONFIG_HOME", elems: []string{"lg", "config.yaml"}, xdg: true},
+		source{name: "HOME", elems: []string{".config", "lg", "config.yaml"}})
 }
 
-func firstSet(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
+// source is an env var and the path under it. The XDG spec says to ignore a
+// relative XDG path; any other relative path is an error.
+type source struct {
+	name  string
+	elems []string
+	xdg   bool
+}
+
+// resolve joins the first set source with its elems. Empty values count as unset.
+func resolve(env map[string]string, what string, sources ...source) (string, error) {
+	names := make([]string, len(sources))
+	for i, s := range sources {
+		names[i] = s.name
+		dir := env[s.name]
+		if dir == "" || (s.xdg && !filepath.IsAbs(dir)) {
+			continue
 		}
+		if !filepath.IsAbs(dir) {
+			return "", Error(fmt.Sprintf("%s must be an absolute path: %q", s.name, dir))
+		}
+		return filepath.Join(append([]string{dir}, s.elems...)...), nil
 	}
-	return ""
+	last := len(names) - 1
+	return "", Error(fmt.Sprintf("cannot locate %s: set %s or %s", what, strings.Join(names[:last], ", "), names[last]))
 }

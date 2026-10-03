@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/rosenhouse/lg/internal/config"
 )
 
 type Deps struct {
@@ -61,6 +63,10 @@ func Main(args []string, deps Deps) (code int) {
 	}
 	if err := ctx.Run(&deps); err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		var configErr config.Error
+		if errors.As(err, &configErr) {
+			return 2
+		}
 		return 1
 	}
 	return 0
