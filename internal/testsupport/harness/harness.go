@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -18,24 +17,18 @@ const ExitTimeout = 10 * time.Second
 
 type Env struct {
 	lgPath string
-	home   string
 	vars   map[string]string
 }
 
 // New gives the calling spec its own HOME and an environment built from
 // os.Environ by Scrub.
 func New(lgPath string) *Env {
-	home := ginkgo.GinkgoT().TempDir()
-	vars := map[string]string{}
-	for _, kv := range Scrub(os.Environ(), filepath.Dir(lgPath)) {
-		k, v, _ := strings.Cut(kv, "=")
-		vars[k] = v
-	}
-	vars["HOME"] = home
-	return &Env{lgPath: lgPath, home: home, vars: vars}
+	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
+	vars["HOME"] = ginkgo.GinkgoT().TempDir()
+	return &Env{lgPath: lgPath, vars: vars}
 }
 
-func (e *Env) Home() string { return e.home }
+func (e *Env) Home() string { return e.vars["HOME"] }
 
 func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 

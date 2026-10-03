@@ -14,10 +14,10 @@ var _ = Describe("Scrub", Label("cli"), func() {
 			"HTTPS_PROXY=p", "https_proxy=p", "HTTP_PROXY=p", "http_proxy=p",
 			"NO_PROXY=n", "no_proxy=n", "ALL_PROXY=p", "all_proxy=p",
 			"LANG=C", "PATH=/usr/bin",
-		}, "/bin/lg")).To(ConsistOf("LANG=C", "PATH=/bin/lg:/usr/bin"))
+		}, "/bin/lg")).To(Equal(map[string]string{"LANG": "C", "PATH": "/bin/lg:/usr/bin"}))
 	})
 
 	It("sets PATH to the lg dir when the environment has none", func() {
-		Expect(harness.Scrub([]string{"LANG=C"}, "/bin/lg")).To(ConsistOf("LANG=C", "PATH=/bin/lg"))
+		Expect(harness.Scrub([]string{"LANG=C"}, "/bin/lg")).To(Equal(map[string]string{"LANG": "C", "PATH": "/bin/lg"}))
 	})
 })
