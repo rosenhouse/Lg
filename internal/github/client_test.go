@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -65,8 +67,16 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		runs, err := client.ListRuns(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1))
-		Expect(runs[0].ID).To(BeEquivalentTo(runID))
-		Expect(runs[0].Repository.FullName).To(Equal("rosenhouse/Lg"))
+		Expect(runs[0].Run).To(Equal(model.Run{
+			ID:         runID,
+			Name:       "lg-fixture",
+			Path:       ".github/workflows/lg-fixture.yml",
+			HeadBranch: "lg-fixture",
+			CreatedAt:  time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC),
+			Status:     "completed",
+			RunAttempt: 1,
+			Repository: model.Repository{FullName: "rosenhouse/Lg"},
+		}))
 		Expect(runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
 	})
 
@@ -86,8 +96,12 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		for i, job := range jobs {
 			Expect(job.Raw).To(Equal(listing.Jobs[i]))
 		}
+		Expect(jobs[0].ID).To(BeEquivalentTo(111221289861))
+		Expect(jobs[0].RunnerName).To(HaveValue(Equal("GitHub Actions 1000002376")))
+		Expect(jobs[0].Steps).To(HaveLen(3))
 		Expect(jobs[10].Name).To(Equal("skipped"))
 		Expect(jobs[10].RunnerName).To(BeNil())
+		Expect(jobs[10].Steps).To(BeEmpty())
 	})
 
 	It("downloads a job log through the redirect, byte for byte", func() {
