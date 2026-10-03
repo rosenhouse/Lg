@@ -28,7 +28,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 	})
 
 	It("writes JSON indented two spaces, keeping key order, number literals and string escapes, and ending in a newline", func() {
-		Expect(unit.WriteJSON("a.json", []byte(`{"z":1.50,"a":[1e3,{}],"s":"é\/<"}`))).To(Succeed())
+		Expect(unit.WriteJSON("a.json", []byte(`{"z":1.50,"a":[1e3,{}],"s":"\u00e9\/<"}`))).To(Succeed())
 		Expect(s.Publish(unit, target)).To(Succeed())
 
 		Expect(os.ReadFile(filepath.Join(target, "a.json"))).To(Equal([]byte(
