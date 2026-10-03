@@ -16,16 +16,10 @@ linters:
     forbidigo:
       analyze-types: true
       forbid:
-        - pattern: ^time\.Now$
-          msg: use clock.Clock
-        - pattern: ^time\.Sleep$
+        - pattern: ^time\.(Now|Sleep|Since|Until|After|AfterFunc|Tick|NewTimer|NewTicker)$
           msg: use clock.Clock
     ginkgolinter:
       forbid-focus-container: true
-    staticcheck:
-      dot-import-whitelist:
-        - github.com/onsi/ginkgo/v2
-        - github.com/onsi/gomega
   exclusions:
     rules:
       - path: ^internal/clock/
