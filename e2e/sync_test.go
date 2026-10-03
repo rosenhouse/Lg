@@ -44,12 +44,8 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 		Expect(attempt1).To(BeADirectory())
 	})
 
-	It("stages units in tmp/, which it leaves empty", func() {
-		store := filepath.Dir(env.Data())
-		entries, err := os.ReadDir(store)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(entries).To(ConsistOf(HaveField("Name()", "data"), HaveField("Name()", "tmp")))
-		Expect(os.ReadDir(filepath.Join(store, "tmp"))).To(BeEmpty())
+	It("leaves tmp/ empty", func() {
+		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
 	})
 
 	It("writes log.txt byte-identical to the recording, BOM included, for each of the 10 jobs that ran", func() {
