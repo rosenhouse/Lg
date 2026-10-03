@@ -19,6 +19,7 @@ var _ = Describe("Slug", Label("sync"), func() {
 		Entry(nil, "Release/3.x", "Release-3.x"),
 		Entry(nil, "", "none"),
 		Entry(nil, "--a__b..", "a-b"),
+		Entry(nil, "az-AZ.09", "az-AZ.09"),
 		Entry(nil, "日本", "none"),
 	)
 
