@@ -1,0 +1,50 @@
+// Package harness runs the built lg binary in a scrubbed, per-spec environment.
+package harness
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
+	"github.com/onsi/gomega/gexec"
+)
+
+// ExitTimeout bounds how long a spec waits for a short-lived lg command.
+const ExitTimeout = 10 * time.Second
+
+type Env struct {
+	lgPath string
+	home   string
+	vars   map[string]string
+}
+
+// New gives the calling spec its own HOME and an environment built from
+// os.Environ by Scrub.
+func New(lgPath string) *Env {
+	home := ginkgo.GinkgoT().TempDir()
+	vars := map[string]string{}
+	for _, kv := range Scrub(os.Environ(), filepath.Dir(lgPath)) {
+		k, v, _ := strings.Cut(kv, "=")
+		vars[k] = v
+	}
+	vars["HOME"] = home
+	return &Env{lgPath: lgPath, home: home, vars: vars}
+}
+
+func (e *Env) Home() string { return e.home }
+
+func (e *Env) Setenv(key, value string) { e.vars[key] = value }
+
+func (e *Env) Lg(args ...string) *gexec.Session {
+	cmd := exec.Command(e.lgPath, args...)
+	for k, v := range e.vars {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	session, err := gexec.Start(cmd, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	return session
+}
