@@ -50,6 +50,16 @@ var _ = Describe("lg paths", Label("sync"), func() {
 		Expect(stderr.String()).To(BeEmpty())
 	})
 
+	It("exits 1 naming data/ when data/ is a dangling symlink", func() {
+		Expect(os.MkdirAll(home, 0o755)).To(Succeed())
+		data := filepath.Join(home, "data")
+		Expect(os.Symlink(filepath.Join(home, "unmounted"), data)).To(Succeed())
+
+		Expect(paths()).To(Equal(1))
+		Expect(stdout.String()).To(BeEmpty())
+		Expect(stderr.String()).To(ContainSubstring(data))
+	})
+
 	It("prints paths under data/ when data/ is a symlink", func() {
 		elsewhere := GinkgoT().TempDir()
 		Expect(os.MkdirAll(filepath.Join(elsewhere, "a"), 0o755)).To(Succeed())
