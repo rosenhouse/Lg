@@ -1,0 +1,138 @@
+﻿2026-10-03T14:26:36.3545913Z Current runner version: '2.337.0'
+2026-10-03T14:26:36.3570750Z ##[group]Runner Image Provisioner
+2026-10-03T14:26:36.3571912Z Hosted Compute Agent
+2026-10-03T14:26:36.3572531Z Version: 20260901.588
+2026-10-03T14:26:36.3573266Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:26:36.3574013Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:26:36.3574695Z Worker ID: {4223092d-7874-4aa7-8414-c42c6158efb1}
+2026-10-03T14:26:36.3575525Z Azure Region: westus
+2026-10-03T14:26:36.3576102Z ##[endgroup]
+2026-10-03T14:26:36.3577907Z ##[group]Operating System
+2026-10-03T14:26:36.3578594Z Ubuntu
+2026-10-03T14:26:36.3579126Z 24.04.5
+2026-10-03T14:26:36.3579725Z LTS
+2026-10-03T14:26:36.3580443Z ##[endgroup]
+2026-10-03T14:26:36.3581116Z ##[group]Runner Image
+2026-10-03T14:26:36.3581755Z Image: ubuntu-24.04
+2026-10-03T14:26:36.3582331Z Version: 20260927.320.1
+2026-10-03T14:26:36.3584059Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:26:36.3585733Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:26:36.3586747Z ##[endgroup]
+2026-10-03T14:26:36.3587837Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:26:36.3590026Z Contents: read
+2026-10-03T14:26:36.3590869Z Metadata: read
+2026-10-03T14:26:36.3591537Z ##[endgroup]
+2026-10-03T14:26:36.3593639Z Secret source: Actions
+2026-10-03T14:26:36.3594754Z Cache mode: write
+2026-10-03T14:26:36.3595469Z Prepare workflow directory
+2026-10-03T14:26:36.4122910Z Prepare all required actions
+2026-10-03T14:26:36.4171495Z Getting action download info
+2026-10-03T14:26:36.7428937Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-03T14:26:37.0202724Z Complete job name: pass
+2026-10-03T14:26:37.0826225Z ##[group]Run echo "LG_MARKER pass attempt=$ATTEMPT"
+2026-10-03T14:26:37.0827037Z [36;1mecho "LG_MARKER pass attempt=$ATTEMPT"[0m
+2026-10-03T14:26:37.0827744Z [36;1mecho "::group::LG_MARKER group"[0m
+2026-10-03T14:26:37.0828371Z [36;1mecho "LG_MARKER inside group"[0m
+2026-10-03T14:26:37.0828938Z [36;1mecho "::endgroup::"[0m
+2026-10-03T14:26:37.0829525Z [36;1mprintf '\033[31mLG_MARKER ansi red\033[0m\n'[0m
+2026-10-03T14:26:37.0830513Z [36;1mprintf 'LG_MARKER non-utf8 byte \xff\n'[0m
+2026-10-03T14:26:37.0831436Z [36;1mecho "::warning::LG_MARKER warning annotation"[0m
+2026-10-03T14:26:37.0832205Z [36;1mecho "::notice::LG_MARKER notice annotation"[0m
+2026-10-03T14:26:37.0833073Z [36;1mecho "::error file=a.txt,line=1::LG_MARKER error annotation"[0m
+2026-10-03T14:26:37.0833911Z [36;1mecho "::add-mask::lg-secret-value"[0m
+2026-10-03T14:26:37.0834604Z [36;1mecho "LG_MARKER masked lg-secret-value"[0m
+2026-10-03T14:26:37.1111585Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:37.1112623Z env:
+2026-10-03T14:26:37.1113166Z   ATTEMPT: 3
+2026-10-03T14:26:37.1113728Z ##[endgroup]
+2026-10-03T14:26:37.1269116Z LG_MARKER pass attempt=3
+2026-10-03T14:26:37.1285425Z ##[group]LG_MARKER group
+2026-10-03T14:26:37.1286048Z LG_MARKER inside group
+2026-10-03T14:26:37.1287170Z ##[endgroup]
+2026-10-03T14:26:37.1287871Z [31mLG_MARKER ansi red[0m
+2026-10-03T14:26:37.1288422Z LG_MARKER non-utf8 byte �
+2026-10-03T14:26:37.1304125Z ##[warning]LG_MARKER warning annotation
+2026-10-03T14:26:37.1313413Z ##[notice]LG_MARKER notice annotation
+2026-10-03T14:26:37.1318537Z ##[error]LG_MARKER error annotation
+2026-10-03T14:26:37.1323391Z LG_MARKER masked ***
+2026-10-03T14:26:37.1433169Z ##[group]Run echo "LG_MARKER continue-on-error step failure"
+2026-10-03T14:26:37.1434000Z [36;1mecho "LG_MARKER continue-on-error step failure"[0m
+2026-10-03T14:26:37.1434643Z [36;1mexit 1[0m
+2026-10-03T14:26:37.1492961Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:37.1493497Z env:
+2026-10-03T14:26:37.1493909Z   ATTEMPT: 3
+2026-10-03T14:26:37.1494483Z ##[endgroup]
+2026-10-03T14:26:37.1575285Z LG_MARKER continue-on-error step failure
+2026-10-03T14:26:37.1579287Z ##[error]Process completed with exit code 1.
+2026-10-03T14:26:37.1623606Z ##[group]Run mkdir -p out/tgz out/zip
+2026-10-03T14:26:37.1624254Z [36;1mmkdir -p out/tgz out/zip[0m
+2026-10-03T14:26:37.1625001Z [36;1mecho "LG_MARKER artifact top-level attempt=$ATTEMPT" > out/top.log[0m
+2026-10-03T14:26:37.1625936Z [36;1mecho "LG_MARKER artifact nested in tar.gz" > out/tgz/nested.log[0m
+2026-10-03T14:26:37.1626725Z [36;1mtar -czf out/inner.tar.gz -C out tgz[0m
+2026-10-03T14:26:37.1627471Z [36;1mecho "LG_MARKER artifact nested in zip" > out/zip/nested.log[0m
+2026-10-03T14:26:37.1628214Z [36;1m(cd out && zip -qr inner.zip zip)[0m
+2026-10-03T14:26:37.1628800Z [36;1mrm -rf out/tgz out/zip[0m
+2026-10-03T14:26:37.1685763Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:37.1686286Z env:
+2026-10-03T14:26:37.1686697Z   ATTEMPT: 3
+2026-10-03T14:26:37.1687133Z ##[endgroup]
+2026-10-03T14:26:37.2182645Z ##[group]Run actions/upload-artifact@v4
+2026-10-03T14:26:37.2183295Z with:
+2026-10-03T14:26:37.2183735Z   name: pass-artifact
+2026-10-03T14:26:37.2184209Z   path: out/
+2026-10-03T14:26:37.2184664Z   if-no-files-found: warn
+2026-10-03T14:26:37.2185163Z   compression-level: 6
+2026-10-03T14:26:37.2185640Z   overwrite: false
+2026-10-03T14:26:37.2186106Z   include-hidden-files: false
+2026-10-03T14:26:37.2186601Z env:
+2026-10-03T14:26:37.2187001Z   ATTEMPT: 3
+2026-10-03T14:26:37.2187420Z ##[endgroup]
+2026-10-03T14:26:37.3836592Z (node:2183) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T14:26:37.3838235Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T14:26:37.3923621Z With the provided path, there will be 3 files uploaded
+2026-10-03T14:26:37.3924661Z Artifact name is valid!
+2026-10-03T14:26:37.3925609Z Root directory input is valid!
+2026-10-03T14:26:37.7877989Z Beginning upload of artifact content to blob storage
+2026-10-03T14:26:37.8098567Z (node:2183) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-03T14:26:38.0662566Z Uploaded bytes 749
+2026-10-03T14:26:38.1382628Z Finished uploading artifact content to blob storage!
+2026-10-03T14:26:38.1386025Z SHA256 digest of uploaded artifact zip is f3f3f4dfba1778d418796ce7d05a575b4622581ca09e540939265992ae9f21a5
+2026-10-03T14:26:38.1389495Z Finalizing artifact upload
+2026-10-03T14:26:38.4071200Z Artifact pass-artifact.zip successfully finalized. Artifact ID 11275873402
+2026-10-03T14:26:38.4101774Z Artifact pass-artifact has been successfully uploaded! Final size is 749 bytes. Artifact ID is 11275873402
+2026-10-03T14:26:38.4103769Z Artifact download URL: https://github.com/rosenhouse/Lg/actions/runs/37129390741/artifacts/11275873402
+2026-10-03T14:26:38.4263321Z ##[group]Run actions/upload-artifact@v4
+2026-10-03T14:26:38.4263891Z with:
+2026-10-03T14:26:38.4264326Z   name: expires-in-1-day
+2026-10-03T14:26:38.4264804Z   path: out/top.log
+2026-10-03T14:26:38.4265267Z   retention-days: 1
+2026-10-03T14:26:38.4265757Z   if-no-files-found: warn
+2026-10-03T14:26:38.4266234Z   compression-level: 6
+2026-10-03T14:26:38.4266699Z   overwrite: false
+2026-10-03T14:26:38.4267167Z   include-hidden-files: false
+2026-10-03T14:26:38.4267636Z env:
+2026-10-03T14:26:38.4268043Z   ATTEMPT: 3
+2026-10-03T14:26:38.4268725Z ##[endgroup]
+2026-10-03T14:26:38.5963777Z (node:2195) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T14:26:38.5964973Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T14:26:38.6010093Z With the provided path, there will be 1 file uploaded
+2026-10-03T14:26:38.6021299Z Artifact name is valid!
+2026-10-03T14:26:38.6022720Z Root directory input is valid!
+2026-10-03T14:26:38.9811942Z Beginning upload of artifact content to blob storage
+2026-10-03T14:26:39.0010967Z (node:2195) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-03T14:26:39.2568139Z Uploaded bytes 169
+2026-10-03T14:26:39.3289412Z Finished uploading artifact content to blob storage!
+2026-10-03T14:26:39.3290785Z SHA256 digest of uploaded artifact zip is be8efd4956abb46c4c35eb57c61ac9fb43f8638b61b49c89d3458a16298385ff
+2026-10-03T14:26:39.3292167Z Finalizing artifact upload
+2026-10-03T14:26:39.5791061Z Artifact expires-in-1-day.zip successfully finalized. Artifact ID 11276327411
+2026-10-03T14:26:39.5793225Z Artifact expires-in-1-day has been successfully uploaded! Final size is 169 bytes. Artifact ID is 11276327411
+2026-10-03T14:26:39.5811528Z Artifact download URL: https://github.com/rosenhouse/Lg/actions/runs/37129390741/artifacts/11276327411
+2026-10-03T14:26:39.5969682Z ##[group]Run echo "LG_MARKER upload pass-artifact outcome=success id=11275873402"
+2026-10-03T14:26:39.5970728Z [36;1mecho "LG_MARKER upload pass-artifact outcome=success id=11275873402"[0m
+2026-10-03T14:26:39.6035690Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:39.6036012Z env:
+2026-10-03T14:26:39.6036258Z   ATTEMPT: 3
+2026-10-03T14:26:39.6036524Z ##[endgroup]
+2026-10-03T14:26:39.6118650Z LG_MARKER upload pass-artifact outcome=success id=11275873402
+2026-10-03T14:26:39.6195786Z Cleaning up orphan processes
+2026-10-03T14:26:39.6502417Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

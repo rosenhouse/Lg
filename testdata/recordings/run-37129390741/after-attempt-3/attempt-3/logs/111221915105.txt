@@ -1,0 +1,37 @@
+﻿2026-10-03T14:26:44.1023958Z Current runner version: '2.337.0'
+2026-10-03T14:26:44.1044882Z ##[group]Runner Image Provisioner
+2026-10-03T14:26:44.1045583Z Hosted Compute Agent
+2026-10-03T14:26:44.1046135Z Version: 20260901.588
+2026-10-03T14:26:44.1046677Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:26:44.1047321Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:26:44.1047916Z Worker ID: {755114bb-cdb2-46c4-9079-3c817535c663}
+2026-10-03T14:26:44.1048481Z Azure Region: westus3
+2026-10-03T14:26:44.1049165Z ##[endgroup]
+2026-10-03T14:26:44.1050480Z ##[group]Operating System
+2026-10-03T14:26:44.1050991Z Ubuntu
+2026-10-03T14:26:44.1051481Z 24.04.5
+2026-10-03T14:26:44.1051904Z LTS
+2026-10-03T14:26:44.1052342Z ##[endgroup]
+2026-10-03T14:26:44.1052861Z ##[group]Runner Image
+2026-10-03T14:26:44.1053394Z Image: ubuntu-24.04
+2026-10-03T14:26:44.1053875Z Version: 20260927.320.1
+2026-10-03T14:26:44.1054894Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:26:44.1056168Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:26:44.1056945Z ##[endgroup]
+2026-10-03T14:26:44.1057883Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:26:44.1059799Z Contents: read
+2026-10-03T14:26:44.1060352Z Metadata: read
+2026-10-03T14:26:44.1060860Z ##[endgroup]
+2026-10-03T14:26:44.1062562Z Secret source: Actions
+2026-10-03T14:26:44.1063390Z Cache mode: write
+2026-10-03T14:26:44.1063946Z Prepare workflow directory
+2026-10-03T14:26:44.1567363Z Prepare all required actions
+2026-10-03T14:26:44.1618599Z Complete job name: after-flaky
+2026-10-03T14:26:44.2120625Z ##[group]Run echo "LG_MARKER after-flaky attempt=$ATTEMPT"
+2026-10-03T14:26:44.2121433Z [36;1mecho "LG_MARKER after-flaky attempt=$ATTEMPT"[0m
+2026-10-03T14:26:44.3217267Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:44.3218081Z env:
+2026-10-03T14:26:44.3218849Z   ATTEMPT: 3
+2026-10-03T14:26:44.3219304Z ##[endgroup]
+2026-10-03T14:26:44.3886775Z LG_MARKER after-flaky attempt=3
+2026-10-03T14:26:44.4015799Z Cleaning up orphan processes
