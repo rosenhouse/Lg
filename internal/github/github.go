@@ -45,12 +45,12 @@ func BaseURL(host, apiURL string) string {
 }
 
 type HTTP struct {
-	client *http.Client
-	repo   string // <base>/repos/<owner>/<name>
+	client  *http.Client
+	repoURL string
 }
 
 func NewHTTP(client *http.Client, baseURL, repo string) *HTTP {
-	return &HTTP{client: client, repo: baseURL + "/repos/" + repo}
+	return &HTTP{client: client, repoURL: baseURL + "/repos/" + repo}
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
@@ -110,7 +110,7 @@ func (h *HTTP) getJSON(ctx context.Context, path string, v any) error {
 }
 
 func (h *HTTP) get(ctx context.Context, path string, read func(io.Reader) error) error {
-	url := h.repo + path
+	url := h.repoURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return err
@@ -126,5 +126,8 @@ func (h *HTTP) get(ctx context.Context, path string, read func(io.Reader) error)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
-	return read(resp.Body)
+	if err := read(resp.Body); err != nil {
+		return fmt.Errorf("%s: %w", url, err)
+	}
+	return nil
 }
