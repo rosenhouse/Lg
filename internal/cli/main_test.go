@@ -46,7 +46,7 @@ var _ = Describe("Main", Label("cli"), func() {
 
 	It("exits 2 when no command is given", func() {
 		Expect(run(map[string]string{})).To(Equal(2))
-		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"root\", \"version\"\nUsage: lg <command>"))
+		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"root\", \"version\", \"sync\", \"paths\"\nUsage: lg <command>"))
 	})
 })
 
