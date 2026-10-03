@@ -19,4 +19,17 @@ var _ = Describe("Locations", Label("cli"), func() {
 		Entry("HOME last", map[string]string{"HOME": "/h"}, "/h/.local/share/lg"),
 		Entry("empty values count as unset", map[string]string{"LG_HOME": "", "XDG_DATA_HOME": "", "HOME": "/h"}, "/h/.local/share/lg"),
 	)
+
+	DescribeTable("resolves the config file as LG_CONFIG > XDG_CONFIG_HOME/lg/config.yaml > HOME/.config/lg/config.yaml",
+		func(env map[string]string, configFile string) {
+			roots, err := config.Locations(env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(roots.ConfigFile).To(Equal(configFile))
+		},
+		Entry("LG_CONFIG wins", map[string]string{"LG_CONFIG": "/c.yaml", "XDG_CONFIG_HOME": "/xdg", "HOME": "/h"}, "/c.yaml"),
+		Entry("XDG_CONFIG_HOME next", map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/h"}, "/xdg/lg/config.yaml"),
+		Entry("HOME last", map[string]string{"HOME": "/h"}, "/h/.config/lg/config.yaml"),
+		Entry("empty values count as unset", map[string]string{"LG_CONFIG": "", "XDG_CONFIG_HOME": "", "HOME": "/h"}, "/h/.config/lg/config.yaml"),
+		Entry("LG_HOME does not move it", map[string]string{"LG_HOME": "/lg", "HOME": "/h"}, "/h/.config/lg/config.yaml"),
+	)
 })

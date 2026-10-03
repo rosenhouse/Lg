@@ -4,7 +4,8 @@ package config
 import "path/filepath"
 
 type Roots struct {
-	Home string
+	Home       string
+	ConfigFile string
 }
 
 // Locations resolves lg's roots from env, where an empty value counts as unset.
