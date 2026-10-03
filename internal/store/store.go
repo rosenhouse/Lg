@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Store struct {
@@ -24,8 +26,9 @@ func (s *Store) NewUnit() (*Unit, error) {
 	if err := os.MkdirAll(s.tmp, 0o755); err != nil {
 		return nil, err
 	}
-	dir, err := os.MkdirTemp(s.tmp, "unit-")
-	if err != nil {
+	// Unlike os.MkdirTemp, which always uses 0700, Mkdir lets the umask apply.
+	dir := filepath.Join(s.tmp, "unit-"+strconv.FormatUint(rand.Uint64(), 36))
+	if err := os.Mkdir(dir, 0o755); err != nil {
 		return nil, err
 	}
 	return &Unit{dir: dir}, nil
