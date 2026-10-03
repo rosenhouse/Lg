@@ -1,0 +1,40 @@
+package layout_test
+
+import (
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/rosenhouse/lg/internal/layout"
+)
+
+var _ = Describe("Slug", Label("sync"), func() {
+	DescribeTable("maps bytes outside [A-Za-z0-9.-] to -, collapses runs of -, and trims - and . from the ends",
+		func(name, slug string) {
+			Expect(layout.Slug(name)).To(Equal(slug))
+		},
+		Entry(nil, "build (ubuntu-latest, 1.22)", "build-ubuntu-latest-1.22"),
+		Entry(nil, "feat/retry upload", "feat-retry-upload"),
+		Entry(nil, "Release/3.x", "Release-3.x"),
+		Entry(nil, "", "none"),
+		Entry(nil, "--a__b..", "a-b"),
+		Entry(nil, "Build - Linux", "Build-Linux"),
+		Entry(nil, "az-AZ.09", "az-AZ.09"),
+		Entry(nil, "日本", "none"),
+	)
+
+	DescribeTable("truncates to 60 bytes and drops a - or . that truncation leaves at the end",
+		func(name string) {
+			Expect(layout.Slug(name)).To(Equal(strings.Repeat("a", 59)))
+		},
+		Entry("a - at byte 60", strings.Repeat("a", 59)+"-bcd"),
+		Entry("a . at byte 60", strings.Repeat("a", 59)+".bcd"),
+	)
+
+	It("turns the recorded unicode job name into 60 bytes", func() {
+		slug := layout.Slug("ünïcode / slash: job with a very long name that keeps going well past sixty characters")
+		Expect(slug).To(Equal("n-code-slash-job-with-a-very-long-name-that-keeps-going-well"))
+		Expect(slug).To(HaveLen(60))
+	})
+})

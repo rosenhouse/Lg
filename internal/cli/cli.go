@@ -31,6 +31,8 @@ func RealDeps() Deps {
 type commands struct {
 	Root    rootCmd    `cmd:"" help:"Print the data directory."`
 	Version versionCmd `cmd:"" help:"Print lg's version."`
+	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
+	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
 }
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.
