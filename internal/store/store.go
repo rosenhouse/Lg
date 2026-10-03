@@ -94,17 +94,6 @@ type File interface {
 	Close() error
 }
 
-type OSFS struct{}
-
-func (OSFS) Mkdir(string) error                    { return errors.ErrUnsupported }
-func (OSFS) Create(string) (File, error)           { return nil, errors.ErrUnsupported }
-func (OSFS) Rename(string, string) error           { return errors.ErrUnsupported }
-func (OSFS) SyncDir(string) error                  { return errors.ErrUnsupported }
-func (OSFS) RemoveAll(string) error                { return errors.ErrUnsupported }
-func (OSFS) ReadDir(string) ([]fs.DirEntry, error) { return nil, errors.ErrUnsupported }
-func (OSFS) Lstat(string) (fs.FileInfo, error)     { return nil, errors.ErrUnsupported }
-func (OSFS) Device(string) (uint64, error)         { return 0, errors.ErrUnsupported }
-
 func Init(root string) error { return nil }
 
 func Open(root string) (*Store, error) { return OpenFS(OSFS{}, root) }
