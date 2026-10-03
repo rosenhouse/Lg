@@ -92,8 +92,14 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 		for _, id := range notApplicableJobs {
 			dir := jobDir(attempt1, id)
 			Expect(filepath.Join(dir, "log.txt")).NotTo(BeAnExistingFile())
-			Expect(os.ReadFile(filepath.Join(dir, "log.txt.tombstone"))).To(MatchJSON(
-				`{"lg_format": 1, "target": "log.txt", "http_status": null, "reason": "not_applicable"}`))
+			var tombstone map[string]any
+			Expect(json.Unmarshal(readFile(dir, "log.txt.tombstone"), &tombstone)).To(Succeed())
+			Expect(tombstone).To(SatisfyAll(
+				HaveKeyWithValue("lg_format", BeEquivalentTo(1)),
+				HaveKeyWithValue("target", "log.txt"),
+				HaveKeyWithValue("http_status", BeNil()),
+				HaveKeyWithValue("reason", "not_applicable"),
+			))
 		}
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", HaveSuffix("/jobs/111221290616/logs"))))
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", HaveSuffix("/jobs/111221313824/logs"))))
