@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/rosenhouse/lg/internal/config"
@@ -21,7 +23,11 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if p.Null {
 		sep = "\x00"
 	}
-	return filepath.WalkDir(roots.Data, func(path string, d fs.DirEntry, err error) error {
+	if _, err := os.Stat(roots.Data); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	// The trailing separator makes WalkDir follow a symlinked data/.
+	return filepath.WalkDir(roots.Data+string(filepath.Separator), func(path string, d fs.DirEntry, err error) error {
 		if err != nil || !d.Type().IsRegular() || d.Name() != "log.txt" {
 			return err
 		}
