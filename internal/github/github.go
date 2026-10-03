@@ -80,10 +80,16 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, e
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, error) {
 	var listing struct {
-		Jobs []json.RawMessage `json:"jobs"`
+		TotalCount int               `json:"total_count"`
+		Jobs       []json.RawMessage `json:"jobs"`
 	}
-	if err := h.getJSON(ctx, fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt), &listing); err != nil {
+	path := fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)
+	if err := h.getJSON(ctx, path, &listing); err != nil {
 		return nil, err
+	}
+	// lg does not follow Link next yet, so a longer listing would lose jobs.
+	if listing.TotalCount > len(listing.Jobs) {
+		return nil, fmt.Errorf("%s: %d of %d jobs on the first page", h.repoURL+path, len(listing.Jobs), listing.TotalCount)
 	}
 	jobs := make([]Job, len(listing.Jobs))
 	for i, raw := range listing.Jobs {
