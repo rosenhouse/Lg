@@ -1,0 +1,55 @@
+package cli_test
+
+import (
+	"bytes"
+	"errors"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/rosenhouse/lg/internal/cli"
+)
+
+var _ = Describe("Main", Label("cli"), func() {
+	var stdout, stderr *bytes.Buffer
+
+	BeforeEach(func() {
+		stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	})
+
+	run := func(env map[string]string, args ...string) int {
+		return cli.Main(args, cli.Deps{Env: env, Stdout: stdout, Stderr: stderr})
+	}
+
+	It("exits 1 and prints the error when a command fails", func() {
+		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{}, Stderr: stderr})
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
+	It("exits 2 and prints the error for a config error", func() {
+		Expect(run(map[string]string{"LG_HOME": "rel"}, "root")).To(Equal(2))
+		Expect(stderr.String()).To(Equal("lg: LG_HOME must be an absolute path: \"rel\"\n"))
+		Expect(stdout.String()).To(BeEmpty())
+	})
+
+	It("exits 0 and prints usage for --help", func() {
+		Expect(run(map[string]string{}, "--help")).To(Equal(0))
+		Expect(stdout.String()).To(HavePrefix("Usage: lg <command>"))
+	})
+
+	It("exits 1 without usage when help cannot be written", func() {
+		code := cli.Main([]string{"--help"}, cli.Deps{Env: map[string]string{}, Stdout: failingWriter{}, Stderr: stderr})
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
+	It("exits 2 when no command is given", func() {
+		Expect(run(map[string]string{})).To(Equal(2))
+		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"root\", \"version\"\nUsage: lg <command>"))
+	})
+})
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }

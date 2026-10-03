@@ -1,0 +1,92 @@
+// Package cli declares lg's commands and maps their errors to exit codes.
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/alecthomas/kong"
+
+	"github.com/rosenhouse/lg/internal/config"
+)
+
+type Deps struct {
+	Env    map[string]string
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+func RealDeps() Deps {
+	env := map[string]string{}
+	for _, kv := range os.Environ() {
+		k, v, _ := strings.Cut(kv, "=")
+		env[k] = v
+	}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr}
+}
+
+type commands struct {
+	Root    rootCmd    `cmd:"" help:"Print the data directory."`
+	Version versionCmd `cmd:"" help:"Print lg's version."`
+}
+
+// kongExit carries Kong's exit code, as after --help, out of Parse.
+type kongExit int
+
+// errWriter remembers its first write error, which Kong reports as a ParseError.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	n, err := e.w.Write(p)
+	if e.err == nil {
+		e.err = err
+	}
+	return n, err
+}
+
+func Main(args []string, deps Deps) (code int) {
+	stdout := &errWriter{w: deps.Stdout}
+	parser := kong.Must(&commands{},
+		kong.Name("lg"),
+		kong.Writers(stdout, deps.Stderr),
+		kong.Exit(func(c int) { panic(kongExit(c)) }))
+	defer func() {
+		if r := recover(); r != nil {
+			c, ok := r.(kongExit)
+			if !ok {
+				panic(r)
+			}
+			code = int(c)
+		}
+	}()
+
+	ctx, err := parser.Parse(args)
+	if stdout.err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", stdout.err)
+		return 1
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		var parseErr *kong.ParseError
+		if errors.As(err, &parseErr) {
+			parser.Stdout = deps.Stderr
+			_ = parseErr.Context.PrintUsage(true)
+		}
+		return 2
+	}
+	if err := ctx.Run(&deps); err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		var configErr config.Error
+		if errors.As(err, &configErr) {
+			return 2
+		}
+		return 1
+	}
+	return 0
+}

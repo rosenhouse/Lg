@@ -1,0 +1,37 @@
+﻿2026-10-03T14:26:36.3283281Z Current runner version: '2.337.0'
+2026-10-03T14:26:36.3307925Z ##[group]Runner Image Provisioner
+2026-10-03T14:26:36.3308829Z Hosted Compute Agent
+2026-10-03T14:26:36.3309514Z Version: 20260901.588
+2026-10-03T14:26:36.3310169Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:26:36.3310895Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:26:36.3311690Z Worker ID: {7c857158-a139-48b8-b3d8-1c91f8932bf7}
+2026-10-03T14:26:36.3312423Z Azure Region: westus3
+2026-10-03T14:26:36.3313040Z ##[endgroup]
+2026-10-03T14:26:36.3314989Z ##[group]Operating System
+2026-10-03T14:26:36.3315712Z Ubuntu
+2026-10-03T14:26:36.3316365Z 24.04.5
+2026-10-03T14:26:36.3316898Z LTS
+2026-10-03T14:26:36.3317460Z ##[endgroup]
+2026-10-03T14:26:36.3318097Z ##[group]Runner Image
+2026-10-03T14:26:36.3318744Z Image: ubuntu-24.04
+2026-10-03T14:26:36.3319373Z Version: 20260927.320.1
+2026-10-03T14:26:36.3320618Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:26:36.3322250Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:26:36.3323262Z ##[endgroup]
+2026-10-03T14:26:36.3324661Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:26:36.3326529Z Contents: read
+2026-10-03T14:26:36.3327260Z Metadata: read
+2026-10-03T14:26:36.3327838Z ##[endgroup]
+2026-10-03T14:26:36.3330067Z Secret source: Actions
+2026-10-03T14:26:36.3331055Z Cache mode: write
+2026-10-03T14:26:36.3331736Z Prepare workflow directory
+2026-10-03T14:26:36.3870194Z Prepare all required actions
+2026-10-03T14:26:36.3935198Z Complete job name: ünïcode / slash: job with a very long name that keeps going well past sixty characters
+2026-10-03T14:26:36.4608023Z ##[group]Run echo "LG_MARKER unicode attempt=$ATTEMPT"
+2026-10-03T14:26:36.4609104Z [36;1mecho "LG_MARKER unicode attempt=$ATTEMPT"[0m
+2026-10-03T14:26:36.5705736Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:36.5706962Z env:
+2026-10-03T14:26:36.5707520Z   ATTEMPT: 3
+2026-10-03T14:26:36.5708071Z ##[endgroup]
+2026-10-03T14:26:36.5925519Z LG_MARKER unicode attempt=3
+2026-10-03T14:26:36.6092296Z Cleaning up orphan processes

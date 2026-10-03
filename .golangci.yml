@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - forbidigo
+    - ginkgolinter
+    - gocritic
+    - misspell
+    - noctx
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.(Now|Sleep|Since|Until|After|AfterFunc|Tick|NewTimer|NewTicker)$
+          msg: use clock.Clock
+    ginkgolinter:
+      forbid-focus-container: true
+  exclusions:
+    rules:
+      - path: ^internal/clock/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

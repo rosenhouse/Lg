@@ -1,0 +1,37 @@
+﻿2026-10-03T14:22:58.0255712Z Current runner version: '2.337.0'
+2026-10-03T14:22:58.0290255Z ##[group]Runner Image Provisioner
+2026-10-03T14:22:58.0291622Z Hosted Compute Agent
+2026-10-03T14:22:58.0292589Z Version: 20260901.588
+2026-10-03T14:22:58.0293784Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:22:58.0294990Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:22:58.0296522Z Worker ID: {554d4a00-9726-49f9-b94d-beaffa667ef5}
+2026-10-03T14:22:58.0297835Z Azure Region: eastus
+2026-10-03T14:22:58.0298743Z ##[endgroup]
+2026-10-03T14:22:58.0301153Z ##[group]Operating System
+2026-10-03T14:22:58.0302240Z Ubuntu
+2026-10-03T14:22:58.0303300Z 24.04.5
+2026-10-03T14:22:58.0304189Z LTS
+2026-10-03T14:22:58.0304968Z ##[endgroup]
+2026-10-03T14:22:58.0305993Z ##[group]Runner Image
+2026-10-03T14:22:58.0307504Z Image: ubuntu-24.04
+2026-10-03T14:22:58.0308497Z Version: 20260927.320.1
+2026-10-03T14:22:58.0310648Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:22:58.0313499Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:22:58.0315168Z ##[endgroup]
+2026-10-03T14:22:58.0317400Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:22:58.0320280Z Contents: read
+2026-10-03T14:22:58.0321379Z Metadata: read
+2026-10-03T14:22:58.0322296Z ##[endgroup]
+2026-10-03T14:22:58.0325714Z Secret source: Actions
+2026-10-03T14:22:58.0327647Z Cache mode: write
+2026-10-03T14:22:58.0329216Z Prepare workflow directory
+2026-10-03T14:22:58.0966807Z Prepare all required actions
+2026-10-03T14:22:58.1030632Z Complete job name: same name
+2026-10-03T14:22:58.1674085Z ##[group]Run echo "LG_MARKER duplicate-a attempt=$ATTEMPT"
+2026-10-03T14:22:58.1675231Z [36;1mecho "LG_MARKER duplicate-a attempt=$ATTEMPT"[0m
+2026-10-03T14:22:58.2333708Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:22:58.2334807Z env:
+2026-10-03T14:22:58.2335761Z   ATTEMPT: 1
+2026-10-03T14:22:58.2336789Z ##[endgroup]
+2026-10-03T14:22:58.2558846Z LG_MARKER duplicate-a attempt=1
+2026-10-03T14:22:58.2725326Z Cleaning up orphan processes

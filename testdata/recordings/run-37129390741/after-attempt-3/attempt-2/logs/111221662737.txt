@@ -1,0 +1,37 @@
+﻿2026-10-03T14:22:59.8923825Z Current runner version: '2.337.0'
+2026-10-03T14:22:59.8948599Z ##[group]Runner Image Provisioner
+2026-10-03T14:22:59.8949829Z Hosted Compute Agent
+2026-10-03T14:22:59.8950436Z Version: 20260901.588
+2026-10-03T14:22:59.8951149Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:22:59.8951899Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:22:59.8952577Z Worker ID: {90442db1-2e50-417a-9adb-9ce57797da19}
+2026-10-03T14:22:59.8953334Z Azure Region: westus
+2026-10-03T14:22:59.8953896Z ##[endgroup]
+2026-10-03T14:22:59.8955524Z ##[group]Operating System
+2026-10-03T14:22:59.8956323Z Ubuntu
+2026-10-03T14:22:59.8956910Z 24.04.5
+2026-10-03T14:22:59.8957515Z LTS
+2026-10-03T14:22:59.8958139Z ##[endgroup]
+2026-10-03T14:22:59.8958763Z ##[group]Runner Image
+2026-10-03T14:22:59.8959896Z Image: ubuntu-24.04
+2026-10-03T14:22:59.8960508Z Version: 20260927.320.1
+2026-10-03T14:22:59.8961812Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:22:59.8963405Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:22:59.8964434Z ##[endgroup]
+2026-10-03T14:22:59.8965493Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:22:59.8967654Z Contents: read
+2026-10-03T14:22:59.8968322Z Metadata: read
+2026-10-03T14:22:59.8969000Z ##[endgroup]
+2026-10-03T14:22:59.8971283Z Secret source: Actions
+2026-10-03T14:22:59.8972408Z Cache mode: write
+2026-10-03T14:22:59.8973212Z Prepare workflow directory
+2026-10-03T14:22:59.9486597Z Prepare all required actions
+2026-10-03T14:22:59.9595473Z Complete job name: build (ubuntu-latest, 1.22)
+2026-10-03T14:23:00.0251831Z ##[group]Run echo "LG_MARKER named-matrix go=1.22 attempt=$ATTEMPT"
+2026-10-03T14:23:00.0253015Z [36;1mecho "LG_MARKER named-matrix go=1.22 attempt=$ATTEMPT"[0m
+2026-10-03T14:23:00.0975643Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:23:00.0976892Z env:
+2026-10-03T14:23:00.0977847Z   ATTEMPT: 1
+2026-10-03T14:23:00.0978632Z ##[endgroup]
+2026-10-03T14:23:00.1211817Z LG_MARKER named-matrix go=1.22 attempt=1
+2026-10-03T14:23:00.1433480Z Cleaning up orphan processes
