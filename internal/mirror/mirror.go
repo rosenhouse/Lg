@@ -5,7 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -36,7 +39,14 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, m.Repo)
 		}
 		runDir := layout.RunDir(layout.RepoDir(m.Data, m.Host, run.Repository.FullName), run.Run)
-		if err := m.publishAttempt(ctx, run.ID, 1, layout.AttemptDir(runDir, 1)); err != nil {
+		target := layout.AttemptDir(runDir, 1)
+		switch _, err := os.Lstat(target); {
+		case err == nil:
+			continue
+		case !errors.Is(err, fs.ErrNotExist):
+			return err
+		}
+		if err := m.publishAttempt(ctx, run.ID, 1, target); err != nil {
 			return err
 		}
 	}
