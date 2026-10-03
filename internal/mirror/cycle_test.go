@@ -28,7 +28,10 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	)
 
 	BeforeEach(func() {
-		root = GinkgoT().TempDir()
+		root = filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		s, err := store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
 		recording = filepath.Join(GinkgoT().TempDir(), "recording")
 		Expect(os.CopyFS(recording, os.DirFS(fakegithub.Recording(runID, "after-attempt-1")))).To(Succeed())
 		fake = fakegithub.New()
@@ -36,7 +39,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.LoadDir(runID, recording)).To(Succeed())
 		m = mirror.Mirror{
 			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg"),
-			Store:  store.New(filepath.Join(root, "tmp")),
+			Store:  s,
 			Data:   filepath.Join(root, "data"),
 			Host:   "github.com",
 			Repo:   "rosenhouse/lg",
@@ -51,7 +54,8 @@ var _ = Describe("Cycle", Label("sync"), func() {
 
 			Expect(m.Cycle(context.Background())).To(MatchError(
 				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/lg"`))
-			Expect(os.ReadDir(root)).To(BeEmpty())
+			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+			Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 		},
 		Entry("another repo", "other/lg"),
 		Entry("a path out of the store", "../../../../escaped"),
@@ -75,7 +79,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		})
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
-		Expect(filepath.Join(root, "data")).NotTo(BeAnExistingFile())
+		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("/jobs"))))
 	})
 })

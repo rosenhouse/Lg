@@ -19,8 +19,8 @@ var _ = Describe("Unit", Label("sync"), func() {
 	)
 
 	BeforeEach(func() {
-		root = GinkgoT().TempDir()
-		s = store.New(filepath.Join(root, "tmp"))
+		root = newStore()
+		s = open(root)
 		var err error
 		unit, err = s.NewUnit()
 		Expect(err).NotTo(HaveOccurred())
@@ -55,6 +55,25 @@ var _ = Describe("Unit", Label("sync"), func() {
 		want, err := os.Stat(sibling)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.Stat(target)).To(HaveField("Mode()", want.Mode()))
+	})
+
+	DescribeTable("rejects a member name that is absolute or contains ..", Label("store"),
+		func(name string) {
+			_, err := unit.Create(name)
+			Expect(err).To(MatchError(ContainSubstring(name)))
+			Expect(unit.WriteJSON(name, []byte("{}"))).To(MatchError(ContainSubstring(name)))
+			Expect(filepath.Join(root, "escaped.json")).NotTo(BeAnExistingFile())
+		},
+		Entry("absolute", "/escaped.json"),
+		Entry("leading ..", "../../escaped.json"),
+		Entry(".. inside", "jobs/../../../escaped.json"),
+		Entry(".. that stays inside", "jobs/../a.json"),
+	)
+
+	It("Abort removes the staged unit", Label("store"), func() {
+		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(Succeed())
+		Expect(unit.Abort()).To(Succeed())
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
 
 	It("refuses to create a member twice", func() {

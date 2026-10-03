@@ -25,9 +25,16 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	if err := store.Init(roots.Store); err != nil {
+		return err
+	}
+	s, err := store.Open(roots.Store)
+	if err != nil {
+		return err
+	}
 	m := mirror.Mirror{
 		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo),
-		Store:  store.New(roots.Tmp),
+		Store:  s,
 		Data:   roots.Data,
 		Host:   cfg.Host,
 		Repo:   cfg.Repo,
