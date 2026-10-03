@@ -20,10 +20,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 
 	BeforeEach(func() {
 		env = harness.New(lgPath)
-		fake := fakegithub.New()
-		DeferCleanup(fake.Close)
-		fake.Load(fixtureRun, "after-attempt-1")
-		env.WriteConfig(fake.URL())
+		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
 		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
 
 		var err error

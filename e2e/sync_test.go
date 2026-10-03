@@ -32,9 +32,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 
 	BeforeEach(func() {
 		env = harness.New(lgPath)
-		fake = fakegithub.New()
-		DeferCleanup(fake.Close)
-		fake.Load(fixtureRun, "after-attempt-1")
+		fake = fakegithub.Start(fixtureRun, "after-attempt-1")
 		recording = fakegithub.Recording(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
 
@@ -65,19 +63,19 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 	})
 
 	It(`writes attempt.json, jobs.json (an array of 12) and each job.json JSON-equal to the compact bodies served, indented two spaces and ending in a newline, so rg -l '"head_sha": "1a51097' finds attempt.json`, func() {
-		Expect(os.ReadFile(filepath.Join(attempt1, "attempt.json"))).To(Equal(indented(compact(readFile(recording, "attempt-1/attempt.json")))))
+		Expect(os.ReadFile(filepath.Join(attempt1, "attempt.json"))).To(Equal(indented(fake.Served("attempt-1/attempt.json"))))
 
 		var listing struct{ Jobs []json.RawMessage }
-		Expect(json.Unmarshal(readFile(recording, "attempt-1/jobs.json"), &listing)).To(Succeed())
+		Expect(json.Unmarshal(fake.Served("attempt-1/jobs.json"), &listing)).To(Succeed())
 		Expect(listing.Jobs).To(HaveLen(12))
-		served := make([][]byte, len(listing.Jobs))
+		jobs := make([][]byte, len(listing.Jobs))
 		for i, job := range listing.Jobs {
-			served[i] = compact(job)
+			jobs[i] = job
 		}
-		jobsArray := append(append([]byte("["), bytes.Join(served, []byte(","))...), ']')
+		jobsArray := append(append([]byte("["), bytes.Join(jobs, []byte(","))...), ']')
 		Expect(os.ReadFile(filepath.Join(attempt1, "jobs.json"))).To(Equal(indented(jobsArray)))
 
-		for _, job := range served {
+		for _, job := range listing.Jobs {
 			var j struct{ ID int64 }
 			Expect(json.Unmarshal(job, &j)).To(Succeed())
 			Expect(os.ReadFile(jobDir(attempt1, strconv.FormatInt(j.ID, 10)) + "/job.json")).To(Equal(indented(job)))
@@ -92,8 +90,10 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 		for _, id := range notApplicableJobs {
 			dir := jobDir(attempt1, id)
 			Expect(filepath.Join(dir, "log.txt")).NotTo(BeAnExistingFile())
+			raw, err := os.ReadFile(filepath.Join(dir, "log.txt.tombstone"))
+			Expect(err).NotTo(HaveOccurred())
 			var tombstone map[string]any
-			Expect(json.Unmarshal(readFile(dir, "log.txt.tombstone"), &tombstone)).To(Succeed())
+			Expect(json.Unmarshal(raw, &tombstone)).To(Succeed())
 			Expect(tombstone).To(SatisfyAll(
 				HaveKeyWithValue("lg_format", BeEquivalentTo(1)),
 				HaveKeyWithValue("target", "log.txt"),
@@ -113,20 +113,6 @@ func jobDir(attemptDir, id string) string {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(matches).To(HaveLen(1), "job dir for %s", id)
 	return matches[0]
-}
-
-func readFile(elem ...string) []byte {
-	GinkgoHelper()
-	b, err := os.ReadFile(filepath.Join(elem...))
-	Expect(err).NotTo(HaveOccurred())
-	return b
-}
-
-func compact(b []byte) []byte {
-	GinkgoHelper()
-	var buf bytes.Buffer
-	Expect(json.Compact(&buf, b)).To(Succeed())
-	return buf.Bytes()
 }
 
 func indented(b []byte) []byte {

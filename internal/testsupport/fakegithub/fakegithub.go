@@ -14,6 +14,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 type Request struct {
@@ -27,10 +30,19 @@ type Request struct {
 // addressed as localhost, as GitHub redirects them to another domain.
 type Server struct {
 	api, blob *httptest.Server
-	runDir    string
 
 	mu       sync.Mutex
+	runDir   string
 	requests []Request
+}
+
+// Start serves a run at a stage until the spec ends.
+func Start(runID int64, stage string) *Server {
+	ginkgo.GinkgoHelper()
+	s := New()
+	ginkgo.DeferCleanup(s.Close)
+	gomega.Expect(s.Load(runID, stage)).To(gomega.Succeed())
+	return s
 }
 
 func New() *Server {
@@ -40,13 +52,45 @@ func New() *Server {
 	return s
 }
 
-func (s *Server) Load(runID int64, stage string) {
-	s.runDir = Recording(runID, stage)
+func (s *Server) Load(runID int64, stage string) error {
+	dir := Recording(runID, stage)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return fmt.Errorf("no recording of run %d at %s: %s", runID, stage, dir)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runDir = dir
+	return nil
 }
 
 // Recording is the dir under testdata/recordings holding a run at a stage.
 func Recording(runID int64, stage string) string {
 	return filepath.Join(recordingsDir(), fmt.Sprintf("run-%d", runID), stage)
+}
+
+// Served is a recorded file's body as the server serves it: JSON compacted,
+// anything else as recorded.
+func (s *Server) Served(elem ...string) []byte {
+	ginkgo.GinkgoHelper()
+	body, err := s.served(filepath.Join(elem...))
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	return body
+}
+
+func (s *Server) served(name string) ([]byte, error) {
+	recorded, err := os.ReadFile(filepath.Join(s.dir(), name))
+	if err != nil || filepath.Ext(name) != ".json" {
+		return recorded, err
+	}
+	var compact bytes.Buffer
+	err = json.Compact(&compact, recorded)
+	return compact.Bytes(), err
+}
+
+func (s *Server) dir() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runDir
 }
 
 func (s *Server) URL() string { return s.api.URL }
@@ -92,7 +136,7 @@ func (s *Server) apiRoutes() http.Handler {
 
 func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/logs/")
-	matches, _ := filepath.Glob(filepath.Join(s.runDir, "attempt-*", "logs", id+".txt"))
+	matches, _ := filepath.Glob(filepath.Join(s.dir(), "attempt-*", "logs", id+".txt"))
 	if len(matches) == 0 {
 		http.NotFound(w, r)
 		return
@@ -105,23 +149,19 @@ func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// serveJSON serves a recorded file compacted, as GitHub serves it, inside wrapper.
+// serveJSON serves a recorded file as served, inside wrapper.
 func (s *Server) serveJSON(w http.ResponseWriter, r *http.Request, wrapper string, elem ...string) {
-	recorded, err := os.ReadFile(filepath.Join(append([]string{s.runDir}, elem...)...))
+	body, err := s.served(filepath.Join(elem...))
 	if errors.Is(err, fs.ErrNotExist) {
 		http.NotFound(w, r)
 		return
-	}
-	var compact bytes.Buffer
-	if err == nil {
-		err = json.Compact(&compact, recorded)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = fmt.Fprintf(w, wrapper, compact.Bytes())
+	_, _ = fmt.Fprintf(w, wrapper, body)
 }
 
 // recordingsDir finds testdata/recordings from this source file, so it works
