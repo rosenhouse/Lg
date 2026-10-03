@@ -34,7 +34,7 @@ var _ = Describe("Locations", Label("cli"), func() {
 	)
 
 	It("puts state/ and tmp/ beside data/", func() {
-		roots, err := config.Locations(map[string]string{"LG_HOME": "/lg"})
+		roots, err := config.Locations(map[string]string{"LG_HOME": "/lg", "HOME": "/h"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(roots.Data).To(Equal("/lg/data"))
 		Expect(roots.State).To(Equal("/lg/state"))

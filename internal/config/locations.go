@@ -1,7 +1,10 @@
 // Package config locates and loads lg's store and config file.
 package config
 
-import "path/filepath"
+import (
+	"errors"
+	"path/filepath"
+)
 
 type Roots struct {
 	Home       string
@@ -16,14 +19,18 @@ func Locations(env map[string]string) (Roots, error) {
 	home := firstSet(env["LG_HOME"],
 		under(env["XDG_DATA_HOME"], "lg"),
 		under(env["HOME"], ".local", "share", "lg"))
+	configFile := firstSet(env["LG_CONFIG"],
+		under(env["XDG_CONFIG_HOME"], "lg", "config.yaml"),
+		under(env["HOME"], ".config", "lg", "config.yaml"))
+	if home == "" || configFile == "" {
+		return Roots{}, errors.New("HOME is not set")
+	}
 	return Roots{
-		Home:  home,
-		Data:  filepath.Join(home, "data"),
-		State: filepath.Join(home, "state"),
-		Tmp:   filepath.Join(home, "tmp"),
-		ConfigFile: firstSet(env["LG_CONFIG"],
-			under(env["XDG_CONFIG_HOME"], "lg", "config.yaml"),
-			under(env["HOME"], ".config", "lg", "config.yaml")),
+		Home:       home,
+		Data:       filepath.Join(home, "data"),
+		State:      filepath.Join(home, "state"),
+		Tmp:        filepath.Join(home, "tmp"),
+		ConfigFile: configFile,
 	}, nil
 }
 
