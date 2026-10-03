@@ -23,7 +23,7 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if p.Null {
 		sep = "\x00"
 	}
-	if _, err := os.Stat(roots.Data); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	// The trailing separator makes WalkDir follow a symlinked data/.
