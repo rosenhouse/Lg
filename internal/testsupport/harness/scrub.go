@@ -18,17 +18,18 @@ var droppedNames = map[string]bool{
 // Scrub drops variables that would leak the caller's lg, XDG, GitHub, home or
 // proxy settings into a spec, and puts binDir first on PATH.
 func Scrub(environ []string, binDir string) []string {
+	path := binDir
 	var kept []string
 	for _, kv := range environ {
 		key, value, _ := strings.Cut(kv, "=")
 		switch {
 		case key == "PATH":
-			kept = append(kept, "PATH="+binDir+string(os.PathListSeparator)+value)
+			path += string(os.PathListSeparator) + value
 		case !dropped(key):
 			kept = append(kept, kv)
 		}
 	}
-	return kept
+	return append(kept, "PATH="+path)
 }
 
 func dropped(key string) bool {
