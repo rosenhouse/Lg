@@ -28,6 +28,10 @@ func Locations(env map[string]string) (Roots, error) {
 	if err != nil {
 		return Roots{}, err
 	}
+	// Only LG_HOME can put the store at the root, where tmp/ would be /tmp.
+	if filepath.Dir(store) == store {
+		return Roots{}, Error(fmt.Sprintf("LG_HOME must not be the filesystem root: %q", env["LG_HOME"]))
+	}
 	return Roots{
 		Store: store,
 		Data:  filepath.Join(store, "data"),

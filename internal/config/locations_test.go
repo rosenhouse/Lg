@@ -44,6 +44,8 @@ var _ = Describe("Locations", Label("cli"), func() {
 			`LG_HOME must be an absolute path: "~/lg"`),
 		Entry("for a relative HOME", map[string]string{"HOME": "relhome"},
 			`HOME must be an absolute path: "relhome"`),
+		Entry("for a store at the filesystem root", map[string]string{"LG_HOME": "//."},
+			`LG_HOME must not be the filesystem root: "//."`),
 	)
 })
 
