@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -99,6 +100,29 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		var log bytes.Buffer
 		Expect(client.DownloadJobLog(context.Background(), 111221289888, &log)).To(Succeed())
 		Expect(log.Bytes()).To(Equal(readFile(recording, "attempt-1/logs/111221289888.txt")))
+	})
+
+	It("lists runs and jobs 100 per page", func() {
+		_, err := client.ListRuns(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		_, err = client.ListAttemptJobs(context.Background(), runID, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fake.Requests()).To(ConsistOf(
+			HaveField("Query", "per_page=100"),
+			HaveField("Query", "per_page=100"),
+		))
+	})
+
+	It("returns an error naming the URL of a truncated body", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte("partial"))
+		}))
+		DeferCleanup(server.Close)
+
+		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
+		Expect(err).To(MatchError(HavePrefix(server.URL + "/repos/o/r/actions/jobs/1/logs: ")))
 	})
 
 	It("returns an error naming the URL and status of a failed request", func() {
