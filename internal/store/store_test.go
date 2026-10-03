@@ -132,3 +132,43 @@ var _ = Describe("Has", Label("store"), func() {
 		Expect(err).To(MatchError(syscall.ENOTDIR))
 	})
 })
+
+var _ = DescribeTable("WriteJSON reports a member that failed to reach the disk, even when closing it succeeds", Label("store"),
+	func(file failingFile) {
+		s := openFS(failingFS{file: file}, newStore())
+		unit, err := s.NewUnit()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(MatchError(syscall.EIO))
+	},
+	Entry("write", failingFile{write: syscall.EIO}),
+	Entry("fsync", failingFile{sync: syscall.EIO}),
+)
+
+// failingFS creates files whose Write or Sync fails and whose Close succeeds.
+type failingFS struct {
+	store.OSFS
+	file failingFile
+}
+
+func (f failingFS) Create(path string) (store.File, error) {
+	file, err := f.OSFS.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	DeferCleanup(file.Close)
+	return f.file, nil
+}
+
+type failingFile struct{ write, sync error }
+
+func (f failingFile) Write(p []byte) (int, error) {
+	if f.write != nil {
+		return 0, f.write
+	}
+	return len(p), nil
+}
+
+func (f failingFile) Sync() error { return f.sync }
+
+func (f failingFile) Close() error { return nil }
