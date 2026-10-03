@@ -1,0 +1,158 @@
+# Produces Actions runs with known shapes for lg test fixtures.
+# After attempt 1, re-run failed jobs, then re-run all jobs.
+# Every log and artifact line contains LG_MARKER.
+name: lg-fixture
+
+on:
+  push:
+    branches: [lg-fixture]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit log markers
+        run: |
+          echo "LG_MARKER pass attempt=$ATTEMPT"
+          echo "::group::LG_MARKER group"
+          echo "LG_MARKER inside group"
+          echo "::endgroup::"
+          printf '\033[31mLG_MARKER ansi red\033[0m\n'
+          printf 'LG_MARKER non-utf8 byte \xff\n'
+          echo "::warning::LG_MARKER warning annotation"
+          echo "::notice::LG_MARKER notice annotation"
+          echo "::error file=a.txt,line=1::LG_MARKER error annotation"
+          echo "::add-mask::lg-secret-value"
+          echo "LG_MARKER masked lg-secret-value"
+      - name: Failing step that does not fail the job
+        continue-on-error: true
+        run: |
+          echo "LG_MARKER continue-on-error step failure"
+          exit 1
+      - name: Build nested archives
+        run: |
+          mkdir -p out/tgz out/zip
+          echo "LG_MARKER artifact top-level attempt=$ATTEMPT" > out/top.log
+          echo "LG_MARKER artifact nested in tar.gz" > out/tgz/nested.log
+          tar -czf out/inner.tar.gz -C out tgz
+          echo "LG_MARKER artifact nested in zip" > out/zip/nested.log
+          (cd out && zip -qr inner.zip zip)
+          rm -rf out/tgz out/zip
+      - id: up
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: pass-artifact
+          path: out/
+      - name: Short-retention artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: expires-in-1-day
+          path: out/top.log
+          retention-days: 1
+      - name: Report upload outcome
+        run: echo "LG_MARKER upload pass-artifact outcome=${{ steps.up.outcome }} id=${{ steps.up.outputs.artifact-id }}"
+
+  flaky:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write report
+        run: echo "LG_MARKER flaky report attempt=$ATTEMPT" > report.txt
+      - id: up
+        name: Upload same-named artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: flaky-report
+          path: report.txt
+      - id: overwrite
+        name: Upload same-named artifact with overwrite
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: flaky-report-overwrite
+          path: report.txt
+          overwrite: true
+      - name: Upload artifact on reruns only
+        if: env.ATTEMPT != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rerun-only-attempt-${{ github.run_attempt }}
+          path: report.txt
+      - name: Report upload outcomes
+        run: |
+          echo "LG_MARKER upload flaky-report outcome=${{ steps.up.outcome }} id=${{ steps.up.outputs.artifact-id }}"
+          echo "LG_MARKER upload flaky-report-overwrite outcome=${{ steps.overwrite.outcome }} id=${{ steps.overwrite.outputs.artifact-id }}"
+      - name: Fail on first attempt only
+        run: |
+          if [ "$ATTEMPT" = "1" ]; then
+            echo "LG_MARKER flaky failure attempt=$ATTEMPT"
+            exit 1
+          fi
+          echo "LG_MARKER flaky success attempt=$ATTEMPT"
+
+  after-flaky:
+    needs: flaky
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "LG_MARKER after-flaky attempt=$ATTEMPT"
+
+  timeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Time out on first attempt only
+        run: |
+          echo "LG_MARKER timeout attempt=$ATTEMPT"
+          if [ "$ATTEMPT" = "1" ]; then sleep 90; fi
+
+  named-matrix:
+    name: build (${{ matrix.os }}, ${{ matrix.go }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        go: ["1.22", "1.23"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "LG_MARKER named-matrix go=${{ matrix.go }} attempt=$ATTEMPT"
+
+  matrix:
+    strategy:
+      matrix:
+        go: ["1.22", "1.23"]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "LG_MARKER matrix go=${{ matrix.go }} attempt=$ATTEMPT"
+
+  duplicate-a:
+    name: same name
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "LG_MARKER duplicate-a attempt=$ATTEMPT"
+
+  duplicate-b:
+    name: same name
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "LG_MARKER duplicate-b attempt=$ATTEMPT"
+
+  unicode:
+    name: "ünïcode / slash: job with a very long name that keeps going well past sixty characters"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "stép / with: punctuation"
+        run: echo "LG_MARKER unicode attempt=$ATTEMPT"
+
+  skipped:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "LG_MARKER never runs"
