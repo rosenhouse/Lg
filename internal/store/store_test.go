@@ -118,3 +118,17 @@ var _ = Describe("Publish", Label("store"), func() {
 		Expect(publishAttempt(openFS(notEmpty, newStore()), "{}")).To(MatchError(store.ErrExists))
 	})
 })
+
+var _ = Describe("Has", Label("store"), func() {
+	It("reports whether a target exists, and an error when it cannot tell", func() {
+		root := newStore()
+		s := open(root)
+		Expect(publishAttempt(s, "{}")).To(Succeed())
+		attempt := filepath.Join(root, attemptPath)
+
+		Expect(s.Has(attempt)).To(BeTrue())
+		Expect(s.Has(filepath.Join(root, "data", "missing"))).To(BeFalse())
+		_, err := s.Has(filepath.Join(attempt, "attempt.json", "child"))
+		Expect(err).To(MatchError(syscall.ENOTDIR))
+	})
+})
