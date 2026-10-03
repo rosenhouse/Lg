@@ -63,13 +63,6 @@ var _ = Describe("lg version", Label("cli"), func() {
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(string(session.Out.Contents())).To(Equal("test\n"))
 	})
-
-	It("prints the module version from the build info otherwise", func() {
-		session := harness.New(unstampedLgPath).Lg("version")
-
-		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(session.Out.Contents())).To(MatchRegexp(`^v\d+\.\d+\.\d+\S*\n$`))
-	})
 })
 
 var _ = Describe("lg", Label("cli"), func() {

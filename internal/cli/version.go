@@ -9,6 +9,6 @@ import (
 type versionCmd struct{}
 
 func (versionCmd) Run(deps *Deps) error {
-	_, err := fmt.Fprintln(deps.Stdout, version.Get())
+	_, err := fmt.Fprintln(deps.Stdout, version.Version)
 	return err
 }
