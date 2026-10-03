@@ -19,6 +19,7 @@ type Mirror struct {
 	Store  *store.Store
 	Data   string
 	Host   string
+	Repo   string
 }
 
 // Cycle publishes attempt 1 of every listed run.
