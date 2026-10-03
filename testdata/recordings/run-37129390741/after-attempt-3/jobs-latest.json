@@ -1,0 +1,686 @@
+{
+  "total_count": 12,
+  "jobs": [
+    {
+      "id": 111221892229,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdkhQ",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892229",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892229",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:42Z",
+      "name": "pass",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:37Z"
+        },
+        {
+          "name": "Emit log markers",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:37Z",
+          "completed_at": "2026-10-03T14:26:37Z"
+        },
+        {
+          "name": "Failing step that does not fail the job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:37Z",
+          "completed_at": "2026-10-03T14:26:37Z"
+        },
+        {
+          "name": "Build nested archives",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-03T14:26:37Z",
+          "completed_at": "2026-10-03T14:26:37Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-03T14:26:37Z",
+          "completed_at": "2026-10-03T14:26:38Z"
+        },
+        {
+          "name": "Short-retention artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-03T14:26:38Z",
+          "completed_at": "2026-10-03T14:26:39Z"
+        },
+        {
+          "name": "Report upload outcome",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-03T14:26:39Z",
+          "completed_at": "2026-10-03T14:26:39Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-03T14:26:39Z",
+          "completed_at": "2026-10-03T14:26:39Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892229",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002388,
+      "runner_name": "GitHub Actions 1000002388",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892295,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5Vdkxw",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892295",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892295",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:37Z",
+      "name": "matrix (1.22)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER matrix go=1.22 attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892295",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002390,
+      "runner_name": "GitHub Actions 1000002390",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892316,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5Vdk3A",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892316",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892316",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:38Z",
+      "name": "build (ubuntu-latest, 1.23)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER named-matrix go=1.23 attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892316",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002389,
+      "runner_name": "GitHub Actions 1000002389",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892332,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5Vdk7A",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892332",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892332",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:34Z",
+      "completed_at": "2026-10-03T14:26:37Z",
+      "name": "matrix (1.23)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER matrix go=1.23 attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892332",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002391,
+      "runner_name": "GitHub Actions 1000002391",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892377,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlGQ",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892377",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892377",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:39Z",
+      "name": "same name",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER duplicate-a attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892377",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002392,
+      "runner_name": "GitHub Actions 1000002392",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892393,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlKQ",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892393",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892393",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:40Z",
+      "name": "flaky",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Write report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Upload same-named artifact",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:37Z"
+        },
+        {
+          "name": "Upload same-named artifact with overwrite",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-03T14:26:37Z",
+          "completed_at": "2026-10-03T14:26:38Z"
+        },
+        {
+          "name": "Upload artifact on reruns only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-03T14:26:38Z",
+          "completed_at": "2026-10-03T14:26:38Z"
+        },
+        {
+          "name": "Report upload outcomes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-03T14:26:38Z",
+          "completed_at": "2026-10-03T14:26:38Z"
+        },
+        {
+          "name": "Fail on first attempt only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-03T14:26:38Z",
+          "completed_at": "2026-10-03T14:26:39Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-03T14:26:39Z",
+          "completed_at": "2026-10-03T14:26:39Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892393",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002397,
+      "runner_name": "GitHub Actions 1000002397",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892395,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlKw",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892395",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892395",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:37Z",
+      "name": "timeout",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Time out on first attempt only",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892395",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002396,
+      "runner_name": "GitHub Actions 1000002396",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892399,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlLw",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892399",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892399",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:39Z",
+      "name": "build (ubuntu-latest, 1.22)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER named-matrix go=1.22 attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892399",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002393,
+      "runner_name": "GitHub Actions 1000002393",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892403,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlMw",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892403",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892403",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:37Z",
+      "name": "same name",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:35Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER duplicate-b attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:35Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892403",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002395,
+      "runner_name": "GitHub Actions 1000002395",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892422,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdlRg",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892422",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892422",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:35Z",
+      "completed_at": "2026-10-03T14:26:38Z",
+      "name": "ünïcode / slash: job with a very long name that keeps going well past sixty characters",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "stép / with: punctuation",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:36Z",
+          "completed_at": "2026-10-03T14:26:36Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892422",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002394,
+      "runner_name": "GitHub Actions 1000002394",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 111221892915,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5VdnMw",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221892915",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221892915",
+      "status": "completed",
+      "conclusion": "skipped",
+      "created_at": "2026-10-03T14:26:33Z",
+      "started_at": "2026-10-03T14:26:33Z",
+      "completed_at": "2026-10-03T14:26:32Z",
+      "name": "skipped",
+      "steps": [
+
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221892915",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 111221915105,
+      "run_id": 37129390741,
+      "workflow_name": "lg-fixture",
+      "head_branch": "lg-fixture",
+      "run_url": "https://api.github.com/repos/rosenhouse/Lg/actions/runs/37129390741",
+      "run_attempt": 3,
+      "node_id": "CR_kwDOU5u6C88AAAAZ5Ve94Q",
+      "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02",
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221915105",
+      "html_url": "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221915105",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-03T14:26:41Z",
+      "started_at": "2026-10-03T14:26:43Z",
+      "completed_at": "2026-10-03T14:26:46Z",
+      "name": "after-flaky",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-03T14:26:44Z",
+          "completed_at": "2026-10-03T14:26:44Z"
+        },
+        {
+          "name": "Run echo \"LG_MARKER after-flaky attempt=$ATTEMPT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-03T14:26:44Z",
+          "completed_at": "2026-10-03T14:26:44Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-03T14:26:44Z",
+          "completed_at": "2026-10-03T14:26:44Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/rosenhouse/Lg/check-runs/111221915105",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002398,
+      "runner_name": "GitHub Actions 1000002398",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+﻿2026-10-03T14:26:35.6601534Z Current runner version: '2.337.0'
+2026-10-03T14:26:35.6624027Z ##[group]Runner Image Provisioner
+2026-10-03T14:26:35.6625006Z Hosted Compute Agent
+2026-10-03T14:26:35.6625760Z Version: 20260901.588
+2026-10-03T14:26:35.6626472Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T14:26:35.6627299Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T14:26:35.6628268Z Worker ID: {0ab479ae-d5c2-41bd-a89f-c6d791c8d6db}
+2026-10-03T14:26:35.6629099Z Azure Region: centralus
+2026-10-03T14:26:35.6629790Z ##[endgroup]
+2026-10-03T14:26:35.6631851Z ##[group]Operating System
+2026-10-03T14:26:35.6632633Z Ubuntu
+2026-10-03T14:26:35.6633332Z 24.04.5
+2026-10-03T14:26:35.6633920Z LTS
+2026-10-03T14:26:35.6634538Z ##[endgroup]
+2026-10-03T14:26:35.6635173Z ##[group]Runner Image
+2026-10-03T14:26:35.6635853Z Image: ubuntu-24.04
+2026-10-03T14:26:35.6636598Z Version: 20260927.320.1
+2026-10-03T14:26:35.6638140Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T14:26:35.6639974Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T14:26:35.6641271Z ##[endgroup]
+2026-10-03T14:26:35.6642590Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T14:26:35.6645226Z Contents: read
+2026-10-03T14:26:35.6645969Z Metadata: read
+2026-10-03T14:26:35.6646581Z ##[endgroup]
+2026-10-03T14:26:35.6648896Z Secret source: Actions
+2026-10-03T14:26:35.6649948Z Cache mode: write
+2026-10-03T14:26:35.6651146Z Prepare workflow directory
+2026-10-03T14:26:35.7106974Z Prepare all required actions
+2026-10-03T14:26:35.7180381Z Complete job name: timeout
+2026-10-03T14:26:35.7819966Z ##[group]Run echo "LG_MARKER timeout attempt=$ATTEMPT"
+2026-10-03T14:26:35.7821219Z [36;1mecho "LG_MARKER timeout attempt=$ATTEMPT"[0m
+2026-10-03T14:26:35.7822136Z [36;1mif [ "$ATTEMPT" = "1" ]; then sleep 90; fi[0m
+2026-10-03T14:26:35.8779271Z shell: /usr/bin/bash -e {0}
+2026-10-03T14:26:35.8780018Z env:
+2026-10-03T14:26:35.8780532Z   ATTEMPT: 3
+2026-10-03T14:26:35.8781258Z ##[endgroup]
+2026-10-03T14:26:35.9016622Z LG_MARKER timeout attempt=3
+2026-10-03T14:26:35.9139698Z Cleaning up orphan processes

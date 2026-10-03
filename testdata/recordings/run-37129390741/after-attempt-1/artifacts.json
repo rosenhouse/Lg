@@ -1,0 +1,85 @@
+{
+  "total_count": 4,
+  "artifacts": [
+    {
+      "id": 11276401837,
+      "node_id": "MDg6QXJ0aWZhY3QxMTI3NjQwMTgzNw==",
+      "name": "flaky-report",
+      "size_in_bytes": 169,
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276401837",
+      "archive_download_url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276401837/zip",
+      "expired": false,
+      "digest": "sha256:d9df8b557651cd5b643604d89ba20ea3cb8d7e3636d28a1377c2a38254865f6e",
+      "created_at": "2026-10-03T14:22:59Z",
+      "updated_at": "2026-10-03T14:22:59Z",
+      "expires_at": "2027-01-01T14:22:54Z",
+      "workflow_run": {
+        "id": 37129390741,
+        "repository_id": 1402714635,
+        "head_repository_id": 1402714635,
+        "head_branch": "lg-fixture",
+        "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
+      }
+    },
+    {
+      "id": 11276272069,
+      "node_id": "MDg6QXJ0aWZhY3QxMTI3NjI3MjA2OQ==",
+      "name": "pass-artifact",
+      "size_in_bytes": 751,
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276272069",
+      "archive_download_url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276272069/zip",
+      "expired": false,
+      "digest": "sha256:9b47ee49e71ab033f37453c4d1ffb4cb5c1608046721a8bcb15f5d1d70508a61",
+      "created_at": "2026-10-03T14:23:01Z",
+      "updated_at": "2026-10-03T14:23:01Z",
+      "expires_at": "2027-01-01T14:22:54Z",
+      "workflow_run": {
+        "id": 37129390741,
+        "repository_id": 1402714635,
+        "head_repository_id": 1402714635,
+        "head_branch": "lg-fixture",
+        "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
+      }
+    },
+    {
+      "id": 11276182467,
+      "node_id": "MDg6QXJ0aWZhY3QxMTI3NjE4MjQ2Nw==",
+      "name": "flaky-report-overwrite",
+      "size_in_bytes": 169,
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276182467",
+      "archive_download_url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11276182467/zip",
+      "expired": false,
+      "digest": "sha256:d9df8b557651cd5b643604d89ba20ea3cb8d7e3636d28a1377c2a38254865f6e",
+      "created_at": "2026-10-03T14:23:01Z",
+      "updated_at": "2026-10-03T14:23:01Z",
+      "expires_at": "2027-01-01T14:22:54Z",
+      "workflow_run": {
+        "id": 37129390741,
+        "repository_id": 1402714635,
+        "head_repository_id": 1402714635,
+        "head_branch": "lg-fixture",
+        "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
+      }
+    },
+    {
+      "id": 11275917910,
+      "node_id": "MDg6QXJ0aWZhY3QxMTI3NTkxNzkxMA==",
+      "name": "expires-in-1-day",
+      "size_in_bytes": 169,
+      "url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11275917910",
+      "archive_download_url": "https://api.github.com/repos/rosenhouse/Lg/actions/artifacts/11275917910/zip",
+      "expired": false,
+      "digest": "sha256:fd151fe190b853dc69d973a927588591cdab0e90cd5320abe040b70fc82ce765",
+      "created_at": "2026-10-03T14:23:02Z",
+      "updated_at": "2026-10-03T14:23:02Z",
+      "expires_at": "2026-10-04T14:23:01Z",
+      "workflow_run": {
+        "id": 37129390741,
+        "repository_id": 1402714635,
+        "head_repository_id": 1402714635,
+        "head_branch": "lg-fixture",
+        "head_sha": "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
+      }
+    }
+  ]
+}
