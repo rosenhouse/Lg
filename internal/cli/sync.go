@@ -30,6 +30,7 @@ func (syncCmd) Run(deps *Deps) error {
 		Store:  store.New(roots.Tmp),
 		Data:   roots.Data,
 		Host:   cfg.Host,
+		Repo:   cfg.Repo,
 	}
 	return m.Cycle(context.Background())
 }

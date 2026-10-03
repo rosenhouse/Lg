@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
@@ -29,6 +31,10 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		return err
 	}
 	for _, run := range runs {
+		// The API's spelling names the repo dir, so it must be the configured repo.
+		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
+			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, m.Repo)
+		}
 		runDir := layout.RunDir(layout.RepoDir(m.Data, m.Host, run.Repository.FullName), run.Run)
 		if err := m.publishAttempt(ctx, run.ID, 1, layout.AttemptDir(runDir, 1)); err != nil {
 			return err
