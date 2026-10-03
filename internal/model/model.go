@@ -37,4 +37,11 @@ const (
 	NotApplicable JobKind = "not_applicable"
 )
 
-func Classify(Job) JobKind { return "" }
+// Classify gives NotApplicable to a job with no steps and no runner, which
+// GitHub never produces a log for.
+func Classify(job Job) JobKind {
+	if len(job.Steps) == 0 && job.RunnerName == nil {
+		return NotApplicable
+	}
+	return Ran
+}
