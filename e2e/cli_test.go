@@ -61,6 +61,6 @@ var _ = Describe("lg", Label("cli"), func() {
 		session := harness.New(lgPath).Lg("no-such-command")
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(2))
-		Expect(session.Err).To(gbytes.Say(`Usage: lg <command>`))
+		Expect(session.Err).To(gbytes.Say("lg: unexpected argument no-such-command\nUsage: lg <command>"))
 	})
 })
