@@ -1,7 +1,11 @@
 // Package layout names the directories of the data tree.
 package layout
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/rosenhouse/lg/internal/model"
+)
 
 const maxSlug = 60
 
@@ -32,3 +36,11 @@ func Slug(name string) string {
 func allowed(c byte) bool {
 	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '.' || c == '-'
 }
+
+func RepoDir(string, string, string) string { return "" }
+
+func RunDir(string, model.Run) string { return "" }
+
+func AttemptDir(string, int) string { return "" }
+
+func JobDir(string, int64, string) string { return "" }
