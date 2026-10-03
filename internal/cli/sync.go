@@ -35,7 +35,6 @@ func (syncCmd) Run(deps *Deps) error {
 	m := mirror.Mirror{
 		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo),
 		Store:  s,
-		Data:   roots.Data,
 		Host:   cfg.Host,
 		Repo:   cfg.Repo,
 	}

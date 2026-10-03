@@ -40,7 +40,6 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		m = mirror.Mirror{
 			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg"),
 			Store:  s,
-			Data:   filepath.Join(root, "data"),
 			Host:   "github.com",
 			Repo:   "rosenhouse/lg",
 		}
@@ -70,6 +69,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.Requests()[before:]).To(ConsistOf(
 			HaveField("Path", "/repos/rosenhouse/lg/actions/runs")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+	})
+
+	It("removes its staged unit when a log download fails", Label("store"), func() {
+		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError})
+
+		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 	})
 
 	It("publishes no attempt still in progress and requests none of its jobs", func() {
