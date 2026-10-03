@@ -86,13 +86,8 @@ func Open(root string) (*Store, error) { return OpenFS(OSFS{}, root) }
 // OpenFS opens the store at root through fsys. It refuses a FORMAT other than
 // lg-store 1, and a tmp/ that cannot be renamed into data/.
 func OpenFS(fsys FS, root string) (*Store, error) {
-	formatFile := filepath.Join(root, "FORMAT")
-	got, err := os.ReadFile(formatFile)
-	if err != nil {
+	if err := CheckFormat(root); err != nil {
 		return nil, err
-	}
-	if v := strings.TrimSuffix(string(got), "\n"); v != format {
-		return nil, fmt.Errorf("%w: %s is %q; this lg reads %q", ErrFormat, formatFile, v, format)
 	}
 	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
 	dataDev, err := fsys.Device(s.data)
@@ -107,6 +102,20 @@ func OpenFS(fsys FS, root string) (*Store, error) {
 		return nil, fmt.Errorf("%s and %s are on different devices, so units cannot be renamed into place", s.tmp, s.data)
 	}
 	return s, nil
+}
+
+// CheckFormat returns ErrFormat unless root's FORMAT is lg-store 1, and
+// fs.ErrNotExist when root has no FORMAT.
+func CheckFormat(root string) error {
+	formatFile := filepath.Join(root, "FORMAT")
+	got, err := os.ReadFile(formatFile)
+	if err != nil {
+		return err
+	}
+	if v := strings.TrimSuffix(string(got), "\n"); v != format {
+		return fmt.Errorf("%w: %s is %q; this lg reads %q", ErrFormat, formatFile, v, format)
+	}
+	return nil
 }
 
 func (s *Store) Data() string { return s.data }
