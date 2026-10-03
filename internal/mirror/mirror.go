@@ -71,7 +71,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 }
 
 func (m *Mirror) addJob(ctx context.Context, unit *store.Unit, job github.Job) error {
-	dir := layout.JobDir("", job.ID, job.Name)
+	dir := layout.JobDir(".", job.ID, job.Name)
 	if err := unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
 		return err
 	}
