@@ -1,7 +1,13 @@
 // Package cli declares lg's commands and maps their errors to exit codes.
 package cli
 
-type Deps struct{}
+import "io"
+
+type Deps struct {
+	Env    map[string]string
+	Stdout io.Writer
+	Stderr io.Writer
+}
 
 func RealDeps() Deps { return Deps{} }
 
