@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -82,7 +83,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 			Expect(os.ReadFile(jobDir(attempt1, strconv.FormatInt(j.ID, 10)) + "/job.json")).To(Equal(indented(job)))
 		}
 
-		rg := env.Sh(`rg -l '"head_sha": "1a51097' "$1"` + " sh " + env.Data())
+		rg := env.Sh(fmt.Sprintf(`rg -l '"head_sha": "1a51097' '%s'`, env.Data()))
 		Eventually(rg, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(strings.Split(string(rg.Out.Contents()), "\n")).To(ContainElement(filepath.Join(attempt1, "attempt.json")))
 	})
