@@ -32,4 +32,12 @@ var _ = Describe("Locations", Label("cli"), func() {
 		Entry("empty values count as unset", map[string]string{"LG_CONFIG": "", "XDG_CONFIG_HOME": "", "HOME": "/h"}, "/h/.config/lg/config.yaml"),
 		Entry("LG_HOME does not move it", map[string]string{"LG_HOME": "/lg", "HOME": "/h"}, "/h/.config/lg/config.yaml"),
 	)
+
+	It("puts state/ and tmp/ beside data/", func() {
+		roots, err := config.Locations(map[string]string{"LG_HOME": "/lg"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(roots.Data).To(Equal("/lg/data"))
+		Expect(roots.State).To(Equal("/lg/state"))
+		Expect(roots.Tmp).To(Equal("/lg/tmp"))
+	})
 })

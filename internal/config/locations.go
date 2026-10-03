@@ -5,6 +5,9 @@ import "path/filepath"
 
 type Roots struct {
 	Home       string
+	Data       string
+	State      string
+	Tmp        string
 	ConfigFile string
 }
 
