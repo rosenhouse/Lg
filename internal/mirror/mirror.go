@@ -21,7 +21,7 @@ type Mirror struct {
 	Host   string
 }
 
-// Cycle publishes every attempt of every listed run.
+// Cycle publishes attempt 1 of every listed run.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	runs, err := m.GitHub.ListRuns(ctx)
 	if err != nil {
@@ -29,10 +29,8 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 	}
 	for _, run := range runs {
 		runDir := layout.RunDir(layout.RepoDir(m.Data, m.Host, run.Repository.FullName), run.Run)
-		for n := 1; n <= run.RunAttempt; n++ {
-			if err := m.publishAttempt(ctx, run.ID, n, layout.AttemptDir(runDir, n)); err != nil {
-				return err
-			}
+		if err := m.publishAttempt(ctx, run.ID, 1, layout.AttemptDir(runDir, 1)); err != nil {
+			return err
 		}
 	}
 	return nil
