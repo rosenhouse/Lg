@@ -37,7 +37,7 @@ var _ = Describe("Locations", Label("cli"), func() {
 			Expect(err).To(MatchError(config.Error(msg)))
 		},
 		Entry("when nothing locates the store", map[string]string{"XDG_DATA_HOME": "rel"},
-			"cannot locate the store: set LG_HOME, XDG_DATA_HOME or HOME"),
+			"cannot locate the store: set LG_HOME, an absolute XDG_DATA_HOME or HOME"),
 		Entry("for a relative LG_HOME", map[string]string{"LG_HOME": "lgdata", "HOME": "/h"},
 			`LG_HOME must be an absolute path: "lgdata"`),
 		Entry("for an LG_HOME starting with ~", map[string]string{"LG_HOME": "~/lg", "HOME": "/h"},
@@ -66,7 +66,7 @@ var _ = Describe("File", Label("cli"), func() {
 			Expect(err).To(MatchError(config.Error(msg)))
 		},
 		Entry("when nothing locates the config file", map[string]string{"LG_HOME": "/lg"},
-			"cannot locate config.yaml: set LG_CONFIG, XDG_CONFIG_HOME or HOME"),
+			"cannot locate config.yaml: set LG_CONFIG, an absolute XDG_CONFIG_HOME or HOME"),
 		Entry("for a relative LG_CONFIG", map[string]string{"LG_CONFIG": "c.yaml", "HOME": "/h"},
 			`LG_CONFIG must be an absolute path: "c.yaml"`),
 		Entry("for a relative HOME", map[string]string{"HOME": "relhome"},

@@ -57,6 +57,9 @@ func resolve(env map[string]string, what string, sources ...source) (string, err
 	names := make([]string, len(sources))
 	for i, s := range sources {
 		names[i] = s.name
+		if s.xdg {
+			names[i] = "an absolute " + s.name
+		}
 		dir := env[s.name]
 		if dir == "" || (s.xdg && !filepath.IsAbs(dir)) {
 			continue
