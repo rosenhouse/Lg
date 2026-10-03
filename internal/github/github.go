@@ -75,7 +75,8 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, e
 	if err := h.getJSON(ctx, fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), &run.Raw); err != nil {
 		return Run{}, err
 	}
-	return run, json.Unmarshal(run.Raw, &run.Run)
+	err := json.Unmarshal(run.Raw, &run.Run)
+	return run, err
 }
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, error) {
