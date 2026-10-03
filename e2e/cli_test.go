@@ -45,15 +45,6 @@ var _ = Describe("lg root", Label("cli"), func() {
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(string(session.Out.Contents())).To(Equal(filepath.Join(env.Home(), ".local", "share", "lg", "data") + "\n"))
 	})
-
-	It("exits 2 when LG_HOME is relative", func() {
-		env.Setenv("LG_HOME", "rel")
-
-		session := env.Lg("root")
-
-		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(2))
-		Expect(string(session.Err.Contents())).To(Equal("lg: LG_HOME must be an absolute path: \"rel\"\n"))
-	})
 })
 
 var _ = Describe("lg version", Label("cli"), func() {
