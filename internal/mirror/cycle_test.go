@@ -58,6 +58,16 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
+	It("requests only the run listing and leaves tmp/ empty when the attempt is already on disk", func() {
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		before := len(fake.Requests())
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(fake.Requests()[before:]).To(ConsistOf(
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs")))
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+	})
+
 	It("publishes no attempt still in progress and requests none of its jobs", func() {
 		editJSON(filepath.Join(recording, "attempt-1", "attempt.json"), func(attempt map[string]any) {
 			attempt["status"] = "in_progress"
