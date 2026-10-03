@@ -46,4 +46,23 @@ var _ = Describe("Unit", Label("sync"), func() {
 		Expect(os.ReadFile(filepath.Join(target, "jobs/1_build/log.txt"))).To(Equal([]byte("\xef\xbb\xbflog")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
+
+	It("publishes the unit dir with the mode MkdirAll gives its siblings", func() {
+		Expect(s.Publish(unit, target)).To(Succeed())
+		sibling := filepath.Join(filepath.Dir(target), "sibling")
+		Expect(os.MkdirAll(sibling, 0o755)).To(Succeed())
+
+		want, err := os.Stat(sibling)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.Stat(target)).To(HaveField("Mode()", want.Mode()))
+	})
+
+	It("refuses to create a member twice", func() {
+		w, err := unit.Create("log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w.Close()).To(Succeed())
+
+		_, err = unit.Create("log.txt")
+		Expect(err).To(MatchError(os.ErrExist))
+	})
 })
