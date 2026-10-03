@@ -40,7 +40,7 @@ func (e *Env) Home() string { return e.home }
 func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 
 func (e *Env) Lg(args ...string) *gexec.Session {
-	cmd := exec.Command(e.lgPath, args...)
+	cmd := exec.CommandContext(ginkgo.GinkgoT().Context(), e.lgPath, args...)
 	for k, v := range e.vars {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

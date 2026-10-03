@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - forbidigo
+    - ginkgolinter
+    - gocritic
+    - misspell
+    - noctx
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.Now$
+          msg: use clock.Clock
+        - pattern: ^time\.Sleep$
+          msg: use clock.Clock
+    ginkgolinter:
+      forbid-focus-container: true
+    staticcheck:
+      dot-import-whitelist:
+        - github.com/onsi/ginkgo/v2
+        - github.com/onsi/gomega
+  exclusions:
+    rules:
+      - path: ^internal/clock/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

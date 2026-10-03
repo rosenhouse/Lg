@@ -51,7 +51,7 @@ func Main(args []string, deps Deps) (code int) {
 
 	ctx, err := parser.Parse(args)
 	if err != nil {
-		fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 		var parseErr *kong.ParseError
 		if errors.As(err, &parseErr) {
 			parser.Stdout = deps.Stderr
@@ -60,7 +60,7 @@ func Main(args []string, deps Deps) (code int) {
 		return 2
 	}
 	if err := ctx.Run(&deps); err != nil {
-		fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 		return 1
 	}
 	return 0
