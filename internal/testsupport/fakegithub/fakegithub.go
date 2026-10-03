@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -26,12 +27,15 @@ type Request struct {
 	Query  string
 }
 
+const recordedRepo = "rosenhouse/lg"
+
 // Server is an API host on 127.0.0.1 that redirects downloads to a blob host
 // addressed as localhost, as GitHub redirects them to another domain.
 type Server struct {
 	api, blob *httptest.Server
 
 	mu       sync.Mutex
+	runID    string
 	runDir   string
 	requests []Request
 }
@@ -53,12 +57,17 @@ func New() *Server {
 }
 
 func (s *Server) Load(runID int64, stage string) error {
-	dir := Recording(runID, stage)
+	return s.LoadDir(runID, Recording(runID, stage))
+}
+
+// LoadDir serves the recording in dir as run runID.
+func (s *Server) LoadDir(runID int64, dir string) error {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fmt.Errorf("no recording of run %d at %s: %s", runID, stage, dir)
+		return fmt.Errorf("no recording of run %d: %s", runID, dir)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.runID = strconv.FormatInt(runID, 10)
 	s.runDir = dir
 	return nil
 }
@@ -118,20 +127,45 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 func (s *Server) apiRoutes() http.Handler {
 	mux := http.NewServeMux()
 	const repo = "GET /repos/{owner}/{repo}/actions"
-	mux.HandleFunc(repo+"/runs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(repo+"/runs", ofRepo(func(w http.ResponseWriter, r *http.Request) {
 		s.serveJSON(w, r, `{"total_count":1,"workflow_runs":[%s]}`, "run.json")
-	})
-	mux.HandleFunc(repo+"/runs/{id}/attempts/{n}", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc(repo+"/runs/{id}/attempts/{n}", s.ofRun(func(w http.ResponseWriter, r *http.Request) {
 		s.serveJSON(w, r, "%s", "attempt-"+r.PathValue("n"), "attempt.json")
-	})
-	mux.HandleFunc(repo+"/runs/{id}/attempts/{n}/jobs", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc(repo+"/runs/{id}/attempts/{n}/jobs", s.ofRun(func(w http.ResponseWriter, r *http.Request) {
 		s.serveJSON(w, r, "%s", "attempt-"+r.PathValue("n"), "jobs.json")
-	})
-	mux.HandleFunc(repo+"/jobs/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc(repo+"/jobs/{id}/logs", ofRepo(func(w http.ResponseWriter, r *http.Request) {
 		blobURL := strings.Replace(s.blob.URL, "127.0.0.1", "localhost", 1) + "/logs/" + r.PathValue("id")
 		http.Redirect(w, r, blobURL, http.StatusFound)
-	})
+	}))
 	return mux
+}
+
+// ofRepo answers 404 for any repo but the recorded one, which GitHub matches case-insensitively.
+func ofRepo(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.PathValue("owner")+"/"+r.PathValue("repo"), recordedRepo) {
+			http.NotFound(w, r)
+			return
+		}
+		h(w, r)
+	}
+}
+
+// ofRun also answers 404 for any run but the loaded one.
+func (s *Server) ofRun(h http.HandlerFunc) http.HandlerFunc {
+	return ofRepo(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		runID := s.runID
+		s.mu.Unlock()
+		if r.PathValue("id") != runID {
+			http.NotFound(w, r)
+			return
+		}
+		h(w, r)
+	})
 }
 
 func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
