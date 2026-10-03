@@ -9,4 +9,4 @@ type Clock interface {
 
 type Real struct{}
 
-func (Real) After(d time.Duration) <-chan time.Time { return nil }
+func (Real) After(d time.Duration) <-chan time.Time { return time.After(d) }
