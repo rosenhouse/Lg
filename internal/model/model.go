@@ -10,6 +10,7 @@ type Run struct {
 	Path       string     `json:"path"`
 	HeadBranch string     `json:"head_branch"`
 	CreatedAt  time.Time  `json:"created_at"`
+	Status     string     `json:"status"`
 	RunAttempt int        `json:"run_attempt"`
 	Repository Repository `json:"repository"`
 }

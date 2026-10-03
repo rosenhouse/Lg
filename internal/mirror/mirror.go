@@ -24,7 +24,7 @@ type Mirror struct {
 	Repo   string
 }
 
-// Cycle publishes attempt 1 of every listed run.
+// Cycle publishes attempt 1 of every listed run once it has completed.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	runs, err := m.GitHub.ListRuns(ctx)
 	if err != nil {
@@ -47,6 +47,11 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 	attempt, err := m.GitHub.GetAttempt(ctx, runID, n)
 	if err != nil {
 		return err
+	}
+	// An attempt still running would be frozen with partial logs and with its
+	// queued jobs tombstoned as not_applicable.
+	if attempt.Status != "completed" {
+		return nil
 	}
 	jobs, err := m.GitHub.ListAttemptJobs(ctx, runID, n)
 	if err != nil {
