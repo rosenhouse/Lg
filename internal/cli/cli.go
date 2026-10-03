@@ -36,10 +36,25 @@ type commands struct {
 // kongExit carries Kong's exit code, as after --help, out of Parse.
 type kongExit int
 
+// errWriter remembers its first write error, which Kong reports as a ParseError.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	n, err := e.w.Write(p)
+	if e.err == nil {
+		e.err = err
+	}
+	return n, err
+}
+
 func Main(args []string, deps Deps) (code int) {
+	stdout := &errWriter{w: deps.Stdout}
 	parser := kong.Must(&commands{},
 		kong.Name("lg"),
-		kong.Writers(deps.Stdout, deps.Stderr),
+		kong.Writers(stdout, deps.Stderr),
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 	defer func() {
 		if r := recover(); r != nil {
@@ -52,6 +67,10 @@ func Main(args []string, deps Deps) (code int) {
 	}()
 
 	ctx, err := parser.Parse(args)
+	if stdout.err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", stdout.err)
+		return 1
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 		var parseErr *kong.ParseError

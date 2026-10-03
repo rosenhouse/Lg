@@ -38,6 +38,12 @@ var _ = Describe("Main", Label("cli"), func() {
 		Expect(stdout.String()).To(HavePrefix("Usage: lg <command>"))
 	})
 
+	It("exits 1 without usage when help cannot be written", func() {
+		code := cli.Main([]string{"--help"}, cli.Deps{Env: map[string]string{}, Stdout: failingWriter{}, Stderr: stderr})
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
 	It("exits 2 when no command is given", func() {
 		Expect(run(map[string]string{})).To(Equal(2))
 		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"root\", \"version\"\nUsage: lg <command>"))
