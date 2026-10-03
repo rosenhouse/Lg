@@ -24,10 +24,13 @@ var _ = Describe("Slug", Label("sync"), func() {
 		Entry(nil, "日本", "none"),
 	)
 
-	It("truncates to 60 bytes and drops a - that truncation leaves at the end", func() {
-		name := strings.Repeat("a", 59) + "-bcd"
-		Expect(layout.Slug(name)).To(Equal(strings.Repeat("a", 59)))
-	})
+	DescribeTable("truncates to 60 bytes and drops a - or . that truncation leaves at the end",
+		func(name string) {
+			Expect(layout.Slug(name)).To(Equal(strings.Repeat("a", 59)))
+		},
+		Entry("a - at byte 60", strings.Repeat("a", 59)+"-bcd"),
+		Entry("a . at byte 60", strings.Repeat("a", 59)+".bcd"),
+	)
 
 	It("turns the recorded unicode job name into 60 bytes", func() {
 		slug := layout.Slug("ünïcode / slash: job with a very long name that keeps going well past sixty characters")
