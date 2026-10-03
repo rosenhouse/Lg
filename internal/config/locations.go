@@ -10,12 +10,29 @@ type Roots struct {
 
 // Locations resolves lg's roots from env, where an empty value counts as unset.
 func Locations(env map[string]string) (Roots, error) {
-	switch {
-	case env["LG_HOME"] != "":
-		return Roots{Home: env["LG_HOME"]}, nil
-	case env["XDG_DATA_HOME"] != "":
-		return Roots{Home: filepath.Join(env["XDG_DATA_HOME"], "lg")}, nil
-	default:
-		return Roots{Home: filepath.Join(env["HOME"], ".local", "share", "lg")}, nil
+	return Roots{
+		Home: firstSet(env["LG_HOME"],
+			under(env["XDG_DATA_HOME"], "lg"),
+			under(env["HOME"], ".local", "share", "lg")),
+		ConfigFile: firstSet(env["LG_CONFIG"],
+			under(env["XDG_CONFIG_HOME"], "lg", "config.yaml"),
+			under(env["HOME"], ".config", "lg", "config.yaml")),
+	}, nil
+}
+
+// under joins dir and elems, or returns "" when dir is unset.
+func under(dir string, elems ...string) string {
+	if dir == "" {
+		return ""
 	}
+	return filepath.Join(append([]string{dir}, elems...)...)
+}
+
+func firstSet(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
