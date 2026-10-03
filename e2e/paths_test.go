@@ -47,6 +47,9 @@ var _ = Describe("lg paths", Label("sync"), func() {
 	It("piped to `xargs -0 -r grep -l 'LG_MARKER flaky failure attempt=1'` prints only the log of job 111221289888", func() {
 		grep := env.Sh("lg paths -0 | xargs -0 -r grep -l 'LG_MARKER flaky failure attempt=1'")
 		Eventually(grep, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(grep.Out.Contents())).To(Equal(jobDir(filepath.Dir(filepath.Dir(filepath.Dir(logs[0]))), "111221289888") + "/log.txt\n"))
+		flaky, err := filepath.Glob(filepath.Join(env.Data(), "*/*/*/runs/*/*/attempt-1/jobs/111221289888_*/log.txt"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(flaky).To(HaveLen(1))
+		Expect(string(grep.Out.Contents())).To(Equal(flaky[0] + "\n"))
 	})
 })
