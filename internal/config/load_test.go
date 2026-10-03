@@ -38,6 +38,10 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("empty name", "rosenhouse/"),
 		Entry("three parts", "a/b/c"),
 		Entry("a space", "rosen house/lg"),
+		Entry("dot segments", "../.."),
+		Entry("dot owner", "./lg"),
+		Entry("dot name", "rosenhouse/."),
+		Entry("dot-dot name", "rosenhouse/.."),
 	)
 
 	It("lowercases host", func() {
@@ -57,14 +61,19 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("a parent dir", ".."),
 	)
 
-	DescribeTable("rejects an api_url that is not an absolute http or https URL",
-		func(apiURL string) {
+	DescribeTable("rejects an api_url that is not an absolute http or https URL without user info, query or fragment, hiding any password",
+		func(apiURL, shown string) {
 			_, err := config.Load(write("repo: rosenhouse/lg\napi_url: '" + apiURL + "'\n"))
-			Expect(err).To(MatchError(config.Error(`api_url must be an http or https URL: "` + apiURL + `"`)))
+			Expect(err).To(MatchError(config.Error(`api_url must be an http or https URL with no user info, query or fragment: "` + shown + `"`)))
 		},
-		Entry("no scheme", "127.0.0.1:18301"),
-		Entry("another scheme", "ftp://127.0.0.1"),
-		Entry("no host", "http://"),
+		Entry("no scheme", "127.0.0.1:18301", "127.0.0.1:18301"),
+		Entry("another scheme", "ftp://127.0.0.1", "ftp://127.0.0.1"),
+		Entry("no host", "http://", "http://"),
+		Entry("user info", "http://user:s3cr3t@127.0.0.1/api/v3", "http://user:xxxxx@127.0.0.1/api/v3"),
+		Entry("a query", "http://127.0.0.1?x=1", "http://127.0.0.1?x=1"),
+		Entry("an empty query", "http://127.0.0.1?", "http://127.0.0.1?"),
+		Entry("a fragment", "http://127.0.0.1#frag", "http://127.0.0.1#frag"),
+		Entry("an empty fragment", "http://127.0.0.1#", "http://127.0.0.1#"),
 	)
 
 	It("rejects an unknown key", func() {
