@@ -107,6 +107,16 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		))
 	})
 
+	It("refuses a jobs listing whose total_count exceeds the jobs on its one page", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"total_count":2,"jobs":[{"id":1}]}`))
+		}))
+		DeferCleanup(server.Close)
+
+		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r").ListAttemptJobs(context.Background(), 1, 1)
+		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: 1 of 2 jobs on the first page"))
+	})
+
 	It("returns an error naming the URL of a truncated body", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Length", "100")
