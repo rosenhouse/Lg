@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -39,16 +40,27 @@ func Load(path string) (Config, error) {
 	if !hostName.MatchString(cfg.Host) {
 		return Config{}, Error(fmt.Sprintf("host must be a host name: %q", cfg.Host))
 	}
-	if !ownerName.MatchString(cfg.Repo) {
+	if !ownerName.MatchString(cfg.Repo) || slices.ContainsFunc(strings.Split(cfg.Repo, "/"), isDots) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	}
-	if cfg.APIURL != "" && !httpURL(cfg.APIURL) {
-		return Config{}, Error(fmt.Sprintf("api_url must be an http or https URL: %q", cfg.APIURL))
+	if cfg.APIURL != "" {
+		if shown, ok := baseURL(cfg.APIURL); !ok {
+			return Config{}, Error(fmt.Sprintf("api_url must be an http or https URL with no user info, query or fragment: %q", shown))
+		}
 	}
 	return cfg, nil
 }
 
-func httpURL(s string) bool {
+func isDots(s string) bool { return s == "." || s == ".." }
+
+// baseURL reports whether lg can append API paths to s, and shows s with any password hidden.
+func baseURL(s string) (shown string, ok bool) {
 	u, err := url.Parse(s)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if err != nil {
+		return s, false
+	}
+	if u.User != nil {
+		return u.Redacted(), false
+	}
+	return s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
 }
