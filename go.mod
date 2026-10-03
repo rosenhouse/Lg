@@ -5,6 +5,7 @@ go 1.25.0
 tool github.com/onsi/ginkgo/v2/ginkgo
 
 require (
+	github.com/alecthomas/kong v1.16.1
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
 )
