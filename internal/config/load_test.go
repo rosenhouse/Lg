@@ -44,6 +44,15 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("dot-dot name", "rosenhouse/.."),
 	)
 
+	DescribeTable("treats a file with no YAML document as having no repo",
+		func(yaml string) {
+			_, err := config.Load(write(yaml))
+			Expect(err).To(MatchError(config.Error(`repo must be owner/name: ""`)))
+		},
+		Entry("empty", ""),
+		Entry("only a comment", "# repo: rosenhouse/lg\n"),
+	)
+
 	It("lowercases host", func() {
 		cfg, err := config.Load(write("host: GitHub.com\nrepo: rosenhouse/lg\n"))
 		Expect(err).NotTo(HaveOccurred())
