@@ -17,3 +17,24 @@ type Run struct {
 type Repository struct {
 	FullName string `json:"full_name"`
 }
+
+type Job struct {
+	ID         int64   `json:"id"`
+	Name       string  `json:"name"`
+	RunnerName *string `json:"runner_name"`
+	Steps      []Step  `json:"steps"`
+}
+
+type Step struct {
+	Name string `json:"name"`
+}
+
+// JobKind says whether a job produced a log.
+type JobKind string
+
+const (
+	Ran           JobKind = "ran"
+	NotApplicable JobKind = "not_applicable"
+)
+
+func Classify(Job) JobKind { return "" }
