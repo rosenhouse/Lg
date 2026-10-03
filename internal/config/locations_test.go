@@ -40,4 +40,18 @@ var _ = Describe("Locations", Label("cli"), func() {
 		Expect(roots.State).To(Equal("/lg/state"))
 		Expect(roots.Tmp).To(Equal("/lg/tmp"))
 	})
+
+	DescribeTable("fails when a root falls back to an unset HOME",
+		func(env map[string]string) {
+			_, err := config.Locations(env)
+			Expect(err).To(MatchError(ContainSubstring("HOME is not set")))
+		},
+		Entry("for the store", map[string]string{"LG_CONFIG": "/c.yaml"}),
+		Entry("for the config file", map[string]string{"LG_HOME": "/lg"}),
+	)
+
+	It("needs no HOME when both roots are set", func() {
+		_, err := config.Locations(map[string]string{"LG_HOME": "/lg", "XDG_CONFIG_HOME": "/xdg"})
+		Expect(err).NotTo(HaveOccurred())
+	})
 })
