@@ -10,7 +10,7 @@ import (
 )
 
 var _ = Describe("Slug", Label("sync"), func() {
-	DescribeTable("keeps [A-Za-z0-9.-], turns other bytes into one -, and trims - and . from the ends",
+	DescribeTable("maps bytes outside [A-Za-z0-9.-] to -, collapses runs of -, and trims - and . from the ends",
 		func(name, slug string) {
 			Expect(layout.Slug(name)).To(Equal(slug))
 		},
@@ -19,6 +19,7 @@ var _ = Describe("Slug", Label("sync"), func() {
 		Entry(nil, "Release/3.x", "Release-3.x"),
 		Entry(nil, "", "none"),
 		Entry(nil, "--a__b..", "a-b"),
+		Entry(nil, "Build - Linux", "Build-Linux"),
 		Entry(nil, "az-AZ.09", "az-AZ.09"),
 		Entry(nil, "日本", "none"),
 	)

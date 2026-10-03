@@ -13,8 +13,8 @@ import (
 
 const maxSlug = 60
 
-// Slug keeps the bytes [A-Za-z0-9.-] of name, turns each run of other bytes
-// into one -, trims - and . from both ends, and truncates to 60 bytes.
+// Slug maps each byte outside [A-Za-z0-9.-] to -, collapses runs of -, trims
+// - and . from both ends, truncates to 60 bytes, and gives none when nothing is left.
 func Slug(name string) string {
 	var b strings.Builder
 	for i := 0; i < len(name); i++ {

@@ -19,14 +19,14 @@ var _ = Describe("RepoDir", Label("sync"), func() {
 var _ = Describe("RunDir", Label("sync"), func() {
 	run := model.Run{
 		ID:         37129390741,
-		Name:       "lg fixture",
+		Name:       "CI",
 		Path:       ".github/workflows/lg-fixture.yml",
 		HeadBranch: "feat/x",
 		CreatedAt:  time.Date(2026, 10, 3, 23, 30, 0, 0, time.FixedZone("-05:00", -5*60*60)),
 	}
 
 	It("is runs/<UTC date of created_at>/<id>_<workflow slug>_<branch slug>", func() {
-		Expect(layout.RunDir("/r", run)).To(Equal("/r/runs/2026-10-04/37129390741_lg-fixture_feat-x"))
+		Expect(layout.RunDir("/r", run)).To(Equal("/r/runs/2026-10-04/37129390741_CI_feat-x"))
 	})
 
 	It("slugs the workflow path's basename without its extension when the run has no name", func() {
