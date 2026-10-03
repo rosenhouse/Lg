@@ -57,6 +57,17 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("a path out of the store", "../../../../escaped"),
 		Entry("no name", ""),
 	)
+
+	It("publishes no attempt still in progress and requests none of its jobs", func() {
+		editJSON(filepath.Join(recording, "attempt-1", "attempt.json"), func(attempt map[string]any) {
+			attempt["status"] = "in_progress"
+			attempt["conclusion"] = nil
+		})
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(filepath.Join(root, "data")).NotTo(BeAnExistingFile())
+		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("/jobs"))))
+	})
 })
 
 // editJSON rewrites a recorded JSON object in place.
