@@ -13,10 +13,14 @@ type Roots struct {
 
 // Locations resolves lg's roots from env, where an empty value counts as unset.
 func Locations(env map[string]string) (Roots, error) {
+	home := firstSet(env["LG_HOME"],
+		under(env["XDG_DATA_HOME"], "lg"),
+		under(env["HOME"], ".local", "share", "lg"))
 	return Roots{
-		Home: firstSet(env["LG_HOME"],
-			under(env["XDG_DATA_HOME"], "lg"),
-			under(env["HOME"], ".local", "share", "lg")),
+		Home:  home,
+		Data:  filepath.Join(home, "data"),
+		State: filepath.Join(home, "state"),
+		Tmp:   filepath.Join(home, "tmp"),
 		ConfigFile: firstSet(env["LG_CONFIG"],
 			under(env["XDG_CONFIG_HOME"], "lg", "config.yaml"),
 			under(env["HOME"], ".config", "lg", "config.yaml")),
