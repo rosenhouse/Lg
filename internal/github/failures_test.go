@@ -25,6 +25,8 @@ var hopTimeout = SpecTimeout(5 * time.Second)
 
 var shortTimeouts = github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: 200 * time.Millisecond, BodyIdle: 200 * time.Millisecond}
 
+const blobSignature = "lg-test-secret"
+
 // hops serves the log of job 1 as GitHub does: the API redirects to a blob
 // host, which answers blob.
 func hops(api, blob http.HandlerFunc) *github.HTTP {
@@ -33,12 +35,12 @@ func hops(api, blob http.HandlerFunc) *github.HTTP {
 	DeferCleanup(blobHost.Close)
 	if api == nil {
 		api = func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, blobHost.URL+"/log", http.StatusFound)
+			http.Redirect(w, r, blobHost.URL+"/log?sig="+blobSignature, http.StatusFound)
 		}
 	}
 	apiHost := httptest.NewServer(api)
 	DeferCleanup(apiHost.Close)
-	return github.NewHTTP(github.NewHTTPClient(shortTimeouts), mustParse(apiHost.URL), "o/r", "lg-test-token")
+	return github.NewHTTP(github.NewTransport(shortTimeouts), mustParse(apiHost.URL), "o/r", "lg-test-token")
 }
 
 func answer(status int, body string) http.HandlerFunc {
@@ -164,8 +166,22 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(BeTransient())
 		Expect(err.Error()).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: `))
-		Expect(err.Error()).NotTo(ContainSubstring("/log\""))
+		Expect(err.Error()).NotTo(ContainSubstring(blobSignature))
 	})
+
+	DescribeTable("never names a redirect Location it cannot parse",
+		func(ctx SpecContext, location string) {
+			client := hops(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", location)
+				w.WriteHeader(http.StatusFound)
+			}, nil)
+
+			_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			Expect(err).To(MatchError(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: unparsable redirect Location$`)))
+		},
+		Entry("a space in the host", "http://bad host/log?sig="+blobSignature, hopTimeout),
+		Entry("a bad escape in the path", "http://localhost:1/log%zz?sig="+blobSignature, hopTimeout),
+	)
 
 	DescribeTable("leaves a parent's cancellation non-Transient",
 		func(cancelled func(cancel context.CancelFunc) (api, blob http.HandlerFunc, w io.Writer)) {
@@ -188,11 +204,9 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	)
 })
 
-var _ = Describe("NewHTTPClient", Label("failures"), func() {
-	It("sets the TLS-handshake and response-header timeouts and no total deadline", func() {
-		client := github.NewHTTPClient(github.DefaultTimeouts)
-		Expect(client.Timeout).To(BeZero())
-		transport, bodyIdle := github.TransportOf(client)
+var _ = Describe("NewTransport", Label("failures"), func() {
+	It("sets the TLS-handshake and response-header timeouts", func() {
+		transport, bodyIdle := github.TransportOf(github.NewTransport(github.DefaultTimeouts))
 		Expect(transport.TLSHandshakeTimeout).To(Equal(10 * time.Second))
 		Expect(transport.ResponseHeaderTimeout).To(Equal(30 * time.Second))
 		Expect(bodyIdle).To(Equal(60 * time.Second))
@@ -228,7 +242,7 @@ var _ = Describe("NewHTTPClient", Label("failures"), func() {
 		DeferCleanup(server.Close)
 		timeouts := shortTimeouts
 		timeouts.Dial = time.Nanosecond
-		client := github.NewHTTP(github.NewHTTPClient(timeouts), mustParse(server.URL), "o/r", "lg-test-token")
+		client := github.NewHTTP(github.NewTransport(timeouts), mustParse(server.URL), "o/r", "lg-test-token")
 
 		_, err := client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("dial tcp 127.0.0.1:")))
@@ -242,7 +256,7 @@ var _ = Describe("NewHTTPClient", Label("failures"), func() {
 		DeferCleanup(silent.Close)
 		timeouts := shortTimeouts
 		timeouts.TLSHandshake = 200 * time.Millisecond
-		client := github.NewHTTP(github.NewHTTPClient(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token")
+		client := github.NewHTTP(github.NewTransport(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token")
 
 		_, err = client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("TLS handshake timeout")))

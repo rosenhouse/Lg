@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TransportOf(c *http.Client) (*http.Transport, time.Duration) {
-	t := c.Transport.(*idleTransport)
+func TransportOf(rt http.RoundTripper) (*http.Transport, time.Duration) {
+	t := rt.(*idleTransport)
 	return t.base, t.bodyIdle
 }

@@ -48,14 +48,14 @@ func InProcess() *InProcessEnv {
 	api, err := url.Parse(fake.URL())
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	clk := clock.NewFake(DefaultNow)
-	client := github.NewHTTPClient(ShortTimeouts)
+	transport := github.NewTransport(ShortTimeouts)
 	return &InProcessEnv{
 		Store: s,
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{
 			Tokens:    staticToken(fakegh.Token),
-			NewGitHub: func(token string) github.Client { return github.NewHTTP(client, api, "rosenhouse/lg", token) },
+			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token) },
 			Store:     s,
 			Host:      "github.com",
 			Repo:      "rosenhouse/lg",

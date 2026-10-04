@@ -59,7 +59,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		m = mirror.Mirror{
 			Tokens: tokens,
 			NewGitHub: func(token string) github.Client {
-				return github.NewHTTP(http.DefaultClient, mustParse(fake.URL()), "rosenhouse/lg", token)
+				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token)
 			},
 			Store:    s,
 			Host:     "github.com",

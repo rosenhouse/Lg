@@ -64,13 +64,13 @@ type Timeouts struct {
 
 var DefaultTimeouts = Timeouts{Dial: 10 * time.Second, TLSHandshake: 10 * time.Second, ResponseHeader: 30 * time.Second, BodyIdle: time.Minute}
 
-func NewHTTPClient(t Timeouts) *http.Client {
+func NewTransport(t Timeouts) http.RoundTripper {
 	dialer := &net.Dialer{Timeout: t.Dial}
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.DialContext = dialer.DialContext
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
-	return &http.Client{Transport: &idleTransport{base: base, bodyIdle: t.BodyIdle}}
+	return &idleTransport{base: base, bodyIdle: t.BodyIdle}
 }
 
 // idleTransport cancels a request once its body has sent nothing for bodyIdle.
@@ -154,31 +154,17 @@ type Source struct {
 	Pages  int
 }
 
+// HTTP sends requests straight to a transport, so that only lg follows
+// redirects and no error names a blob URL.
 type HTTP struct {
-	client  *http.Client
-	api     url.URL
-	repoURL string
-	token   string
+	transport http.RoundTripper
+	api       url.URL
+	repoURL   string
+	token     string
 }
 
-func NewHTTP(client *http.Client, api *url.URL, repo, token string) *HTTP {
-	h := &HTTP{api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
-	withRedirects := *client
-	withRedirects.CheckRedirect = h.checkRedirect
-	h.client = &withRedirects
-	return h
-}
-
-// checkRedirect keeps the token on the API host. Go's own rule would send it
-// to a blob host that differs only by port or is a subdomain.
-func (h *HTTP) checkRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return errors.New("stopped after 10 redirects")
-	}
-	if !h.onAPIHost(req.URL) {
-		req.Header.Del("Authorization")
-	}
-	return nil
+func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string) *HTTP {
+	return &HTTP{transport: transport, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
@@ -303,21 +289,8 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 }
 
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
+	resp, err := h.follow(ctx, rawURL)
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "lg/"+version.Version)
-	req.Header.Set("Authorization", "Bearer "+h.token)
-	resp, err := h.client.Do(req)
-	if err != nil {
-		// A *url.Error would name the blob URL, whose query is a credential.
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			err = urlErr.Err
-		}
 		err = fmt.Errorf("%s: %w", rawURL, err)
 		if ctx.Err() != nil {
 			return err
@@ -338,6 +311,56 @@ func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response)
 		return err
 	}
 	return nil
+}
+
+// follow GETs rawURL and follows its redirects. Its errors never name a
+// redirect target, since a blob URL's query is a credential.
+func (h *HTTP) follow(ctx context.Context, rawURL string) (*http.Response, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	for range maxRequests {
+		resp, err := h.do(ctx, u)
+		if err != nil {
+			return nil, err
+		}
+		location := resp.Header.Get("Location")
+		if !isRedirect(resp.StatusCode) || location == "" {
+			return resp, nil
+		}
+		_ = resp.Body.Close()
+		if u, err = u.Parse(location); err != nil {
+			return nil, errors.New("unparsable redirect Location")
+		}
+	}
+	return nil, fmt.Errorf("stopped after %d redirects", maxRequests)
+}
+
+const maxRequests = 10
+
+func isRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	}
+	return false
+}
+
+// do sends the token only to the API host. Go's own rule would send it to a
+// blob host that differs only by port or is a subdomain.
+func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "lg/"+version.Version)
+	if h.onAPIHost(u) {
+		req.Header.Set("Authorization", "Bearer "+h.token)
+	}
+	return h.transport.RoundTrip(req)
 }
 
 // statusError classifies a failed response by the hop that sent it.
