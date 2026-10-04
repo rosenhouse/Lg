@@ -44,11 +44,17 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("bare", "0", Label("failures")),
 	)
 
-	It("rejects a log_grace with no unit", Label("failures"), func() {
-		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: 3600\n"))
-		Expect(err).To(MatchError(HaveSuffix(`config.yaml: line 2: "3600" is not a duration such as 1h or 0s`)))
-		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
-	})
+	DescribeTable("rejects a log_grace that is not a duration",
+		func(value, message string) {
+			_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: " + value + "\n"))
+			Expect(err).To(MatchError(HaveSuffix("config.yaml: line 2: " + message)))
+			Expect(err).To(BeAssignableToTypeOf(config.Error("")))
+		},
+		Entry("with no unit", "3600", `time: missing unit in duration "3600"`, Label("failures")),
+		Entry("out of range", "3000000h", `time: invalid duration "3000000h"`, Label("failures")),
+		Entry("a sequence", "[1h]", "want a duration such as 1h, not !!seq", Label("failures")),
+		Entry("a mapping", "{a: 1}", "want a duration such as 1h, not !!map", Label("failures")),
+	)
 
 	It("rejects a negative log_grace", Label("failures"), func() {
 		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: -1m\n"))

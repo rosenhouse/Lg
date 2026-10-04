@@ -28,9 +28,12 @@ type Config struct {
 type Duration time.Duration
 
 func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: want a duration such as 1h, not %s", node.Line, node.ShortTag())
+	}
 	parsed, err := time.ParseDuration(node.Value)
-	if node.Kind != yaml.ScalarNode || err != nil {
-		return fmt.Errorf("line %d: %q is not a duration such as 1h or 0s", node.Line, node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: %w", node.Line, err)
 	}
 	*d = Duration(parsed)
 	return nil
