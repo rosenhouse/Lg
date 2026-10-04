@@ -149,6 +149,18 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
 	}, cycleTimeout)
+
+	It("still publishes every attempt and the other run's artifacts when the failure is in an artifacts listing", Label("artifacts"), func(ctx SpecContext) {
+		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
+			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusBadGateway})
+
+			Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+			Expect(env.ArtifactDirs(other)).To(HaveLen(4))
+			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
+			Expect(env.AttemptDirs(other)).To(HaveLen(1))
+			Expect(env.AttemptDirs(failing)).To(HaveLen(1))
+		})
+	}, cycleTimeout)
 })
 
 // skipsLaterAttempts checks that a 404 at match in attempt 1 of a run with
