@@ -37,9 +37,9 @@ func Discover(ctx context.Context, gh github.Client, from, to time.Time) ([]gith
 	return append(newer, older...), nil
 }
 
-// Merge joins listings into one, oldest first by created_at then id, keeping
+// merge joins listings into one, oldest first by created_at then id, keeping
 // the first of a run that several list.
-func Merge(listings ...[]github.Run) []github.Run {
+func merge(listings ...[]github.Run) []github.Run {
 	seen := map[int64]bool{}
 	var merged []github.Run
 	for _, listing := range listings {
@@ -62,10 +62,10 @@ var nonTerminal = []string{"in_progress", "queued", "requested", "waiting", "pen
 // rerunWindow is how long GitHub allows re-running a run.
 const rerunWindow = 30 * 24 * time.Hour
 
-// RescanWindow is [now−min(30d, retention), now−backfill]: the runs a rerun
+// rescanWindow is [now−min(30d, retention), now−backfill]: the runs a rerun
 // can still change that the backfill window does not list. It is empty when
 // the backfill window covers them.
-func RescanWindow(now time.Time, backfill, retention time.Duration) (from, to time.Time, ok bool) {
+func rescanWindow(now time.Time, backfill, retention time.Duration) (from, to time.Time, ok bool) {
 	lookback := min(rerunWindow, retention)
 	if backfill >= lookback {
 		return time.Time{}, time.Time{}, false
@@ -125,7 +125,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		return discovery{}, fmt.Errorf("run %d belongs to %q, not %q", listed[i].ID, listed[i].Repository.FullName, repo.FullName)
 	}
 	d := discovery{rescannedAt: rescannedAt, failed: failed, discarded: discarded}
-	for _, run := range Merge(listed, p.unlisted(listed, repo)) {
+	for _, run := range merge(listed, p.unlisted(listed, repo)) {
 		dir, err := m.Store.FindRunDir(m.runDir(repo, run))
 		if err != nil {
 			return discovery{}, err
@@ -149,7 +149,7 @@ func ofRepo(run github.Run, repo github.Repo) bool {
 // record from the future, after a clock step, does not delay it. Runs not
 // on disk are left alone. The cycle records the rescan once it finishes.
 func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo, now time.Time) (onDisk []github.Run, rescannedAt time.Time, discarded, err error) {
-	from, to, ok := RescanWindow(now, m.Backfill, m.Retention)
+	from, to, ok := rescanWindow(now, m.Backfill, m.Retention)
 	if !ok {
 		return nil, time.Time{}, nil, nil
 	}

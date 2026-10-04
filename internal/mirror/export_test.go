@@ -7,8 +7,10 @@ import (
 )
 
 var (
-	RunScoped   = runScoped
-	NonTerminal = nonTerminal
+	RunScoped    = runScoped
+	NonTerminal  = nonTerminal
+	Merge        = merge
+	RescanWindow = rescanWindow
 )
 
 // Retry is an artifact of a retry set, with the run_attempt of its origin.
