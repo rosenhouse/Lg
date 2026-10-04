@@ -48,6 +48,10 @@ func readZipTombstone(env *harness.InProcessEnv, runID int64, artifactID string)
 	return tombstone
 }
 
+func zipURL(env *harness.InProcessEnv, artifactID string) string {
+	return env.Fake.URL() + "/repos/rosenhouse/lg/actions/artifacts/" + artifactID + "/zip"
+}
+
 func requestedZip(env *harness.InProcessEnv, artifactID string) bool {
 	for _, r := range env.Fake.Requests() {
 		if strings.HasSuffix(r.Path, "/artifacts/"+artifactID+"/zip") {
@@ -111,6 +115,7 @@ var _ = Describe("mirror.Cycle with artifact_max_bytes 700", Label("artifacts"),
 			HaveKeyWithValue("reason", "too_large"),
 			HaveKeyWithValue("http_status", BeNil()),
 			HaveKeyWithValue("message", ContainSubstring("751")),
+			HaveKeyWithValue("url", zipURL(env, passArtifact)),
 		))
 		Expect(requestedZip(env, passArtifact)).To(BeFalse())
 		Expect(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip")).To(BeARegularFile())
@@ -125,7 +130,11 @@ var _ = Describe("mirror.Cycle", Label("artifacts"), func() {
 		env.Fake.Fail("blob", flakyReportBlob, fakegithub.Fault{Status: http.StatusOK, Body: strings.Repeat("x", 701)})
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "too_large"))
+		Expect(readZipTombstone(env, runID, flakyReport)).To(SatisfyAll(
+			HaveKeyWithValue("reason", "too_large"),
+			HaveKeyWithValue("message", ContainSubstring("700")),
+			HaveKeyWithValue("url", zipURL(env, flakyReport)),
+		))
 		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
 	}, cycleTimeout)
 })
@@ -140,6 +149,7 @@ var _ = Describe("mirror.Cycle when the listing says expired: true", Label("arti
 		Expect(readZipTombstone(env, cloneID, "1011275917910")).To(SatisfyAll(
 			HaveKeyWithValue("reason", "expired"),
 			HaveKeyWithValue("http_status", BeNil()),
+			HaveKeyWithValue("url", zipURL(env, "1011275917910")),
 		))
 		Expect(requestedZip(env, "1011275917910")).To(BeFalse())
 	}, cycleTimeout)
@@ -156,7 +166,7 @@ var _ = DescribeTable("mirror.Cycle when a zip fails permanently writes artifact
 		Expect(readZipTombstone(env, runID, expiresIn1Day)).To(SatisfyAll(
 			HaveKeyWithValue("reason", reason),
 			HaveKeyWithValue("http_status", BeEquivalentTo(status)),
-			HaveKeyWithValue("url", env.Fake.URL()+"/repos/rosenhouse/lg/actions/artifacts/"+expiresIn1Day+"/zip"),
+			HaveKeyWithValue("url", zipURL(env, expiresIn1Day)),
 		))
 	},
 	Entry("410: expired", http.StatusGone, harness.DefaultNow(), "expired", cycleTimeout),
