@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
@@ -173,7 +174,19 @@ func nextLink(header string) string {
 }
 
 func (h *HTTP) onAPIHost(u *url.URL) bool {
-	return u.Host != "" && u.Scheme == h.api.Scheme && u.Host == h.api.Host
+	return u.Host != "" && u.Scheme == h.api.Scheme &&
+		strings.EqualFold(u.Hostname(), h.api.Hostname()) && port(u) == port(&h.api)
+}
+
+func port(u *url.URL) string {
+	switch {
+	case u.Port() != "":
+		return u.Port()
+	case u.Scheme == "https":
+		return "443"
+	default:
+		return "80"
+	}
 }
 
 func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {

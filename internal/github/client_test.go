@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -148,23 +149,43 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(fake.Requests()).To(HaveLen(14))
 	})
 
-	It("refuses a Link next to another host without requesting it", Label("transport"), func() {
-		var foreign []string
-		other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			foreign = append(foreign, r.URL.String())
-		}))
-		DeferCleanup(other.Close)
-		next := other.URL + "/repositories/1/actions/runs?page=2"
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Link", "<"+next+`>; rel="next"`)
-			_, _ = w.Write([]byte(`{"total_count":2,"workflow_runs":[{"id":1}]}`))
-		}))
-		DeferCleanup(server.Close)
+	DescribeTable("follows Link next only on the API host's scheme, host and port", Label("transport"),
+		func(apiURL, next string, onAPIHost bool) {
+			var requests []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.URL.String())
+				if len(requests) == 1 {
+					w.Header().Set("Link", "<"+next+`>; rel="next"`)
+				}
+				_, _ = w.Write([]byte(`{"total_count":2,"workflow_runs":[{"id":1}]}`))
+			}))
+			DeferCleanup(server.Close)
+			everyHostIsServer := &http.Client{Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+				},
+			}}
 
-		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").ListRuns(context.Background())
-		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs?per_page=100: Link next " + next + " is not on the API host"))
-		Expect(foreign).To(BeEmpty())
-	})
+			runs, err := github.NewHTTP(everyHostIsServer, apiURL, "o/r", "lg-test-token").ListRuns(context.Background())
+
+			if onAPIHost {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(runs).To(HaveLen(2))
+				Expect(requests).To(Equal([]string{"/repos/o/r/actions/runs?per_page=100", "/repositories/1/actions/runs?page=2"}))
+			} else {
+				Expect(err).To(MatchError(apiURL + "/repos/o/r/actions/runs?per_page=100: Link next " + next + " is not on the API host"))
+				Expect(requests).To(HaveLen(1))
+			}
+		},
+		Entry("the same host", "http://api.example", "http://api.example/repositories/1/actions/runs?page=2", true),
+		Entry("api_url in upper case", "http://API.EXAMPLE", "http://api.example/repositories/1/actions/runs?page=2", true),
+		Entry("api_url with the default port", "http://api.example:80", "http://api.example/repositories/1/actions/runs?page=2", true),
+		Entry("the Link with the default port", "http://api.example", "http://api.example:80/repositories/1/actions/runs?page=2", true),
+		Entry("another port", "http://api.example", "http://api.example:8080/repositories/1/actions/runs?page=2", false),
+		Entry("another scheme", "http://api.example:8443", "https://api.example:8443/repositories/1/actions/runs?page=2", false),
+		Entry("another host", "http://api.example", "http://blob.example/repositories/1/actions/runs?page=2", false),
+		Entry("a subdomain", "http://api.example", "http://blob.api.example/repositories/1/actions/runs?page=2", false),
+	)
 
 	It("refuses a Link next that repeats an earlier page without requesting it again", Label("transport"), func() {
 		var requests int
