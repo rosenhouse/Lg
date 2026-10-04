@@ -70,6 +70,7 @@ var _ = Describe("Load", Label("sync"), func() {
 		func(value string, bytes config.Bytes) {
 			Expect(config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + value + "\n"))).To(HaveField("ArtifactMaxBytes", bytes))
 		},
+		Entry("one byte", "1", config.Bytes(1), Label("artifacts")),
 		Entry("bare", "700", config.Bytes(700), Label("artifacts")),
 		Entry("B", "700B", config.Bytes(700), Label("artifacts")),
 		Entry("KB", "2KB", config.Bytes(2_000), Label("artifacts")),
