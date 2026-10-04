@@ -36,12 +36,13 @@ func copyFile(from, to string) {
 	Expect(os.WriteFile(to, data, 0o755)).To(Succeed())
 }
 
-// record runs dir's record.sh against fake.
-func record(fake *fakegithub.Server, dir string, run int64, label string) (output string, err error) {
+// record runs dir's record.sh against fake, with tmpDir as TMPDIR and
+// nothing else of the caller's environment but PATH.
+func record(fake *fakegithub.Server, dir, tmpDir string, run int64, label string) (output string, err error) {
 	GinkgoHelper()
 	cmd := exec.CommandContext(context.Background(), "bash", "record.sh", strconv.FormatInt(run, 10), label)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GITHUB_API_URL="+fake.URL())
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + tmpDir, "GITHUB_API_URL=" + fake.URL()}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -53,12 +54,22 @@ func readFile(path string) string {
 	return string(data)
 }
 
+// proxyEverything configures a dead proxy, which record.sh must not inherit.
+func proxyEverything() {
+	GinkgoHelper()
+	GinkgoT().Setenv("http_proxy", "http://127.0.0.1:9")
+	GinkgoT().Setenv("no_proxy", "example.invalid")
+	GinkgoT().Setenv("NO_PROXY", "example.invalid")
+}
+
 var _ = Describe("record.sh", Label("transport"), func() {
+	BeforeEach(proxyEverything)
+
 	It("re-records a stage from the fake with the recording's status.txt, dated by the run GET's Date header", func() {
 		fake := fakegithub.Start(logsDeletedRun, "after-expiry")
 		dir := recordingsCopy(recording{logsDeletedRun, "logs-deleted"})
 
-		output, err := record(fake, dir, logsDeletedRun, "after-expiry")
+		output, err := record(fake, dir, GinkgoT().TempDir(), logsDeletedRun, "after-expiry")
 		Expect(err).NotTo(HaveOccurred(), output)
 
 		stage := filepath.Join(dir, "run-37129738159", "after-expiry")
@@ -71,7 +82,7 @@ var _ = Describe("record.sh", Label("transport"), func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		dir := recordingsCopy()
 
-		output, err := record(fake, dir, 1, "bogus")
+		output, err := record(fake, dir, GinkgoT().TempDir(), 1, "bogus")
 		Expect(err).To(MatchError("exit status 1"), output)
 		Expect(output).To(ContainSubstring("record.sh: 404 runs/1: Not Found"))
 		Expect(filepath.Join(dir, "run-1")).NotTo(BeADirectory())
