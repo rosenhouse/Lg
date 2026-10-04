@@ -173,11 +173,18 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 }
 
 func writeTombstone(unit *store.Unit, dir string, ts tombstone.Tombstone) error {
-	raw, err := json.Marshal(ts)
-	if err != nil {
+	return writeValue(unit, filepath.Join(dir, ts.Target+".tombstone"), ts)
+}
+
+// writeValue stores v as JSON with <, > and & as they are, so rg finds them.
+func writeValue(unit *store.Unit, name string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
 		return err
 	}
-	return unit.WriteJSON(filepath.Join(dir, ts.Target+".tombstone"), raw)
+	return unit.WriteJSON(name, buf.Bytes())
 }
 
 // fetch is fetch.json: how and when lg fetched its unit.
@@ -203,7 +210,7 @@ type source struct {
 }
 
 func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
-	raw, err := json.Marshal(fetch{
+	return writeValue(s.unit, "fetch.json", fetch{
 		LgFormat:          1,
 		LgVersion:         version.Version,
 		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
@@ -215,10 +222,6 @@ func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
 		RunAttemptAtFetch: run.RunAttempt,
 		Sources:           s.sources,
 	})
-	if err != nil {
-		return err
-	}
-	return s.unit.WriteJSON("fetch.json", raw)
 }
 
 // staged is a unit being staged with the sources of its files.

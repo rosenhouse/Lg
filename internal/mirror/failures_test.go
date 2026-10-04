@@ -33,14 +33,19 @@ var cycleTimeout = SpecTimeout(20 * time.Second)
 // attempt1Updated is attempt.json updated_at of run 37129390741 attempt 1.
 var attempt1Updated = time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC)
 
-// readTombstone reads the log tombstone of a job in a published attempt.
-func readTombstone(attemptDir, jobID string) map[string]any {
+// tombstonePath is the log tombstone of a job in a published attempt.
+func tombstonePath(attemptDir, jobID string) string {
 	GinkgoHelper()
 	matches, err := filepath.Glob(filepath.Join(attemptDir, "jobs", jobID+"_*", "log.txt.tombstone"))
 	Expect(err).NotTo(HaveOccurred())
 	Expect(matches).To(HaveLen(1), "tombstone of job %s", jobID)
 	Expect(filepath.Join(filepath.Dir(matches[0]), "log.txt")).NotTo(BeAnExistingFile())
-	raw, err := os.ReadFile(matches[0])
+	return matches[0]
+}
+
+func readTombstone(attemptDir, jobID string) map[string]any {
+	GinkgoHelper()
+	raw, err := os.ReadFile(tombstonePath(attemptDir, jobID))
 	Expect(err).NotTo(HaveOccurred())
 	var tombstone map[string]any
 	Expect(json.Unmarshal(raw, &tombstone)).To(Succeed())
@@ -85,6 +90,15 @@ var _ = Describe("mirror.Cycle when a log returns 410", Label("failures"), func(
 			HaveKeyWithValue("reason", "expired"),
 			HaveKeyWithValue("http_status", BeEquivalentTo(410)),
 		))
+	}, cycleTimeout)
+
+	It("keeps GitHub's message as rg can find it", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", ranJobLog, fakegithub.Fault{Status: http.StatusGone, Body: `{"message":"Logs for <job> & run expired"}`})
+
+		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(os.ReadFile(tombstonePath(env.AttemptDirs(runID)[0], ranJob))).To(ContainSubstring(`"Logs for <job> & run expired"`))
 	}, cycleTimeout)
 })
 
