@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -135,22 +136,43 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 })
 
 var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run still publishes the other run and returns the failure, naming its run", Label("failures"),
-	func(ctx SpecContext, host, match string, status int) {
+	func(ctx SpecContext, host, match string, fault fakegithub.Fault, failure string) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
-		env.Fake.Fail(host, match, fakegithub.Fault{Status: status})
+		env.Fake.Fail(host, match, fault)
 
 		err := env.Mirror.Cycle(ctx)
-		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: %d %s$`, status, http.StatusText(status))))
+		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: %s$`, failure)))
 		Expect(err).NotTo(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 	},
-	Entry("an API 400 on the attempt", "api", "runs/37129738159/attempts/1", http.StatusBadRequest, cycleTimeout),
-	Entry("an API 410 on the attempt", "api", "runs/37129738159/attempts/1", http.StatusGone, cycleTimeout),
-	Entry("an API 410 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", http.StatusGone, cycleTimeout),
-	Entry("an API 400 on a log", "api", "jobs/111222299886/logs", http.StatusBadRequest, cycleTimeout),
+	Entry("an API 400 on the attempt", "api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusBadRequest}, "400 Bad Request", cycleTimeout),
+	Entry("an API 410 on the attempt", "api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusGone}, "410 Gone", cycleTimeout),
+	Entry("an API 410 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusGone}, "410 Gone", cycleTimeout),
+	Entry("an API 400 on a log", "api", "jobs/111222299886/logs", fakegithub.Fault{Status: http.StatusBadRequest}, "400 Bad Request", cycleTimeout),
+	Entry("an unparsable 200 on the attempt", "api", "runs/37129738159/attempts/1", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
+	Entry("an unparsable 200 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
+	Entry("a jobs listing short of its total_count", "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusOK, Body: `{"total_count":1,"jobs":[]}`}, "listed 0 of 1 jobs", cycleTimeout),
+)
+
+var unparsable = fakegithub.Fault{Status: http.StatusOK, Body: "<html>unicorn</html>"}
+
+var _ = DescribeTable("mirror.Cycle when the API refuses a run's attempt with a status that blocks the cycle stops before the next run", Label("failures"),
+	func(ctx SpecContext, status int) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: status})
+
+		Expect(env.Mirror.Cycle(ctx)).To(MatchError(ContainSubstring(fmt.Sprintf("%d %s", status, http.StatusText(status)))))
+		Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("runs/37129390741/attempts"))))
+		Expect(env.AttemptDirs(runID)).To(BeEmpty())
+	},
+	Entry("401", http.StatusUnauthorized, cycleTimeout),
+	Entry("403", http.StatusForbidden, cycleTimeout),
+	Entry("429", http.StatusTooManyRequests, cycleTimeout),
 )
 
 var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {

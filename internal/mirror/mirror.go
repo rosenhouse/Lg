@@ -33,9 +33,9 @@ type Mirror struct {
 	LogGrace  time.Duration
 }
 
-// Cycle publishes attempt 1 of every listed run once it has completed. A
-// Transient error or an error status aborts only its run's attempt; Cycle
-// returns these after trying every other run. Any other error stops the cycle.
+// Cycle publishes attempt 1 of every listed run once it has completed. An
+// error that runScoped accepts aborts only its run's attempt; Cycle returns
+// these after trying every other run. Any other error stops the cycle.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
@@ -62,16 +62,30 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 			continue
 		}
 		err = m.publishAttempt(ctx, gh, run, 1, target)
-		var transient failure.Transient
-		var statusErr *github.StatusError
 		switch {
-		case errors.As(err, &transient), errors.As(err, &statusErr):
+		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
 		case err != nil:
 			return errors.Join(append(failed, err)...)
 		}
 	}
 	return errors.Join(failed...)
+}
+
+// runScoped reports whether err leaves other runs worth trying: GitHub
+// failed this run, not lg's store, credentials or rate limit.
+func runScoped(err error) bool {
+	var statusErr *github.StatusError
+	if errors.As(err, &statusErr) {
+		return !blocksCycle(statusErr)
+	}
+	var transient failure.Transient
+	var malformed *github.MalformedError
+	return errors.As(err, &transient) || errors.As(err, &malformed)
+}
+
+func blocksCycle(e *github.StatusError) bool {
+	return e.Status == http.StatusUnauthorized || e.Status == http.StatusTooManyRequests || e.Status == http.StatusForbidden && !e.Blob
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
