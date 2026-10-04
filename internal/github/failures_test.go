@@ -100,7 +100,7 @@ const (
 var _ = Describe("HTTP errors", Label("failures"), func() {
 	DescribeTable("classifies a failed download by hop",
 		func(ctx SpecContext, api, blob http.HandlerFunc, kind types.GomegaMatcher) {
-			Expect(hops(api, blob).DownloadJobLog(ctx, 1, &bytes.Buffer{})).Error().To(kind)
+			Expect(hops(api, blob).DownloadJobLog(ctx, 1, &bytes.Buffer{})).To(kind)
 		},
 		Entry("an API 404 is ErrNotFound", answer(http.StatusNotFound, gitHubNotFound), nil, MatchError(github.ErrNotFound), hopTimeout),
 		Entry("a blob 404 is ErrBlobMissing", nil, answer(http.StatusNotFound, blobNotFound), MatchError(github.ErrBlobMissing), hopTimeout),
@@ -121,24 +121,24 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	)
 
 	It("keeps an API 404 apart from ErrBlobMissing", func(ctx SpecContext) {
-		_, err := hops(answer(http.StatusNotFound, gitHubNotFound), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := hops(answer(http.StatusNotFound, gitHubNotFound), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).NotTo(MatchError(github.ErrBlobMissing))
 	})
 
 	It("keeps a blob 404 apart from ErrNotFound", func(ctx SpecContext) {
-		_, err := hops(nil, answer(http.StatusNotFound, blobNotFound)).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := hops(nil, answer(http.StatusNotFound, blobNotFound)).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).NotTo(MatchError(github.ErrNotFound))
 	})
 
 	It("keeps a blob 403 apart from ErrNotFound and ErrBlobMissing", func(ctx SpecContext) {
-		_, err := hops(nil, answer(http.StatusForbidden, "")).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := hops(nil, answer(http.StatusForbidden, "")).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).NotTo(MatchError(github.ErrNotFound))
 		Expect(err).NotTo(MatchError(github.ErrBlobMissing))
 	})
 
 	DescribeTable("leaves an API error that is not a 5xx neither Transient nor a gap",
 		func(ctx SpecContext, status int) {
-			_, err := hops(answer(status, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			err := hops(answer(status, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 			Expect(err).To(MatchError(ContainSubstring(strconv.Itoa(status))))
 			Expect(err).NotTo(BeTransient())
 			Expect(err).NotTo(MatchError(github.ErrNotFound))
@@ -150,7 +150,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	)
 
 	It("leaves a failed write to w neither Transient nor a gap", func(ctx SpecContext) {
-		_, err := hops(nil, answer(http.StatusOK, "log")).DownloadJobLog(ctx, 1, failingWriter{syscall.ENOSPC})
+		err := hops(nil, answer(http.StatusOK, "log")).DownloadJobLog(ctx, 1, failingWriter{syscall.ENOSPC})
 		Expect(err).To(MatchError(syscall.ENOSPC))
 		Expect(err).NotTo(BeTransient())
 		var malformed *github.MalformedError
@@ -199,7 +199,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	DescribeTable("gives the API URL, the status and the message of a failed hop",
 		func(ctx SpecContext, api, blob http.HandlerFunc, status int, message string) {
 			client := hops(api, blob)
-			_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
 			var statusErr *github.StatusError
 			Expect(errors.As(err, &statusErr)).To(BeTrue())
 			Expect(statusErr.URL).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs$`))
@@ -218,7 +218,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 			_ = conn.Close()
 		})
 
-		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(BeTransient())
 		Expect(err.Error()).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: `))
 		Expect(err.Error()).NotTo(ContainSubstring(blobSignature))
@@ -235,7 +235,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 			blobURL = blob.URL + "/log"
 
 			var log bytes.Buffer
-			Expect(client.DownloadJobLog(ctx, 1, &log)).Error().NotTo(HaveOccurred())
+			Expect(client.DownloadJobLog(ctx, 1, &log)).To(Succeed())
 			Expect(log.String()).To(Equal("log"))
 		},
 		Entry("301", http.StatusMovedPermanently, hopTimeout),
@@ -246,7 +246,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	)
 
 	It("gives a StatusError for a redirect with no Location", func(ctx SpecContext) {
-		_, err := hops(answer(http.StatusFound, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := hops(answer(http.StatusFound, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		var statusErr *github.StatusError
 		Expect(errors.As(err, &statusErr)).To(BeTrue())
 		Expect(statusErr.Status).To(Equal(http.StatusFound))
@@ -259,7 +259,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 				w.WriteHeader(http.StatusFound)
 			}, nil)
 
-			_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
 			Expect(err).To(MatchError(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: unparsable redirect Location$`)))
 		},
 		Entry("a space in the host", "http://bad host/log?sig="+blobSignature, hopTimeout),
@@ -271,7 +271,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			api, blob, w := cancelled(cancel)
 
-			_, err := hops(api, blob).DownloadJobLog(ctx, 1, w)
+			err := hops(api, blob).DownloadJobLog(ctx, 1, w)
 			Expect(err).To(MatchError(context.Canceled))
 			Expect(err).NotTo(BeTransient())
 		},
@@ -306,7 +306,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		client := hops(nil, stall("partial"))
 
 		start := clock.Real{}.Now()
-		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(ContainSubstring("idle for 200ms")))
 		Expect(clock.Real{}.Now()).To(BeTemporally("<", start.Add(2*time.Second)))
 	}, SpecTimeout(5*time.Second))
@@ -321,7 +321,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		})
 
 		var log bytes.Buffer
-		_, err := client.DownloadJobLog(ctx, 1, &log)
+		err := client.DownloadJobLog(ctx, 1, &log)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(log.String()).To(Equal("xxxxxx"))
 	}, SpecTimeout(5*time.Second))

@@ -77,10 +77,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
-		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error {
-			_, err := c.DownloadJobLog(ctx, 1, &bytes.Buffer{})
-			return err
-		}),
+		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error { return c.DownloadJobLog(ctx, 1, &bytes.Buffer{}) }),
 	)
 
 	It("lists runs with their fields and the body served for each", func() {
@@ -131,18 +128,16 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		_, listing, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
-		log, err := client.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{})
-		Expect(err).NotTo(HaveOccurred())
 
 		api := fake.URL() + "/repos/rosenhouse/lg/actions/"
 		Expect(attempt).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1"}))
 		Expect(listing).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1/jobs?per_page=100", Pages: 3}))
-		Expect(log).To(Equal(github.Source{URL: api + "jobs/111221289888/logs"}))
+		Expect(client.JobLogURL(111221289888)).To(Equal(api + "jobs/111221289888/logs"))
 	})
 
 	It("downloads a job log through the redirect, byte for byte", func() {
 		var log bytes.Buffer
-		Expect(client.DownloadJobLog(context.Background(), 111221289888, &log)).Error().NotTo(HaveOccurred())
+		Expect(client.DownloadJobLog(context.Background(), 111221289888, &log)).To(Succeed())
 		Expect(log.Bytes()).To(Equal(fake.Served("attempt-1/logs/111221289888.txt")))
 	})
 
@@ -155,7 +150,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		api := httptest.NewServer(http.RedirectHandler(blob.URL+"/blob", http.StatusFound))
 		DeferCleanup(api.Close)
 
-		Expect(github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).Error().NotTo(HaveOccurred())
+		Expect(github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).To(Succeed())
 		Expect(blobAuthorization).To(Equal([]string{""}))
 	})
 
@@ -167,7 +162,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(ContainSubstring("stopped after 10 redirects")))
 		Expect(requests).To(Equal(10))
 	}, SpecTimeout(5*time.Second))
@@ -321,7 +316,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		Expect(err).To(MatchError(HavePrefix(server.URL + "/repos/o/r/actions/jobs/1/logs: ")))
 	})

@@ -38,7 +38,7 @@ type Client interface {
 	ListRuns(ctx context.Context) ([]Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
-	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error)
+	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
 	JobLogURL(jobID int64) string
 }
 
@@ -248,16 +248,11 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 }
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
-func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error) {
-	source := Source{URL: h.JobLogURL(jobID)}
-	err := h.get(ctx, source.URL, func(resp *http.Response) error {
+func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error {
+	return h.get(ctx, h.JobLogURL(jobID), func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err
 	})
-	if err != nil {
-		return Source{}, err
-	}
-	return source, nil
 }
 
 func (h *HTTP) JobLogURL(jobID int64) string {

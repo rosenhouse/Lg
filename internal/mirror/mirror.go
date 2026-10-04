@@ -164,12 +164,12 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 	if err != nil {
 		return err
 	}
-	logSource, err := gh.DownloadJobLog(ctx, job.ID, w)
+	err = gh.DownloadJobLog(ctx, job.ID, w)
 	if closeErr := w.Close(); closeErr != nil {
 		return errors.Join(err, closeErr)
 	}
 	if err == nil {
-		return s.record(log, logSource)
+		return s.record(log, github.Source{URL: gh.JobLogURL(job.ID)})
 	}
 	ts, err := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
 	if err != nil {
