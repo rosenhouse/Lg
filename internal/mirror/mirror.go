@@ -24,14 +24,13 @@ import (
 )
 
 type Mirror struct {
-	Tokens    auth.TokenSource
-	NewGitHub func(token string) github.Client
-	Store     *store.Store
-	Host      string
-	Repo      string
-	Clock     clock.Clock
-	LogGrace  time.Duration
-
+	Tokens           auth.TokenSource
+	NewGitHub        func(token string) github.Client
+	Store            *store.Store
+	Host             string
+	Repo             string
+	Clock            clock.Clock
+	LogGrace         time.Duration
 	ArtifactMaxBytes int64
 }
 
@@ -54,6 +53,9 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {
+	if m.ArtifactMaxBytes < 1 {
+		return fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
+	}
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err

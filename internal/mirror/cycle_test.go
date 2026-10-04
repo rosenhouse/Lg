@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
@@ -63,11 +64,12 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			NewGitHub: func(token string) github.Client {
 				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock)
 			},
-			Store:    s,
-			Host:     "github.com",
-			Repo:     "rosenhouse/lg",
-			Clock:    clock.NewFake(harness.DefaultNow()),
-			LogGrace: time.Hour,
+			Store:            s,
+			Host:             "github.com",
+			Repo:             "rosenhouse/lg",
+			Clock:            clock.NewFake(harness.DefaultNow()),
+			LogGrace:         time.Hour,
+			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 		}
 	})
 
@@ -84,6 +86,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		tokens.err = errors.New("gh: not logged in")
 
 		Expect(m.Cycle(context.Background())).To(MatchError("gh: not logged in"))
+		Expect(fake.Requests()).To(BeEmpty())
+	})
+
+	It("returns an error and sends no request when ArtifactMaxBytes is not set", Label("artifacts"), func() {
+		m.ArtifactMaxBytes = 0
+
+		Expect(m.Cycle(context.Background())).To(MatchError("ArtifactMaxBytes must be at least 1, not 0"))
+		Expect(tokens.hosts).To(BeEmpty())
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 
