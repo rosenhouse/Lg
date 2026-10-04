@@ -183,6 +183,16 @@ var _ = Describe("GetRepo", Label("blocked"), func() {
 		Expect(err).To(MatchError(github.ErrNotFound))
 	}, hopTimeout)
 
+	It("calls a full_name that is not owner/name malformed, naming it", func(ctx SpecContext) {
+		server, _ := counting(answer(http.StatusOK, `{"full_name":"../../escaped"}`))
+		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
+
+		_, err := client.GetRepo(ctx)
+		var malformed *github.MalformedError
+		Expect(errors.As(err, &malformed)).To(BeTrue(), "%v", err)
+		Expect(err).To(MatchError(server.URL + `/repos/o/r: full_name "../../escaped" is not owner/name`))
+	}, hopTimeout)
+
 	It("calls a body with no full_name malformed", func(ctx SpecContext) {
 		server, _ := counting(answer(http.StatusOK, `{"id":1}`))
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
