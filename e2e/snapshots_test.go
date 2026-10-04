@@ -74,7 +74,6 @@ var _ = Describe("attempt-N", Label("artifacts"), func() {
 		}
 		for n, listing := range listed {
 			attempt := filepath.Join(env.Data(), fixtureRunDir, "attempt-"+strconv.Itoa(n))
-			Expect(filepath.Join(attempt, "artifacts.json")).To(BeARegularFile())
 			Expect(os.ReadFile(filepath.Join(attempt, "artifacts.json"))).To(Equal(indented(listing)), "attempt %d", n)
 			Expect(readJSON(filepath.Join(attempt, "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(n)))
 		}
@@ -95,7 +94,6 @@ var _ = Describe("an artifact whose zip and whose attempt's log both failed tran
 
 		Expect(env.Sync()).To(gexec.Exit(0))
 		dir := filepath.Join(env.Data(), flakyReportDir)
-		Expect(filepath.Join(dir, "artifact.json")).To(BeARegularFile())
 		Expect(os.ReadFile(filepath.Join(dir, "artifact.json"))).To(Equal(indented(listed)))
 		Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(SatisfyAll(
 			HaveKeyWithValue("reason", "deleted"),

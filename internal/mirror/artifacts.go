@@ -20,7 +20,8 @@ import (
 )
 
 // origin is where an artifact object was listed: the listing's URL and
-// pages, and the run's run_attempt and status read just after it.
+// pages, and the run's run_attempt and status read just after it, which are
+// 0 and "" when lg did not read them.
 type origin struct {
 	URL        string `json:"url"`
 	Pages      int    `json:"pages"`

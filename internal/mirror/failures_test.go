@@ -46,11 +46,7 @@ func tombstonePath(attemptDir, jobID string) string {
 
 func readTombstone(attemptDir, jobID string) map[string]any {
 	GinkgoHelper()
-	raw, err := os.ReadFile(tombstonePath(attemptDir, jobID))
-	Expect(err).NotTo(HaveOccurred())
-	var tombstone map[string]any
-	Expect(json.Unmarshal(raw, &tombstone)).To(Succeed())
-	return tombstone
+	return readJSONFile(tombstonePath(attemptDir, jobID))
 }
 
 var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attempt within log_grace of the attempt's updated_at, and writes a deleted tombstone after it", Label("failures"),

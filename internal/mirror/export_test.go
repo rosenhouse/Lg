@@ -8,13 +8,19 @@ import (
 
 var RunScoped = runScoped
 
-// RetrySet gives the artifacts of the run's retry set.
-func (m *Mirror) RetrySet(runDir string, listing, pending []github.Artifact) ([]github.Artifact, error) {
+// Retry is an artifact of a retry set, with the run_attempt of its origin.
+type Retry struct {
+	github.Artifact
+	RunAttempt int
+}
+
+// RetrySet gives the run's retry set.
+func (m *Mirror) RetrySet(runDir string, listing, pending []github.Artifact) ([]Retry, error) {
 	pendingCandidates := (&artifactListing{artifacts: pending}).candidates()
 	retry, unreadable, err := m.retrySet(listedRun{dir: runDir, artifacts: &artifactListing{artifacts: listing}}, pendingCandidates)
-	artifacts := make([]github.Artifact, len(retry))
+	retries := make([]Retry, len(retry))
 	for i, c := range retry {
-		artifacts[i] = c.Artifact
+		retries[i] = Retry{Artifact: c.Artifact, RunAttempt: c.Origin.RunAttempt}
 	}
-	return artifacts, errors.Join(unreadable, err)
+	return retries, errors.Join(unreadable, err)
 }

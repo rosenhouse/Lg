@@ -76,13 +76,16 @@ func writeSnapshot(attemptDir string, artifacts ...github.Artifact) {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(os.MkdirAll(attemptDir, 0o755)).To(Succeed())
 	Expect(os.WriteFile(filepath.Join(attemptDir, "artifacts.json"), raw, 0o644)).To(Succeed())
-	Expect(os.WriteFile(filepath.Join(attemptDir, "fetch.json"), []byte(`{"sources":{}}`), 0o644)).To(Succeed())
+	n, ok := layout.AttemptNumber(filepath.Base(attemptDir))
+	Expect(ok).To(BeTrue())
+	fetch := fmt.Sprintf(`{"run_attempt_at_fetch":%d,"sources":{}}`, n)
+	Expect(os.WriteFile(filepath.Join(attemptDir, "fetch.json"), []byte(fetch), 0o644)).To(Succeed())
 }
 
-func ids(artifacts []github.Artifact) []int64 {
+func ids(retry []mirror.Retry) []int64 {
 	var ids []int64
-	for _, a := range artifacts {
-		ids = append(ids, a.ID)
+	for _, r := range retry {
+		ids = append(ids, r.ID)
 	}
 	return ids
 }
@@ -105,7 +108,18 @@ var _ = Describe("the retry set", Label("artifacts"), func() {
 		Expect(retry[3].Raw).To(MatchJSON(listedArtifact(7).Raw))
 	})
 
-	It("takes nothing from an attempt dir with no artifacts.json, as lg wrote before snapshots", func() {
+	It("takes an artifact that several snapshots name from the oldest attempt's, attempt-2 before attempt-10", func() {
+		env := harness.InProcess()
+		runDir := filepath.Join(env.Data(), "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "1_w_b")
+		writeSnapshot(layout.AttemptDir(runDir, 10), listedArtifact(1))
+		writeSnapshot(layout.AttemptDir(runDir, 2), listedArtifact(1))
+
+		retry, err := env.Mirror.RetrySet(runDir, nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(retry).To(HaveExactElements(HaveField("RunAttempt", 2)))
+	})
+
+	It("takes nothing from an attempt dir with no artifacts.json", func() {
 		env := harness.InProcess()
 		runDir := filepath.Join(env.Data(), "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "1_w_b")
 		Expect(os.MkdirAll(layout.AttemptDir(runDir, 1), 0o755)).To(Succeed())
@@ -279,7 +293,7 @@ var _ = Describe("a snapshot whose listing a re-run overtook", Label("artifacts"
 		Eventually(env.Fake.Requests).WithTimeout(10 * time.Second).Should(ContainElement(HaveField("Path", HaveSuffix(heldZip))))
 		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
 		release()
-		Eventually(cycled).WithTimeout(10 * time.Second).Should(Receive())
+		Eventually(cycled).WithTimeout(10 * time.Second).Should(Receive(BeNil()))
 
 		attempt1 := attemptDir(env, runID, 1)
 		Expect(os.ReadFile(filepath.Join(attempt1, "artifacts.json"))).To(MatchJSON(jsonField(env.Fake.Served("artifacts.json"), "artifacts")))

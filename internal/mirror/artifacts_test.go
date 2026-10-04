@@ -42,11 +42,7 @@ func readZipTombstone(env *harness.InProcessEnv, runID int64, artifactID string)
 	dir := artifactDir(env, runID, artifactID)
 	Expect(filepath.Join(dir, "artifact.json")).To(BeARegularFile())
 	Expect(filepath.Join(dir, "artifact.zip")).NotTo(BeAnExistingFile())
-	raw, err := os.ReadFile(filepath.Join(dir, "artifact.zip.tombstone"))
-	Expect(err).NotTo(HaveOccurred())
-	var tombstone map[string]any
-	Expect(json.Unmarshal(raw, &tombstone)).To(Succeed())
-	return tombstone
+	return readJSONFile(filepath.Join(dir, "artifact.zip.tombstone"))
 }
 
 func zipURL(env *harness.InProcessEnv, artifactID string) string {

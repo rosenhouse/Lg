@@ -112,7 +112,7 @@ func (l *artifactListing) candidates() []candidate {
 }
 
 // listRuns lists the repo's runs, then each run with pending artifacts that
-// the listing does not name, since it may have been deleted since.
+// the listing does not name, which may be deleted.
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo, p *pending) ([]listedRun, error) {
 	runs, err := gh.ListRuns(ctx)
 	if err != nil {
