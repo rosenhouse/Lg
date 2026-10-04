@@ -50,7 +50,7 @@ var _ = Describe("Tombstone JSON", Label("failures"), func() {
 	})
 
 	It("has a null http_status for not_applicable", func() {
-		t := tombstone.NotApplicable("log.txt", logURL, "no steps and no runner", updated)
+		t := tombstone.NeverProduced("log.txt", logURL, "no steps and no runner", updated)
 		Expect(asJSON(t)).To(Equal(map[string]any{
 			"lg_format":     1.0,
 			"tombstoned_at": "2026-10-03T14:24:12Z",
