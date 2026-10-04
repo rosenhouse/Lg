@@ -39,6 +39,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	if flags.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "fakegithub: unexpected argument %q\n", flags.Arg(0))
+		return 2
+	}
 	stages := map[int64]string{}
 	for _, r := range runs {
 		id, stage, ok := strings.Cut(r, "=")

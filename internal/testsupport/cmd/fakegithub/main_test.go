@@ -67,6 +67,12 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(session.Err).To(gbytes.Say(`-run "37129390741": want ID=STAGE`))
 	})
 
+	It("exits 2 naming an argument that is not a flag", func() {
+		session := start("-run", "37129390741=after-attempt-1", "37129738159=logs-deleted", "-addr", "127.0.0.1:0")
+		Eventually(session, "5s").Should(gexec.Exit(2))
+		Expect(session.Err).To(gbytes.Say(`unexpected argument "37129738159=logs-deleted"`))
+	})
+
 	It("exits 1 naming a recording that does not exist", func() {
 		session := start("-run", "37129390741=no-such-stage", "-addr", "127.0.0.1:0")
 		Eventually(session, "5s").Should(gexec.Exit(1))
