@@ -64,6 +64,14 @@ func stall(body string) http.HandlerFunc {
 	}
 }
 
+// cancelOnWrite cancels once the body has started.
+type cancelOnWrite context.CancelFunc
+
+func (c cancelOnWrite) Write(p []byte) (int, error) {
+	c()
+	return len(p), nil
+}
+
 const (
 	gitHubNotFound = `{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}`
 	blobNotFound   = "\uFEFF<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.\nRequestId:b712d84b\nTime:2026-10-03T14:24:46.3969794Z</Message></Error>"
@@ -128,6 +136,28 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("blob storage's XML message, first line", nil, answer(http.StatusNotFound, blobNotFound), 404, "The specified blob does not exist."),
 		Entry("the status text of a body with no message", answer(http.StatusGone, "gone"), nil, 410, "Gone"),
 	)
+
+	It("does not call a parent's cancellation during a body Transient", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		client := hops(nil, stall("partial"))
+
+		_, err := client.DownloadJobLog(ctx, 1, cancelOnWrite(cancel))
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(err).NotTo(beTransient())
+	})
+
+	It("never names the blob URL, whose query is a credential", func(ctx SpecContext) {
+		client := hops(nil, func(w http.ResponseWriter, _ *http.Request) {
+			conn, _, err := http.NewResponseController(w).Hijack()
+			Expect(err).NotTo(HaveOccurred())
+			_ = conn.Close()
+		})
+
+		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).To(beTransient())
+		Expect(err.Error()).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: `))
+		Expect(err.Error()).NotTo(ContainSubstring("/log\""))
+	})
 
 	It("does not call a parent's cancellation Transient", func() {
 		ctx, cancel := context.WithCancel(context.Background())
