@@ -323,3 +323,56 @@ var _ = Describe("an artifact pending for a run of another host", Label("artifac
 		Expect(requestedZip(env, "9")).To(BeFalse())
 	}, cycleTimeout)
 })
+
+var _ = Describe("mirror.Cycle when GET /actions/runs/{id} returns 500 once and a re-run-all follows", Label("artifacts"), func() {
+	It("publishes every artifact the first listing named, with an unknown run_attempt_at_fetch, and holds back the run's attempts that cycle", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129390741", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		listed := servedArtifactsByID(env)
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.AttemptDirs(runID)).To(BeEmpty())
+		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(listed).To(HaveLen(4))
+		for id, raw := range listed {
+			dir := artifactDir(env, runID, id)
+			Expect(os.ReadFile(filepath.Join(dir, "artifact.json"))).To(MatchJSON(raw))
+			Expect(readJSONFile(filepath.Join(dir, "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(0)))
+		}
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when GET /actions/runs/{id} returns 404 after the run's artifact listing", Label("artifacts"), func() {
+	It("publishes no attempt of the run and tombstones its pending artifacts as deleted", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129390741", fakegithub.Fault{Status: http.StatusNotFound})
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "deleted"))
+		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+})
+
+var _ = Describe("an artifact retried while every attempt of its run is on disk", Label("artifacts"), func() {
+	It("records in fetch.json the run_attempt read after this cycle's listing", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readJSONFile(filepath.Join(artifactDir(env, runID, flakyReport), "fetch.json"))).To(SatisfyAll(
+			HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(1)),
+			HaveKeyWithValue("run_status_at_fetch", "completed"),
+		))
+	}, cycleTimeout)
+})

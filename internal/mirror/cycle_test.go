@@ -137,7 +137,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the repo, the run listing, the run's artifacts listing and the run, and leaves tmp/ empty, when the attempt and artifacts are already on disk", func() {
+	It("requests only the repo, the run listing and the run's artifacts listing, and leaves tmp/ empty, when the attempt and artifacts are already on disk", func() {
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		before := len(fake.Requests())
 
@@ -145,8 +145,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.Requests()[before:]).To(HaveExactElements(
 			HaveField("Path", "/repos/rosenhouse/lg"),
 			HaveField("Path", "/repos/rosenhouse/lg/actions/runs"),
-			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts"),
-			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741")))
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
 
