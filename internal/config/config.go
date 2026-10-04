@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -44,23 +45,43 @@ func Load(path string) (Config, error) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	}
 	if cfg.APIURL != "" {
-		if shown, ok := baseURL(cfg.APIURL); !ok {
-			return Config{}, Error(fmt.Sprintf("api_url must be an http or https URL with no user info, query or fragment: %q", shown))
+		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {
+			return Config{}, err
 		}
 	}
 	return cfg, nil
 }
 
+// checkAPIURL accepts only an api_url that can be given host's token.
+func checkAPIURL(apiURL, host string) error {
+	u, shown, ok := baseURL(apiURL)
+	if !ok {
+		return Error(fmt.Sprintf("api_url must be an http or https URL with no user info, query or fragment: %q", shown))
+	}
+	name := strings.ToLower(u.Hostname())
+	ip := net.ParseIP(name)
+	if name == "localhost" || ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if name != host && name != "api."+host {
+		return Error(fmt.Sprintf("api_url must be on host, api.<host> or a loopback address: %q", apiURL))
+	}
+	if u.Scheme != "https" {
+		return Error(fmt.Sprintf("api_url must use https unless it is on a loopback address: %q", apiURL))
+	}
+	return nil
+}
+
 func isDots(s string) bool { return s == "." || s == ".." }
 
 // baseURL reports whether lg can append API paths to s, and shows s with any password hidden.
-func baseURL(s string) (shown string, ok bool) {
+func baseURL(s string) (u *url.URL, shown string, ok bool) {
 	u, err := url.Parse(s)
 	if err != nil {
-		return s, false
+		return nil, s, false
 	}
 	if u.User != nil {
-		return u.Redacted(), false
+		return nil, u.Redacted(), false
 	}
-	return s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
+	return u, s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
 }
