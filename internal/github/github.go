@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,20 @@ type Artifact struct {
 	model.Artifact
 	Raw json.RawMessage
 }
+
+func (r *Run) UnmarshalJSON(raw []byte) error {
+	r.Raw = slices.Clone(raw)
+	return json.Unmarshal(raw, &r.Run)
+}
+
+func (r Run) MarshalJSON() ([]byte, error) { return r.Raw, nil }
+
+func (a *Artifact) UnmarshalJSON(raw []byte) error {
+	a.Raw = slices.Clone(raw)
+	return json.Unmarshal(raw, &a.Artifact)
+}
+
+func (a Artifact) MarshalJSON() ([]byte, error) { return a.Raw, nil }
 
 // Job is a job with the element GitHub served for it.
 type Job struct {
@@ -252,8 +267,7 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 	}
 	runs := make([]Run, len(raws))
 	for i, raw := range raws {
-		runs[i].Raw = raw
-		if err := json.Unmarshal(raw, &runs[i].Run); err != nil {
+		if err := json.Unmarshal(raw, &runs[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -310,8 +324,8 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
 	return listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
-		artifact := Artifact{Raw: raw}
-		err := json.Unmarshal(raw, &artifact.Artifact)
+		var artifact Artifact
+		err := json.Unmarshal(raw, &artifact)
 		return artifact, artifact.ID, err
 	})
 }
