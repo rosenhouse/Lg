@@ -442,19 +442,24 @@ func (u *Unit) Create(name string, maxBytes int64) (io.WriteCloser, error) {
 		return nil, err
 	}
 	u.unclosed[name] = true
-	return &member{File: f, unit: u, name: name, hash: sha256.New()}, nil
+	return &member{File: f, unit: u, name: name, maxBytes: maxBytes, hash: sha256.New()}, nil
 }
 
-// member sums its bytes and fsyncs its file on Close, which Publish requires first.
+// member sums its bytes, refuses more than maxBytes, and fsyncs its file on Close, which Publish requires first.
 type member struct {
 	File
-	unit  *Unit
-	name  string
-	hash  hash.Hash
-	bytes int64
+	unit     *Unit
+	name     string
+	maxBytes int64
+	hash     hash.Hash
+	bytes    int64
 }
 
+// Write writes none of p when p would take the member past maxBytes.
 func (m *member) Write(p []byte) (int, error) {
+	if int64(len(p)) > m.maxBytes-m.bytes {
+		return 0, fmt.Errorf("%w: %q exceeds %d bytes", ErrTooLarge, m.name, m.maxBytes)
+	}
 	n, err := m.File.Write(p)
 	m.hash.Write(p[:n])
 	m.bytes += int64(n)
