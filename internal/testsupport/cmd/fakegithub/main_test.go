@@ -72,6 +72,18 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(session.Err).To(gbytes.Say(`-run "37129390741": want ID=STAGE`))
 	})
 
+	It("exits 2 naming a -run ID given twice", func() {
+		session := start("-run", "37129390741=after-attempt-1", "-run", "37129390741=after-attempt-3", "-addr", "127.0.0.1:0")
+		Eventually(session, "5s").Should(gexec.Exit(2))
+		Expect(session.Err).To(gbytes.Say(`-run 37129390741 given twice`))
+	})
+
+	It("exits 2 for a negative -page-cap", func() {
+		session := start("-run", "37129390741=after-attempt-1", "-page-cap", "-5", "-addr", "127.0.0.1:0")
+		Eventually(session, "5s").Should(gexec.Exit(2))
+		Expect(session.Err).To(gbytes.Say(`-page-cap must be 0 or more`))
+	})
+
 	It("exits 2 naming an argument that is not a flag", func() {
 		session := start("-run", "37129390741=after-attempt-1", "37129738159=logs-deleted", "-addr", "127.0.0.1:0")
 		Eventually(session, "5s").Should(gexec.Exit(2))

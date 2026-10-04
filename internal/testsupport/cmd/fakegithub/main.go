@@ -52,7 +52,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 			_, _ = fmt.Fprintf(stderr, "fakegithub: -run %q: want ID=STAGE\n", r)
 			return 2
 		}
+		if _, given := stages[runID]; given {
+			_, _ = fmt.Fprintf(stderr, "fakegithub: -run %d given twice\n", runID)
+			return 2
+		}
 		stages[runID] = stage
+	}
+	if *pageCap < 0 {
+		_, _ = fmt.Fprintln(stderr, "fakegithub: -page-cap must be 0 or more")
+		return 2
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
