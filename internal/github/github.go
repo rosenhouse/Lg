@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
@@ -214,17 +215,19 @@ func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
 
 // Repo is a repository as GET /repos/{owner}/{repo} describes it.
 type Repo struct {
-	URL      string `json:"-"`
 	FullName string `json:"full_name"`
 }
 
 func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
-	repo := Repo{URL: h.repoURL}
+	var repo Repo
 	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}
-	if repo.FullName == "" {
+	switch {
+	case repo.FullName == "":
 		return Repo{}, malformed(h.repoURL, "no full_name")
+	case !config.IsRepo(repo.FullName):
+		return Repo{}, malformed(h.repoURL, "full_name %q is not owner/name", repo.FullName)
 	}
 	return repo, nil
 }

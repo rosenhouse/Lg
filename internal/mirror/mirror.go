@@ -14,7 +14,6 @@ import (
 
 	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/clock"
-	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
@@ -92,9 +91,6 @@ func (m *Mirror) getRepo(ctx context.Context, gh github.Client) (github.Repo, er
 	repo, err := gh.GetRepo(ctx)
 	if errors.Is(err, github.ErrNotFound) {
 		return github.Repo{}, failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s/%s was not found, or the token lacks access to it", m.Host, m.Repo)}
-	}
-	if err == nil && !config.IsRepo(repo.FullName) {
-		err = fmt.Errorf("%s: full_name %q is not owner/name", repo.URL, repo.FullName)
 	}
 	return repo, err
 }
