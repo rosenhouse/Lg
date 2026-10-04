@@ -99,7 +99,16 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return err
 	}
 	s := &staged{unit: unit, sources: map[string]source{}}
-	err = m.stageAttempt(ctx, gh, s, run, attempt, attemptSource, jobs, jobsSource)
+	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
+	if err == nil {
+		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
+	}
+	if err == nil {
+		err = m.stageJobs(ctx, gh, s, attempt, jobs)
+	}
+	if err == nil {
+		err = m.writeFetch(s, run, attempt)
+	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
 	}
@@ -109,19 +118,13 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	return nil
 }
 
-func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, s *staged, run, attempt github.Run, attemptSource github.Source, jobs []github.Job, jobsSource github.Source) error {
-	if err := s.writeJSON("attempt.json", attempt.Raw, attemptSource); err != nil {
-		return err
-	}
-	if err := s.writeJSON("jobs.json", jsonArray(jobs), jobsSource); err != nil {
-		return err
-	}
+func (m *Mirror) stageJobs(ctx context.Context, gh github.Client, s *staged, attempt github.Run, jobs []github.Job) error {
 	for _, job := range jobs {
 		if err := m.addJob(ctx, gh, s, attempt, job); err != nil {
 			return err
 		}
 	}
-	return m.writeFetch(s, run, attempt)
+	return nil
 }
 
 func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attempt github.Run, job github.Job) error {
