@@ -15,7 +15,6 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
-	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 var start = time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
@@ -85,7 +84,7 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 		))
 	}, hopTimeout)
 
-	DescribeTable("call a proxy's gateway error to CONNECT unreachable, naming the proxy and the host",
+	DescribeTable("call a proxy's refusal to CONNECT unreachable, naming the proxy and the host",
 		func(ctx SpecContext, status int) {
 			proxy, _ := counting(answer(status, ""))
 			client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
@@ -100,14 +99,9 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 		Entry("502", http.StatusBadGateway, hopTimeout),
 		Entry("503", http.StatusServiceUnavailable, hopTimeout),
 		Entry("504", http.StatusGatewayTimeout, hopTimeout),
+		Entry("403", http.StatusForbidden, hopTimeout),
+		Entry("407", http.StatusProxyAuthRequired, hopTimeout),
 	)
-
-	It("leave a proxy's other refusal to CONNECT Transient", func(ctx SpecContext) {
-		proxy, _ := counting(answer(http.StatusForbidden, ""))
-		client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
-
-		Expect(getAttempt(ctx, client)).To(BeTransient())
-	}, hopTimeout)
 })
 
 // viaProxy is a transport that sends every request through proxyURL.
