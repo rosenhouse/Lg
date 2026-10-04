@@ -88,7 +88,13 @@ func Main(args []string, deps Deps) (code int) {
 		}
 		return 2
 	}
-	err = checkStore(ctx.Command(), deps.Env)
+	deps.Clock, err = clock.FromEnv(deps.Env, deps.Clock)
+	if err != nil {
+		err = config.Error(err.Error())
+	}
+	if err == nil {
+		err = checkStore(ctx.Command(), deps.Env)
+	}
 	if err == nil {
 		err = ctx.Run(&deps)
 	}
