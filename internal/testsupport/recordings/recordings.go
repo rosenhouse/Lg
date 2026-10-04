@@ -4,6 +4,7 @@ package recordings
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -97,4 +98,20 @@ func Artifacts(runID int64, stage string) ([]model.Artifact, error) {
 		return nil, err
 	}
 	return listing.Artifacts, nil
+}
+
+// Attempt is a stage's attempt-N/attempt.json.
+func Attempt(runID int64, stage string, attempt int) (model.Run, error) {
+	return model.Run{}, errors.New("not implemented")
+}
+
+// Jobs is the listing in a stage's attempt-N/jobs.json.
+func Jobs(runID int64, stage string, attempt int) ([]model.Job, error) {
+	return nil, errors.New("not implemented")
+}
+
+// CompareLog accepts log.txt in jobDir byte-identical to want, or a
+// tombstone saying GitHub no longer serves the log.
+func CompareLog(want []byte, jobDir string) error {
+	return errors.New("not implemented")
 }

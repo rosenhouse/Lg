@@ -2,10 +2,10 @@
 package harness
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -65,14 +65,14 @@ func (e *Env) Sh(script string) *gexec.Session {
 
 // WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
 func (e *Env) WriteConfig(apiURL string, lines ...string) {
+	e.writeConfig(append([]string{"repo: rosenhouse/lg", "api_url: " + apiURL}, lines...))
+}
+
+func (e *Env) writeConfig(lines []string) {
 	path, err := config.File(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(gomega.Succeed())
-	yaml := fmt.Sprintf("repo: rosenhouse/lg\napi_url: %s\n", apiURL)
-	for _, line := range lines {
-		yaml += line + "\n"
-	}
-	gomega.Expect(os.WriteFile(path, []byte(yaml), 0o644)).To(gomega.Succeed())
+	gomega.Expect(os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)).To(gomega.Succeed())
 }
 
 // Sync runs lg sync to exit and asserts that it left every earlier file under data/ unchanged.
@@ -122,4 +122,14 @@ func (e *Env) ConfigFile() string {
 	path, err := config.File(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	return path
+}
+
+// NewLive is for specs that reach github.com through the real gh.
+func NewLive(lgPath string) *Env {
+	return &Env{lgPath: lgPath, vars: map[string]string{}}
+}
+
+// WriteLiveConfig writes config.yaml for rosenhouse/lg on github.com, plus any further lines.
+func (e *Env) WriteLiveConfig(lines ...string) {
+	e.writeConfig(append([]string{"repo: rosenhouse/lg"}, lines...))
 }
