@@ -15,6 +15,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
+
+	"github.com/rosenhouse/lg/internal/clock"
 )
 
 var _ = Describe("the fakegithub dev server", Label("transport"), func() {
@@ -133,7 +135,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
 
 		header, _ := get(url + "/repos/rosenhouse/lg")
-		Expect(clockOf(header)).To(BeTemporally("~", time.Now(), 5*time.Second))
+		Expect(clockOf(header)).To(BeTemporally("~", clock.Real{}.Now(), 5*time.Second))
 	})
 
 	It("injects each rate-limit -fail kind", Label("blocked"), func() {

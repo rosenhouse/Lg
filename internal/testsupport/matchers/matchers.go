@@ -24,7 +24,7 @@ func BeBlocked(kind failure.Kind, fields ...types.GomegaMatcher) types.GomegaMat
 	return gomega.WithTransform(func(err error) (failure.Blocked, error) {
 		var blocked failure.Blocked
 		if !errors.As(err, &blocked) {
-			return blocked, fmt.Errorf("want a failure.Blocked, got %v", err)
+			return blocked, errors.New("want a failure.Blocked, got " + fmt.Sprint(err))
 		}
 		return blocked, nil
 	}, gomega.SatisfyAll(append([]types.GomegaMatcher{gomega.HaveField("Kind", kind)}, fields...)...))
