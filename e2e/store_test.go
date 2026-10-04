@@ -16,6 +16,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
@@ -38,6 +39,11 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 	})
 
 	It("exits 1, publishes no attempt-1, and BeAppendOnlyFrom holds", func() {
+		Expect(store.Init(env.Store())).To(Succeed())
+		earlier := filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-02/1_x_main/attempt-1/log.txt")
+		Expect(os.MkdirAll(filepath.Dir(earlier), 0o755)).To(Succeed())
+		Expect(os.WriteFile(earlier, []byte("earlier"), 0o644)).To(Succeed())
+
 		Expect(env.Sync()).To(gexec.Exit(1))
 		Expect(attempt1).NotTo(BeAnExistingFile())
 	})
@@ -155,14 +161,14 @@ var _ = Describe("lg sync", Label("store"), func() {
 		held, err := lock.Wait(writeLock, time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
 
-		session := env.Lg("sync")
+		session, wait := env.StartSync()
 		Eventually(session.Err, harness.ExitTimeout).Should(gbytes.Say(regexp.QuoteMeta(
 			fmt.Sprintf("lg: waiting for %s (held by pid %d)\n", writeLock, os.Getpid()))))
 		Consistently(func() string { return leftover }, time.Second).Should(BeAnExistingFile())
 		Expect(session.ExitCode()).To(Equal(-1), "sync ran while the lock was held")
 
 		Expect(held.Release()).To(Succeed())
-		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(wait()).To(gexec.Exit(0))
 		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
 	})
 })
@@ -187,16 +193,16 @@ var _ = Describe("two concurrent lg sync processes", Label("store"), func() {
 		env.WriteConfig(fake.URL())
 		release := fake.Hold("jobs/111221289888/logs")
 
-		first := env.Lg("sync")
+		_, waitFirst := env.StartSync()
 		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix("jobs/111221289888/logs"))))
 		requested := len(fake.Requests())
-		second := env.Lg("sync")
+		second, waitSecond := env.StartSync()
 		Consistently(func() int { return len(fake.Requests()) }, time.Second).Should(Equal(requested))
 		Expect(second.ExitCode()).To(Equal(-1), "second sync exited while the first held the lock")
 
 		release()
-		Eventually(first, harness.ExitTimeout).Should(gexec.Exit(0))
-		Eventually(second, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(waitFirst()).To(gexec.Exit(0))
+		Expect(waitSecond()).To(gexec.Exit(0))
 		Expect(filepath.Join(env.Data(), fixtureRunDir, "attempt-1")).To(BeADirectory())
 		Expect(requestsTo(fake, "/attempts/1/jobs")).To(Equal(1))
 		Expect(requestsTo(fake, "/logs")).To(Equal(10))

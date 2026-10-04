@@ -36,7 +36,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 		recording = fakegithub.Recording(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
 
-		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(env.Sync()).To(gexec.Exit(0))
 		attempt1 = filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture/attempt-1")
 	})
 

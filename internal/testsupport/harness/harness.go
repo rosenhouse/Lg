@@ -66,11 +66,21 @@ func (e *Env) WriteConfig(apiURL string) {
 // Sync runs lg sync to exit and asserts that it left every earlier file under data/ unchanged.
 func (e *Env) Sync(args ...string) *gexec.Session {
 	ginkgo.GinkgoHelper()
+	_, wait := e.StartSync(args...)
+	return wait()
+}
+
+// StartSync starts lg sync. Its wait func waits for it to exit and asserts as Sync does.
+func (e *Env) StartSync(args ...string) (*gexec.Session, func() *gexec.Session) {
+	ginkgo.GinkgoHelper()
 	before := treesnap.Snapshot(e.Data())
 	session := e.Lg(append([]string{"sync"}, args...)...)
-	gomega.Eventually(session, ExitTimeout).Should(gexec.Exit())
-	gomega.Expect(treesnap.Snapshot(e.Data())).To(treesnap.BeAppendOnlyFrom(before))
-	return session
+	return session, func() *gexec.Session {
+		ginkgo.GinkgoHelper()
+		gomega.Eventually(session, ExitTimeout).Should(gexec.Exit())
+		gomega.Expect(treesnap.Snapshot(e.Data())).To(treesnap.BeAppendOnlyFrom(before))
+		return session
+	}
 }
 
 func (e *Env) Store() string { return e.roots().Store }

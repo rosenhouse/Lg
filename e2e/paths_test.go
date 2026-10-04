@@ -21,7 +21,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 	BeforeEach(func() {
 		env = harness.New(lgPath)
 		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
-		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(env.Sync()).To(gexec.Exit(0))
 
 		var err error
 		logs, err = filepath.Glob(filepath.Join(env.Data(), "*/*/*/runs/*/*/attempt-*/jobs/*/log.txt"))
