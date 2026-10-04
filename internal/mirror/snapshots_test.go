@@ -348,6 +348,28 @@ var _ = Describe("an artifact pending for a run that was then deleted", Label("a
 	}, cycleTimeout)
 })
 
+var _ = Describe("an artifact that only on-disk snapshots name, of a run no listing names, after state/pending-artifacts.json is deleted", Label("artifacts"), func() {
+	It("is retried and tombstoned as deleted, with the run's facts from its highest attempt and fetch.json", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 2})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(3))
+		Expect(os.Remove(filepath.Join(env.State(), "pending-artifacts.json"))).To(Succeed())
+		env.Fake.Remove(runID)
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "deleted"))
+		Expect(readJSONFile(filepath.Join(artifactDir(env, runID, flakyReport), "fetch.json"))).To(SatisfyAll(
+			HaveKeyWithValue("run_created_at", "2026-10-03T14:22:54Z"),
+			HaveKeyWithValue("display_title", "Add lg-fixture workflow for recording Actions API shapes"),
+		))
+		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+})
+
 var _ = Describe("an artifact pending for a run of another repo", Label("artifacts"), func() {
 	It("stays pending and untouched while lg syncs this repo", func(ctx SpecContext) {
 		env := harness.InProcess()

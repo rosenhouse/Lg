@@ -68,7 +68,7 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p, discarded, err := loadPending(m.Store, m.Host)
+	p, discarded, err := m.loadPending(repo)
 	if err != nil {
 		return err
 	}

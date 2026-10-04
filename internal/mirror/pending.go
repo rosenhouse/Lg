@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -34,10 +35,9 @@ type pendingRun struct {
 	Artifacts []candidate `json:"artifacts"`
 }
 
-// loadPending reads the file and gives the host's runs. One that does not
-// parse is moved aside, since snapshots still name the artifacts of published
-// attempts, and loadPending gives an empty pending and the parse error as
-// discarded.
+// loadPending reads the file and gives the host's runs, which are nil when
+// the file has none for the host. One that does not parse is moved aside,
+// and loadPending gives the parse error as discarded.
 func loadPending(s *store.Store, host string) (p *pending, discarded, err error) {
 	path := filepath.Join(s.State(), "pending-artifacts.json")
 	hosts, discarded, err := readPending(s, path)
@@ -47,10 +47,13 @@ func loadPending(s *store.Store, host string) (p *pending, discarded, err error)
 	if hosts == nil {
 		hosts = map[string]map[int64]pendingRun{}
 	}
-	if hosts[host] == nil {
-		hosts[host] = map[int64]pendingRun{}
-	}
 	return &pending{store: s, path: path, hosts: hosts, runs: hosts[host]}, discarded, nil
+}
+
+// restore records runs as the host's, and saves the file.
+func (p *pending) restore(host string, runs map[int64]pendingRun) error {
+	p.hosts[host], p.runs = runs, runs
+	return p.save()
 }
 
 func readPending(s *store.Store, path string) (hosts map[string]map[int64]pendingRun, discarded, err error) {
@@ -117,4 +120,78 @@ func (p *pending) save() error {
 		return err
 	}
 	return p.store.ReplaceFile(p.path, buf.Bytes())
+}
+
+// loadPending loads the host's pending runs. When the file has none for the
+// host, as when state/ was lost, it rebuilds them from the snapshots on disk
+// of the repo's runs, since no listing may name those runs again.
+func (m *Mirror) loadPending(repo github.Repo) (p *pending, discarded, err error) {
+	p, discarded, err = loadPending(m.Store, m.Host)
+	if err != nil || p.runs != nil {
+		return p, discarded, err
+	}
+	runs, unreadable, err := m.pendingOnDisk(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName))
+	if err == nil {
+		err = p.restore(m.Host, runs)
+	}
+	return p, errors.Join(discarded, unreadable), err
+}
+
+// pendingOnDisk gives each run under repoDir whose snapshots name artifacts
+// with no dir. The run's fields come from its highest attempt's attempt.json,
+// with created_at from its fetch.json, since an attempt's created_at is its own.
+// It skips the files that do not parse and gives their errors as unreadable.
+func (m *Mirror) pendingOnDisk(repoDir string) (runs map[int64]pendingRun, unreadable, err error) {
+	runs = map[int64]pendingRun{}
+	runsDir := filepath.Join(repoDir, "runs")
+	dates, err := m.Store.Names(runsDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, date := range dates {
+		names, err := m.Store.Names(filepath.Join(runsDir, date))
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, name := range names {
+			runDir := filepath.Join(runsDir, date, name)
+			onDisk, err := m.attemptsOnDisk(runDir)
+			if err != nil {
+				return nil, nil, err
+			}
+			retry, runUnreadable, err := m.retrySet(runDir, onDisk, nil, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			unreadable = errors.Join(unreadable, runUnreadable)
+			if len(retry) == 0 {
+				continue
+			}
+			run, err := readRun(layout.AttemptDir(runDir, slices.Max(onDisk)))
+			var corrupt *corruptFileError
+			switch {
+			case errors.As(err, &corrupt):
+				unreadable = errors.Join(unreadable, err)
+			case err != nil:
+				return nil, nil, err
+			default:
+				runs[run.ID] = pendingRun{Run: run, Artifacts: retry}
+			}
+		}
+	}
+	return runs, unreadable, nil
+}
+
+// readRun reads the run as an attempt of it was fetched.
+func readRun(attemptDir string) (model.Run, error) {
+	var run model.Run
+	if err := readJSON(filepath.Join(attemptDir, "attempt.json"), &run); err != nil {
+		return model.Run{}, err
+	}
+	var f fetch
+	if err := readJSON(filepath.Join(attemptDir, "fetch.json"), &f); err != nil {
+		return model.Run{}, err
+	}
+	run.CreatedAt = f.RunCreatedAt
+	return run, nil
 }
