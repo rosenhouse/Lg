@@ -130,7 +130,7 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 			}
 			Expect(windows).NotTo(BeEmpty(), "backfill %s", backfill)
 			from, to := closedRange(windows[0])
-			Expect(to).To(BeTemporally("~", harness.DefaultNow(), harness.ExitTimeout), "backfill %s", backfill)
+			Expect(to).To(BeTemporally("==", harness.DefaultNow()), "backfill %s", backfill)
 			Expect(from).To(Equal(to.Add(-backfill)), "backfill %s", backfill)
 			Expect(windows[0].Get("per_page")).To(Equal("100"))
 		}
