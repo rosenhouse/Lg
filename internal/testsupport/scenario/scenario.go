@@ -118,8 +118,8 @@ func NextDayRerun(r Run, attempt int) Run {
 	return out
 }
 
-// RenameWorkflow names the workflow name in the run, and in attempt, the
-// attempts after it and their jobs.
+// RenameWorkflow renames the workflow to name in run.json, in attempt and
+// every later attempt, and in their jobs.
 func RenameWorkflow(r Run, attempt int, name string) Run {
 	out := r.copy()
 	out.edit("run.json", func(run map[string]any) { run["name"] = name })
