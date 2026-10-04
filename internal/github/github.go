@@ -4,9 +4,12 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
@@ -47,21 +50,20 @@ func BaseURL(host, apiURL string) string {
 type HTTP struct {
 	client  *http.Client
 	repoURL string
+	token   string
 }
 
 func NewHTTP(client *http.Client, baseURL, repo, token string) *HTTP {
-	return &HTTP{client: client, repoURL: baseURL + "/repos/" + repo}
+	return &HTTP{client: client, repoURL: baseURL + "/repos/" + repo, token: token}
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
-	var listing struct {
-		WorkflowRuns []json.RawMessage `json:"workflow_runs"`
-	}
-	if err := h.getJSON(ctx, "/actions/runs?per_page=100", &listing); err != nil {
+	raws, _, err := h.list(ctx, "/actions/runs?per_page=100", "workflow_runs")
+	if err != nil {
 		return nil, err
 	}
-	runs := make([]Run, len(listing.WorkflowRuns))
-	for i, raw := range listing.WorkflowRuns {
+	runs := make([]Run, len(raws))
+	for i, raw := range raws {
 		runs[i].Raw = raw
 		if err := json.Unmarshal(raw, &runs[i].Run); err != nil {
 			return nil, err
@@ -72,7 +74,7 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, error) {
 	var run Run
-	if err := h.getJSON(ctx, fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), &run.Raw); err != nil {
+	if err := h.getJSON(ctx, h.repoURL+fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), &run.Raw); err != nil {
 		return Run{}, err
 	}
 	err := json.Unmarshal(run.Raw, &run.Run)
@@ -80,20 +82,16 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, e
 }
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, error) {
-	var listing struct {
-		TotalCount int               `json:"total_count"`
-		Jobs       []json.RawMessage `json:"jobs"`
-	}
 	path := fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)
-	if err := h.getJSON(ctx, path, &listing); err != nil {
+	raws, total, err := h.list(ctx, path, "jobs")
+	if err != nil {
 		return nil, err
 	}
-	// lg does not follow Link next yet, so a longer listing would lose jobs.
-	if listing.TotalCount > len(listing.Jobs) {
-		return nil, fmt.Errorf("%s: %d of %d jobs on the first page", h.repoURL+path, len(listing.Jobs), listing.TotalCount)
+	if total > len(raws) {
+		return nil, fmt.Errorf("%s: listed %d of %d jobs", h.repoURL+path, len(raws), total)
 	}
-	jobs := make([]Job, len(listing.Jobs))
-	for i, raw := range listing.Jobs {
+	jobs := make([]Job, len(raws))
+	for i, raw := range raws {
 		jobs[i].Raw = raw
 		if err := json.Unmarshal(raw, &jobs[i].Job); err != nil {
 			return nil, err
@@ -104,20 +102,60 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error {
-	return h.get(ctx, fmt.Sprintf("/actions/jobs/%d/logs", jobID), func(body io.Reader) error {
-		_, err := io.Copy(w, body)
+	return h.get(ctx, h.repoURL+fmt.Sprintf("/actions/jobs/%d/logs", jobID), func(resp *http.Response) error {
+		_, err := io.Copy(w, resp.Body)
 		return err
 	})
 }
 
-func (h *HTTP) getJSON(ctx context.Context, path string, v any) error {
-	return h.get(ctx, path, func(body io.Reader) error {
-		return json.NewDecoder(body).Decode(v)
+// list GETs a listing and every page its Link next URLs lead to, returning
+// the elements of field and the total_count.
+func (h *HTTP) list(ctx context.Context, path, field string) (elements []json.RawMessage, total int, err error) {
+	for url := h.repoURL + path; url != ""; {
+		var page map[string]json.RawMessage
+		var items []json.RawMessage
+		var next string
+		err := h.get(ctx, url, func(resp *http.Response) error {
+			next = nextLink(resp.Header.Get("Link"))
+			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+				return err
+			}
+			return errors.Join(json.Unmarshal(page["total_count"], &total), json.Unmarshal(page[field], &items))
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		if next != "" && !h.onAPIHost(next) {
+			return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", url, next)
+		}
+		elements = append(elements, items...)
+		url = next
+	}
+	return elements, total, nil
+}
+
+var linkNext = regexp.MustCompile(`<([^>]*)>;\s*rel="next"`)
+
+func nextLink(header string) string {
+	if m := linkNext.FindStringSubmatch(header); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+func (h *HTTP) onAPIHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	api, apiErr := url.Parse(h.repoURL)
+	return err == nil && apiErr == nil && u.Scheme == api.Scheme && u.Host == api.Host
+}
+
+func (h *HTTP) getJSON(ctx context.Context, url string, v any) error {
+	return h.get(ctx, url, func(resp *http.Response) error {
+		return json.NewDecoder(resp.Body).Decode(v)
 	})
 }
 
-func (h *HTTP) get(ctx context.Context, path string, read func(io.Reader) error) error {
-	url := h.repoURL + path
+func (h *HTTP) get(ctx context.Context, url string, read func(*http.Response) error) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return err
@@ -125,6 +163,7 @@ func (h *HTTP) get(ctx context.Context, path string, read func(io.Reader) error)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "lg/"+version.Version)
+	req.Header.Set("Authorization", "Bearer "+h.token)
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return err
@@ -133,7 +172,7 @@ func (h *HTTP) get(ctx context.Context, path string, read func(io.Reader) error)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
-	if err := read(resp.Body); err != nil {
+	if err := read(resp); err != nil {
 		return fmt.Errorf("%s: %w", url, err)
 	}
 	return nil
