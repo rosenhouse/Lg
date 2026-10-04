@@ -250,6 +250,18 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		})
 	})
 
+	Describe("WithoutDigest", Label("artifacts"), func() {
+		It("drops the artifact's digest, leaving the others and the original run unchanged", func() {
+			undigested := scenario.WithoutDigest(run, 7_011275917910)
+
+			var listing struct{ Artifacts []map[string]any }
+			Expect(json.Unmarshal(undigested.Files["artifacts.json"].Data, &listing)).To(Succeed())
+			Expect(listing.Artifacts).To(ContainElement(SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), Not(HaveKey("digest")))))
+			Expect(listing.Artifacts).To(HaveEach(Or(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("digest", HavePrefix("sha256:")))))
+			Expect(strings.Count(string(run.Files["artifacts.json"].Data), `"digest"`)).To(Equal(len(listing.Artifacts)))
+		})
+	})
+
 	Describe("WithPullRequests", Label("artifacts"), func() {
 		It("lists the run with pull requests of the given numbers", func() {
 			opened := scenario.WithPullRequests(run, 42, 7)

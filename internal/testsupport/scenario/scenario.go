@@ -171,12 +171,21 @@ func QueueJob(r Run, attempt int, name string) Run {
 
 // Expire lists the artifact as expired.
 func Expire(r Run, artifactID int64) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["expired"] = true })
+}
+
+// WithoutDigest lists the artifact with no digest.
+func WithoutDigest(r Run, artifactID int64) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { delete(artifact, "digest") })
+}
+
+func (r Run) editArtifact(artifactID int64, edit func(map[string]any)) Run {
 	out := r.copy()
 	out.edit("artifacts.json", func(listing map[string]any) {
 		for _, artifact := range listing["artifacts"].([]any) {
 			artifact := artifact.(map[string]any)
 			if artifact["id"].(json.Number).String() == strconv.FormatInt(artifactID, 10) {
-				artifact["expired"] = true
+				edit(artifact)
 			}
 		}
 	})
