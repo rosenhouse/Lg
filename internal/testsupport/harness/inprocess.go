@@ -31,7 +31,7 @@ func shortTimeouts() github.Timeouts {
 	return github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: time.Second, BodyIdle: time.Second}
 }
 
-// InProcessEnv drives mirror.Cycle against its own fake and store.
+// InProcessEnv drives mirror.Cycle against its own fake, and a store on FS.
 type InProcessEnv struct {
 	FS     *faultfs.FS
 	Fake   *fakegithub.Server
@@ -46,7 +46,8 @@ func InProcess() *InProcessEnv {
 	ginkgo.GinkgoHelper()
 	root := filepath.Join(ginkgo.GinkgoT().TempDir(), "lg")
 	gomega.Expect(store.Init(root)).To(gomega.Succeed())
-	s, err := store.Open(root)
+	fsys := faultfs.New()
+	s, err := store.OpenFS(fsys, root)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	fake := fakegithub.New()
 	ginkgo.DeferCleanup(fake.Close)
@@ -55,7 +56,7 @@ func InProcess() *InProcessEnv {
 	clk := clock.NewFake(DefaultNow())
 	transport := github.NewTransport(shortTimeouts())
 	return &InProcessEnv{
-		FS:    faultfs.New(),
+		FS:    fsys,
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{
