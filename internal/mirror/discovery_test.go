@@ -2,6 +2,7 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,7 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
@@ -189,5 +192,103 @@ var _ = Describe("mirror.Cycle's hourly rescan", Label("discovery"), func() {
 		Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/[12](/|$)`))))
 		Expect(env.AttemptDirs(1)).To(BeEmpty())
 		Expect(env.AttemptDirs(2)).To(BeEmpty())
+	}, cycleTimeout)
+})
+
+func listedAt(id int64, at time.Time) github.Run {
+	return github.Run{Run: model.Run{ID: id, CreatedAt: at}}
+}
+
+var _ = Describe("Merge", Label("discovery"), func() {
+	now := harness.DefaultNow()
+
+	It("sorts runs by created_at, then id", func() {
+		Expect(mirror.Merge([]github.Run{listedAt(3, now), listedAt(2, now), listedAt(1, now.Add(-day))})).To(Equal(
+			[]github.Run{listedAt(1, now.Add(-day)), listedAt(2, now), listedAt(3, now)}))
+	})
+
+	It("collapses duplicates across listings, keeping the first", func() {
+		first := github.Run{Run: model.Run{ID: 1, CreatedAt: now, Status: "completed"}}
+		again := github.Run{Run: model.Run{ID: 1, CreatedAt: now, Status: "in_progress"}}
+		Expect(mirror.Merge([]github.Run{first}, []github.Run{again, listedAt(2, now)})).To(Equal([]github.Run{first, listedAt(2, now)}))
+	})
+})
+
+var _ = Describe("RescanWindow", Label("discovery"), func() {
+	now := harness.DefaultNow()
+
+	DescribeTable("is [now−min(30d, retention), now−backfill]",
+		func(backfill, retention time.Duration, from, to time.Time) {
+			gotFrom, gotTo, ok := mirror.RescanWindow(now, backfill, retention)
+			Expect(ok).To(BeTrue())
+			Expect(gotFrom).To(Equal(from))
+			Expect(gotTo).To(Equal(to))
+		},
+		Entry("retention over 30d", 7*day, 90*day, now.Add(-30*day), now.Add(-7*day)),
+		Entry("retention under 30d", 7*day, 20*day, now.Add(-20*day), now.Add(-7*day)),
+		Entry("backfill just under the lower bound", 29*day, 90*day, now.Add(-30*day), now.Add(-29*day)),
+	)
+
+	DescribeTable("is empty when backfill is at least min(30d, retention)",
+		func(backfill, retention time.Duration) {
+			_, _, ok := mirror.RescanWindow(now, backfill, retention)
+			Expect(ok).To(BeFalse())
+		},
+		Entry("backfill 30d", 30*day, 90*day),
+		Entry("backfill over 30d", 40*day, 90*day),
+		Entry("backfill equal to a short retention", 10*day, 10*day),
+	)
+})
+
+var _ = Describe("mirror.Cycle", Label("discovery"), func() {
+	It("lists the non-terminal statuses in_progress, queued, requested, waiting, pending and action_required", func(ctx SpecContext) {
+		env := harness.InProcess()
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		var statuses []string
+		for _, q := range runListings(env.Fake.Requests()) {
+			if q.Has("status") {
+				statuses = append(statuses, q.Get("status"))
+			}
+		}
+		Expect(statuses).To(ConsistOf("in_progress", "queued", "requested", "waiting", "pending", "action_required"))
+	}, cycleTimeout)
+
+	It("rescans when state/rescan.json is missing or records a rescan at least 1h old", func(ctx SpecContext) {
+		env := harness.InProcess()
+		now := harness.DefaultNow()
+		rescanRange := createdRange(now.Add(-30*day), now.Add(-7*day))
+		rescanJSON := filepath.Join(env.State(), "rescan.json")
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(rescanRange))
+		Expect(readJSONFile(rescanJSON)).To(HaveKeyWithValue("rescanned_at", now.Format(time.RFC3339)))
+
+		for _, age := range []time.Duration{0, 59 * time.Minute} {
+			Expect(os.WriteFile(rescanJSON, fmt.Appendf(nil, `{"rescanned_at":%q}`, now.Add(-age).Format(time.RFC3339)), 0o644)).To(Succeed())
+			before := len(env.Fake.Requests())
+			Expect(env.Sync(ctx)).To(Succeed())
+			Expect(createdRanges(env.Fake.Requests()[before:])).NotTo(ContainElement(rescanRange), "age %s", age)
+		}
+		Expect(os.WriteFile(rescanJSON, fmt.Appendf(nil, `{"rescanned_at":%q}`, now.Add(-time.Hour).Format(time.RFC3339)), 0o644)).To(Succeed())
+		before := len(env.Fake.Requests())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests()[before:])).To(ContainElement(rescanRange))
+	}, cycleTimeout)
+})
+
+var _ = Describe("the watch list", Label("discovery"), func() {
+	It("drops runs that are complete on disk or older than retention, without fetching them", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		watched := fmt.Sprintf(`{"github.com":{"%d":{"id":%d,"created_at":"2026-10-03T14:22:54Z","repository":{"full_name":"rosenhouse/Lg"}},"5":%s}}`,
+			runID, runID, scenario.ListedRun(5, harness.DefaultNow().Add(-91*day)))
+		Expect(os.WriteFile(filepath.Join(env.State(), "watch.json"), []byte(watched), 0o644)).To(Succeed())
+		before := len(env.Fake.Requests())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readWatch(env)).To(HaveKeyWithValue("github.com", BeEmpty()))
+		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/(5|37129390741)$`))))
 	}, cycleTimeout)
 })
