@@ -43,9 +43,14 @@ const (
 	CarriedForward JobKind = "carried_forward"
 )
 
-// Classify gives NotApplicable to a job with no steps and no runner, which
-// GitHub never produces a log for.
+// Classify gives CarriedForward to a job that started before its attempt,
+// which a rerun copies from the attempt that ran it. Otherwise it gives
+// NotApplicable to a job with no steps and no runner, which GitHub never
+// produces a log for.
 func Classify(job Job, runStartedAt time.Time) JobKind {
+	if job.StartedAt != nil && job.StartedAt.Before(runStartedAt) {
+		return CarriedForward
+	}
 	if len(job.Steps) == 0 && job.RunnerName == nil {
 		return NotApplicable
 	}
