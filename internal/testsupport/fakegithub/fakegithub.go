@@ -168,7 +168,7 @@ func (s *Server) loadFS(runID int64, files fs.FS) error {
 }
 
 // AddRun serves r, or serves it in place of an earlier r of the same id.
-func (s *Server) AddRun(r scenario.Run) error { return nil }
+func (s *Server) AddRun(r scenario.Run) error { return s.loadFS(r.ID, r.Files) }
 
 // Advance serves a loaded run at another stage.
 func (s *Server) Advance(runID int64, stage string) error {
