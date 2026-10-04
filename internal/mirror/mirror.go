@@ -91,13 +91,17 @@ func (m *Mirror) cycle(ctx context.Context) error {
 }
 
 // listedRun is a listed run with its dir and this cycle's listing of its
-// artifacts. artifactsListed is false for a run whose listing failed or was not found.
+// artifacts, which is nil when the listing failed or was not found.
 type listedRun struct {
 	github.Run
-	dir             string
-	artifactsListed bool
-	artifacts       []github.Artifact
-	listing         github.Source
+	dir       string
+	artifacts *artifactListing
+}
+
+// artifactListing is a run's artifacts as one listing gave them.
+type artifactListing struct {
+	artifacts []github.Artifact
+	source    github.Source
 }
 
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
@@ -124,7 +128,9 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
 	var failed []error
 	for i := range runs {
-		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i], p)
+		var runFailed []error
+		var err error
+		runs[i].artifacts, runFailed, err = m.syncArtifacts(ctx, gh, runs[i], p)
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +145,7 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for _, run := range runs {
-		if !run.artifactsListed {
+		if run.artifacts == nil {
 			continue
 		}
 		runFailed, err := m.syncAttempts(ctx, gh, run)
@@ -252,7 +258,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run liste
 		err = s.writeJSON("jobs.json", jsonArray(jobs, func(j github.Job) json.RawMessage { return j.Raw }), jobsSource)
 	}
 	if err == nil {
-		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.listing)
+		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.artifacts.source)
 	}
 	if err == nil {
 		err = m.stageJobs(ctx, gh, s, attempt, jobs)

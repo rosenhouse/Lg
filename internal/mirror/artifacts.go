@@ -19,44 +19,45 @@ import (
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
-// syncArtifacts lists the run's artifacts into run and publishes its retry
-// set. It returns the errors that runScoped accepts, and stops at any other.
-// A run not found is skipped.
-func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
-	artifacts, listing, err := gh.ListArtifacts(ctx, run.ID)
+// syncArtifacts lists the run's artifacts and publishes its retry set. It
+// returns the listing, or nil when the run was not found or its listing
+// failed, and the errors that runScoped accepts. It stops at any other error.
+func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listedRun, p *pending) (*artifactListing, []error, error) {
+	artifacts, source, err := gh.ListArtifacts(ctx, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if runScoped(err) {
-		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+		return nil, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	run.artifactsListed, run.artifacts, run.listing = true, artifacts, listing
-	retry, err := m.retrySet(*run, p.runs[run.ID])
+	listing := &artifactListing{artifacts: artifacts, source: source}
+	run.artifacts = listing
+	retry, err := m.retrySet(run, p.runs[run.ID])
 	if runScoped(err) {
-		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+		return listing, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	}
 	if err == nil {
 		err = p.set(run.ID, retry)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var failed []error
 	var unpublished []github.Artifact
 	for _, artifact := range retry {
-		err := m.publishArtifact(ctx, gh, run.Run, listing, artifact, layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
+		err := m.publishArtifact(ctx, gh, run.Run, source, artifact, layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
 		switch {
 		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, artifact.ID, err))
 			unpublished = append(unpublished, artifact)
 		case err != nil:
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return failed, p.set(run.ID, unpublished)
+	return listing, failed, p.set(run.ID, unpublished)
 }
 
 func (m *Mirror) publishArtifact(ctx context.Context, gh github.Client, run github.Run, listing github.Source, artifact github.Artifact, target string) error {
@@ -159,7 +160,11 @@ func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Ar
 	}
 	var retry []github.Artifact
 	seen := map[int64]bool{}
-	for _, artifact := range slices.Concat(run.artifacts, pending, snapshots) {
+	var listed []github.Artifact
+	if run.artifacts != nil {
+		listed = run.artifacts.artifacts
+	}
+	for _, artifact := range slices.Concat(listed, pending, snapshots) {
 		if seen[artifact.ID] {
 			continue
 		}
