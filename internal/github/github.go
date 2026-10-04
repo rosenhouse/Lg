@@ -26,8 +26,7 @@ import (
 // Run is a run with the body GitHub served for it.
 type Run struct {
 	model.Run
-	Raw    json.RawMessage
-	Source Source
+	Raw json.RawMessage
 }
 
 // Job is a job with the element GitHub served for it.
@@ -38,7 +37,7 @@ type Job struct {
 
 type Client interface {
 	ListRuns(ctx context.Context) ([]Run, error)
-	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, error)
+	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error)
 }
@@ -182,13 +181,16 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 	return runs, nil
 }
 
-func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, error) {
-	run := Run{Source: Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), Status: http.StatusOK}}
-	if err := h.getJSON(ctx, run.Source.URL, &run.Raw); err != nil {
-		return Run{}, err
+func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
+	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), Status: http.StatusOK}
+	var run Run
+	if err := h.getJSON(ctx, source.URL, &run.Raw); err != nil {
+		return Run{}, Source{}, err
 	}
-	err := json.Unmarshal(run.Raw, &run.Run)
-	return run, err
+	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
+		return Run{}, Source{}, err
+	}
+	return run, source, nil
 }
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error) {

@@ -73,7 +73,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
-		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetAttempt(ctx, 1, 1); return err }),
+		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
 		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error {
 			_, err := c.DownloadJobLog(ctx, 1, &bytes.Buffer{})
@@ -100,7 +100,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	})
 
 	It("gets an attempt with its fields and the body served", func() {
-		attempt, err := client.GetAttempt(context.Background(), runID, 1)
+		attempt, _, err := client.GetAttempt(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(attempt.RunAttempt).To(Equal(1))
 		Expect(attempt.Raw).To(Equal(json.RawMessage(fake.Served("attempt-1/attempt.json"))))
@@ -125,7 +125,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 	It("gives the API URL, status and page count of what it fetched", Label("failures"), func() {
 		fake.SetPageCap(5)
-		attempt, err := client.GetAttempt(context.Background(), runID, 1)
+		_, attempt, err := client.GetAttempt(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		_, listing, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
@@ -133,7 +133,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		api := fake.URL() + "/repos/rosenhouse/lg/actions/"
-		Expect(attempt.Source).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1", Status: 200}))
+		Expect(attempt).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1", Status: 200}))
 		Expect(listing).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1/jobs?per_page=100", Status: 200, Pages: 3}))
 		Expect(log).To(Equal(github.Source{URL: api + "jobs/111221289888/logs", Status: 200}))
 	})
@@ -325,7 +325,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	})
 
 	It("returns an error naming the URL and status of a failed request", func() {
-		_, err := client.GetAttempt(context.Background(), runID, 9)
+		_, _, err := client.GetAttempt(context.Background(), runID, 9)
 		Expect(err).To(MatchError(fake.URL() + "/repos/rosenhouse/lg/actions/runs/37129390741/attempts/9: 404 Not Found"))
 	})
 })

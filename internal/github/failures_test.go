@@ -136,7 +136,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	}, hopTimeout)
 
 	It("leaves a malformed 200 body non-Transient", func(ctx SpecContext) {
-		_, err := hops(answer(http.StatusOK, "{"), nil).GetAttempt(ctx, 1, 1)
+		_, _, err := hops(answer(http.StatusOK, "{"), nil).GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		Expect(err).NotTo(BeTransient())
 	}, hopTimeout)
@@ -244,7 +244,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		timeouts.Dial = time.Nanosecond
 		client := github.NewHTTP(github.NewTransport(timeouts), mustParse(server.URL), "o/r", "lg-test-token")
 
-		_, err := client.GetAttempt(ctx, 1, 1)
+		_, _, err := client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("dial tcp 127.0.0.1:")))
 		Expect(err).To(MatchError(ContainSubstring("i/o timeout")))
 	}, SpecTimeout(5*time.Second))
@@ -258,7 +258,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		timeouts.TLSHandshake = 200 * time.Millisecond
 		client := github.NewHTTP(github.NewTransport(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token")
 
-		_, err = client.GetAttempt(ctx, 1, 1)
+		_, _, err = client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("TLS handshake timeout")))
 		Expect(err).To(BeTransient())
 	}, SpecTimeout(5*time.Second))

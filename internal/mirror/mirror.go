@@ -73,7 +73,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
-	attempt, err := gh.GetAttempt(ctx, run.ID, n)
+	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
 		return nil // The run is gone.
 	}
@@ -97,7 +97,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return err
 	}
 	s := &staged{unit: unit, sources: map[string]source{}}
-	err = m.stageAttempt(ctx, gh, s, run, attempt, jobs, jobsSource)
+	err = m.stageAttempt(ctx, gh, s, run, attempt, attemptSource, jobs, jobsSource)
 	if err == nil {
 		err = m.Store.Publish(unit, target)
 	}
@@ -107,8 +107,8 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	return nil
 }
 
-func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, s *staged, run, attempt github.Run, jobs []github.Job, jobsSource github.Source) error {
-	if err := s.writeJSON("attempt.json", attempt.Raw, attempt.Source); err != nil {
+func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, s *staged, run, attempt github.Run, attemptSource github.Source, jobs []github.Job, jobsSource github.Source) error {
+	if err := s.writeJSON("attempt.json", attempt.Raw, attemptSource); err != nil {
 		return err
 	}
 	if err := s.writeJSON("jobs.json", jsonArray(jobs), jobsSource); err != nil {
