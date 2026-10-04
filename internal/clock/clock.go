@@ -77,12 +77,14 @@ func FromEnv(env map[string]string, base Clock) (Clock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("LG_TEST_NOW: %w", err)
 	}
-	return shifted{Clock: base, offset: start.Sub(base.Now())}, nil
+	return shifted{Clock: base, start: start, baseStart: base.Now()}, nil
 }
 
+// shifted adds base's elapsed time to start. An offset between the two
+// would saturate centuries apart.
 type shifted struct {
 	Clock
-	offset time.Duration
+	start, baseStart time.Time
 }
 
-func (s shifted) Now() time.Time { return s.Clock.Now().Add(s.offset) }
+func (s shifted) Now() time.Time { return s.start.Add(s.Clock.Now().Sub(s.baseStart)) }

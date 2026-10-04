@@ -56,6 +56,13 @@ var _ = Describe("FromEnv", Label("failures"), func() {
 		Expect(clk.Now()).To(Equal(t0.Add(90 * time.Second)))
 	})
 
+	It("starts at an LG_TEST_NOW centuries from the base clock", func() {
+		base := clock.NewFake(t0)
+		clk, err := clock.FromEnv(map[string]string{"LG_TEST_NOW": "1700-01-01T00:00:00Z"}, base)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(clk.Now()).To(Equal(time.Date(1700, 1, 1, 0, 0, 0, 0, time.UTC)))
+	})
+
 	It("advances in real time over Real", func() {
 		clk, err := clock.FromEnv(map[string]string{"LG_TEST_NOW": "2026-10-03T18:00:00Z"}, clock.Real{})
 		Expect(err).NotTo(HaveOccurred())
