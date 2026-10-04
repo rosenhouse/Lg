@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
@@ -54,7 +56,10 @@ func (syncCmd) Run(deps *Deps) error {
 		Clock:    deps.Clock,
 		LogGrace: time.Duration(cfg.LogGrace),
 	}
-	return m.Cycle(context.Background())
+	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return m.Cycle(ctx)
 }
 
 // writeLockWait bounds how long a writer waits for another to finish.

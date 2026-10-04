@@ -43,7 +43,7 @@ var _ = Describe("lg sync interrupted while gh hangs", Label("blocked"), func() 
 		session, wait := env.StartSync()
 		Eventually(env.GH().HungPIDs, harness.ExitTimeout).Should(HaveLen(1))
 		gh := env.GH().HungPIDs()[0]
-		DeferCleanup(syscall.Kill, gh, syscall.SIGKILL)
+		DeferCleanup(func() { _ = syscall.Kill(gh, syscall.SIGKILL) })
 		session.Interrupt()
 
 		Expect(wait()).NotTo(gexec.Exit(0))
