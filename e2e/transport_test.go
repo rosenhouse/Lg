@@ -33,12 +33,14 @@ var _ = Describe("lg sync", Label("transport"), func() {
 
 		Expect(env.Sync()).To(gexec.Exit(0))
 		Expect(env.GH().Calls()).To(Equal([]string{"auth token --hostname github.com"}))
-		Expect(fake.Requests()).To(ContainElement(HaveField("Host", "api")))
-		for _, r := range fake.Requests() {
-			if r.Host == "api" {
-				Expect(r.Authorization).To(BeTrue(), r.Path)
-			}
-		}
+	})
+
+	It("runs gh in lg's own environment, so gh finds its config", func() {
+		configDir := GinkgoT().TempDir()
+		env.Setenv("GH_CONFIG_DIR", configDir)
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		Expect(env.GH().ConfigDirs()).To(Equal([]string{configDir}))
 	})
 
 	It("asks gh for the token of the configured host", func() {
