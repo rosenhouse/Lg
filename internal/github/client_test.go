@@ -385,6 +385,8 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("when total_count exceeds the artifacts on its pages", `{"total_count":2,"artifacts":[{"id":1}]}`, "listed 1 of 2 artifacts"),
 		Entry("when it repeats an artifact id", `{"total_count":2,"artifacts":[{"id":5},{"id":5}]}`, "artifact 5 listed twice"),
 		Entry("when an artifact has no id", `{"total_count":2,"artifacts":[{"id":5},{"name":"a"}]}`, "artifact #1 has no id"),
+		Entry("when an artifact has no created_at", `{"total_count":1,"artifacts":[{"id":5,"expires_at":"2026-10-04T14:23:01Z"}]}`, "artifact 5 has no created_at"),
+		Entry("when an artifact has a null created_at", `{"total_count":1,"artifacts":[{"id":5,"created_at":null}]}`, "artifact 5 has no created_at"),
 	)
 
 	It("calls an artifacts listing with an unparsable element malformed, naming its URL", Label("artifacts"), func() {

@@ -330,11 +330,20 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
-	return listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
+	artifacts, source, err := listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
 		var artifact Artifact
 		err := json.Unmarshal(raw, &artifact)
 		return artifact, artifact.ID, err
 	})
+	if err != nil {
+		return nil, Source{}, err
+	}
+	for _, artifact := range artifacts {
+		if artifact.CreatedAt.IsZero() {
+			return nil, Source{}, malformed(listURL, "artifact %d has no created_at", artifact.ID)
+		}
+	}
+	return artifacts, source, nil
 }
 
 // listByID lists the elements of field, which decode reads with their ids.
