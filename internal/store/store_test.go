@@ -392,11 +392,18 @@ var _ = Describe("FindRunDir", Label("attempts"), func() {
 	})
 
 	It("returns the error when the date dir cannot be read", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: date}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.FindRunDir(filepath.Join(date, "7_new-name_main"))).Error().To(MatchError(syscall.EIO))
+	})
+
+	It("returns the error when the run dir cannot be checked", func() {
 		Expect(os.MkdirAll(filepath.Dir(date), 0o755)).To(Succeed())
 		Expect(os.WriteFile(date, nil, 0o644)).To(Succeed())
 
-		_, err := s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))
-		Expect(err).To(MatchError(syscall.ENOTDIR))
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).Error().To(MatchError(syscall.ENOTDIR))
 	})
 })
 

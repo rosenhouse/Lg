@@ -240,8 +240,12 @@ func (s *Store) Has(target string) (bool, error) {
 // FindRunDir gives runDir when it exists, else the dir beside it that holds
 // the same run, named <id>_<slugs> with slugs that may differ, else runDir.
 func (s *Store) FindRunDir(runDir string) (string, error) {
-	if exists, err := s.Has(runDir); exists || err != nil {
-		return runDir, err
+	exists, err := s.Has(runDir)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return runDir, nil
 	}
 	date, name := filepath.Split(runDir)
 	id, _, _ := strings.Cut(name, "_")
