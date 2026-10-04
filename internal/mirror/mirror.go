@@ -222,7 +222,7 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 		return writeTombstone(s.unit, dir, ts)
 	}
 	log := filepath.Join(dir, "log.txt")
-	w, err := s.unit.Create(log)
+	w, err := s.unit.Create(log, store.Unlimited)
 	if err != nil {
 		return err
 	}

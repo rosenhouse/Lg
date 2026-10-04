@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -375,7 +376,7 @@ func mkdirBelow(fsys FS, base, path string, syncParents bool) ([]string, error) 
 // place writes name in the unit, then renames it into dir, which must not
 // have one, so a reader sees no file or the whole of it.
 func (u *Unit) place(name, content, dir string) error {
-	w, err := u.Create(name)
+	w, err := u.Create(name, Unlimited)
 	if err != nil {
 		return err
 	}
@@ -418,9 +419,15 @@ func (u *Unit) Remove(name string) error {
 // Abort removes the staged unit.
 func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
 
+// Unlimited lets a member grow to any size.
+const Unlimited int64 = math.MaxInt64
+
+// ErrTooLarge is a write past a member's maxBytes.
+var ErrTooLarge = errors.New("member too large")
+
 // Create opens a new member file, creating its parent dirs within the unit.
 // It fails once the unit's dir is gone. Closing it fsyncs it.
-func (u *Unit) Create(name string) (io.WriteCloser, error) {
+func (u *Unit) Create(name string, maxBytes int64) (io.WriteCloser, error) {
 	if !filepath.IsLocal(name) || slices.Contains(strings.Split(filepath.ToSlash(name), "/"), "..") {
 		return nil, fmt.Errorf("member name %q is absolute or contains \"..\"", name)
 	}
@@ -475,7 +482,7 @@ func (u *Unit) WriteJSON(name string, raw []byte) error {
 		return err
 	}
 	buf.WriteByte('\n')
-	w, err := u.Create(name)
+	w, err := u.Create(name, Unlimited)
 	if err != nil {
 		return err
 	}

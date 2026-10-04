@@ -259,10 +259,10 @@ var _ = Describe("Publish", Label("store"), func() {
 		s := open(root)
 		unit, err := s.NewUnit()
 		Expect(err).NotTo(HaveOccurred())
-		closed, err := unit.Create("jobs/1_build/job.json")
+		closed, err := unit.Create("jobs/1_build/job.json", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(closed.Close()).To(Succeed())
-		unclosed, err := unit.Create("jobs/1_build/log.txt")
+		unclosed, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(unclosed.Close)
 
