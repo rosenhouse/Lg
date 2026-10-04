@@ -20,6 +20,7 @@ fetch() { # fetch PATH FILE — follows redirect, records first-hop status and f
 }
 
 : > status.txt
+curl -sS -o /dev/null -D - "$api/runs/$run" | grep -i '^date:' | cut -d' ' -f2- | tr -d '\r' > recorded_at.txt
 get "runs/$run" run.json
 get "runs/$run/jobs?filter=all&per_page=100" jobs-all.json
 get "runs/$run/jobs?filter=latest&per_page=100" jobs-latest.json
@@ -36,7 +37,8 @@ for a in $(seq 1 "$n"); do
   done
 done
 mkdir -p artifacts
-for id in $(jq -r '.artifacts[].id' ../*/artifacts.json | sort -nu); do # every stage's, so an expired zip is recorded
+# Ids come from every stage, so expired and deleted zips are recorded too.
+for id in $(jq -r '.artifacts[]?.id' ../*/artifacts.json | sort -nu); do
   fetch "artifacts/$id/zip" "artifacts/$id.zip"
 done
 echo "recorded $label: run $run, $n attempts"
