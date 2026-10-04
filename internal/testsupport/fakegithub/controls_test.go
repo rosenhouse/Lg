@@ -96,6 +96,30 @@ var _ = Describe("Server controls", func() {
 		Eventually(done, time.Second).Should(BeClosed())
 	})
 
+	It("Close ends a stalled response", Label("failures"), func() {
+		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Stall: true})
+		// Runs before Start's Close, so a failing spec does not hang there.
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		go func() {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			if err != nil {
+				return
+			}
+			if resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		Eventually(fake.Requests, time.Second).ShouldNot(BeEmpty())
+
+		closed := make(chan struct{})
+		go func() {
+			fake.Close()
+			close(closed)
+		}()
+		Eventually(closed, time.Second).Should(BeClosed())
+	})
+
 	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", Label("transport"), func() {
 		fake.RequireToken("lg-test-token")
 
