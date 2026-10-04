@@ -58,11 +58,10 @@ func checkAPIURL(apiURL, host string) error {
 	if !ok {
 		return Error(fmt.Sprintf("api_url must be an http or https URL with no user info, query or fragment: %q", shown))
 	}
-	name := strings.ToLower(u.Hostname())
-	ip := net.ParseIP(name)
-	if name == "localhost" || ip != nil && ip.IsLoopback() {
+	if onLoopback(u) {
 		return nil
 	}
+	name := strings.ToLower(u.Hostname())
 	if name != host && name != "api."+host {
 		return Error(fmt.Sprintf("api_url must be on host, api.<host> or a loopback address: %q", apiURL))
 	}
@@ -70,6 +69,18 @@ func checkAPIURL(apiURL, host string) error {
 		return Error(fmt.Sprintf("api_url must use https unless it is on a loopback address: %q", apiURL))
 	}
 	return nil
+}
+
+// IsLoopback reports whether apiURL is on a loopback address, where only a test fakegithub should listen.
+func IsLoopback(apiURL string) bool {
+	u, err := url.Parse(apiURL)
+	return err == nil && onLoopback(u)
+}
+
+func onLoopback(u *url.URL) bool {
+	name := strings.ToLower(u.Hostname())
+	ip := net.ParseIP(name)
+	return name == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 func isDots(s string) bool { return s == "." || s == ".." }

@@ -33,6 +33,9 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	if config.IsLoopback(cfg.APIURL) && deps.Env["LG_GH"] == "" {
+		return config.Error(fmt.Sprintf("api_url may be on a loopback address only when LG_GH is set: %q", cfg.APIURL))
+	}
 	s, release, err := openForWriting(roots, deps.Clock, deps.Stderr)
 	if err != nil {
 		return err
