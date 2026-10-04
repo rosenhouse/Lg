@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -26,9 +27,10 @@ type pending struct {
 	runs map[int64]pendingRun
 }
 
-// pendingRun is a run as last listed, with its pending artifacts.
+// pendingRun is the fields lg reads of a run as last listed, with its
+// pending artifacts.
 type pendingRun struct {
-	Run       github.Run  `json:"run"`
+	Run       model.Run   `json:"run"`
 	Artifacts []candidate `json:"artifacts"`
 }
 
@@ -94,7 +96,7 @@ func (p *pending) set(run github.Run, candidates []candidate) error {
 	if len(candidates) == 0 {
 		delete(p.runs, run.ID)
 	} else {
-		p.runs[run.ID] = pendingRun{Run: run, Artifacts: candidates}
+		p.runs[run.ID] = pendingRun{Run: run.Run, Artifacts: candidates}
 	}
 	return p.save()
 }
@@ -111,7 +113,6 @@ func (p *pending) save() error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
 	if err := enc.Encode(p.hosts); err != nil {
 		return err
 	}

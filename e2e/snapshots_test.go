@@ -89,7 +89,7 @@ var _ = Describe("an artifact whose zip and whose attempt's log both failed tran
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 		fake.Fail("api", "artifacts/11276401837/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 		Expect(env.Sync()).To(gexec.Exit(1))
-		Expect(os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))).To(ContainSubstring(`"id": 11276401837`))
+		Expect(os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))).To(ContainSubstring(`"id":11276401837`))
 		Expect(fake.Advance(fixtureRun, "after-attempt-3")).To(Succeed())
 
 		Expect(env.Sync()).To(gexec.Exit(0))

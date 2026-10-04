@@ -178,6 +178,19 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 		Expect(readPending(env)).To(BeEmpty())
 	}, cycleTimeout)
 
+	It("holds of each run only the fields lg reads, since it is rewritten whenever a run's pending artifacts change", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		pending := readJSONFile(filepath.Join(env.State(), "pending-artifacts.json"))
+		Expect(pending).To(HaveKeyWithValue("github.com", HaveKeyWithValue("37129390741", HaveKeyWithValue("run", SatisfyAll(
+			HaveKeyWithValue("repository", Equal(map[string]any{"full_name": "rosenhouse/Lg"})),
+			Not(HaveKey("head_repository")),
+		)))))
+	}, cycleTimeout)
+
 	It("holds the run's listed artifacts before any zip is requested", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())

@@ -124,7 +124,7 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 		return nil, fmt.Errorf("run %d belongs to %q, not %q", runs[i].ID, runs[i].Repository.FullName, repo.FullName)
 	}
 	for _, id := range slices.Backward(slices.Sorted(maps.Keys(p.runs))) {
-		run := p.runs[id].Run
+		run := github.Run{Run: p.runs[id].Run}
 		listed := slices.ContainsFunc(runs, func(listed github.Run) bool { return listed.ID == id })
 		if !listed && ofRepo(run, repo) {
 			runs = append(runs, run)
