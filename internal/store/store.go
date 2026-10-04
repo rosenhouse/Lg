@@ -237,6 +237,12 @@ func (s *Store) Has(target string) (bool, error) {
 	return err == nil, err
 }
 
+// FindRunDir gives the dir beside runDir that holds the same run, named
+// <id>_<slugs> with slugs that may differ, or runDir when there is none.
+func (s *Store) FindRunDir(runDir string) (string, error) {
+	return runDir, nil
+}
+
 // Sweep empties tmp/ of what dead writers left. Callers hold
 // state/write.lock, so no live writer uses it.
 func (s *Store) Sweep() error {

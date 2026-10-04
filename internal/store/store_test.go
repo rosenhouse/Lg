@@ -349,3 +349,44 @@ func (f failingFile) Write(p []byte) (int, error) {
 func (f failingFile) Sync() error { return f.sync }
 
 func (f failingFile) Close() error { return nil }
+
+var _ = Describe("FindRunDir", Label("attempts"), func() {
+	var (
+		s    *store.Store
+		date string
+	)
+
+	BeforeEach(func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		var err error
+		s, err = store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
+		date = filepath.Join(s.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03")
+	})
+
+	It("finds the dir of the run's id in the date dir whatever its slugs", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "77_lg-fixture_main"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+
+		Expect(s.FindRunDir(filepath.Join(date, "7_new-name_other"))).To(Equal(filepath.Join(date, "7_old-name_main")))
+	})
+
+	It("gives the dir it is asked for when the date dir holds none of the run's id", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "77_lg-fixture_main"), 0o755)).To(Succeed())
+
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
+	It("gives the dir it is asked for when the date dir is missing", func() {
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
+	It("returns the error when the date dir cannot be read", func() {
+		Expect(os.MkdirAll(filepath.Dir(date), 0o755)).To(Succeed())
+		Expect(os.WriteFile(date, nil, 0o644)).To(Succeed())
+
+		_, err := s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))
+		Expect(err).To(MatchError(syscall.ENOTDIR))
+	})
+})
