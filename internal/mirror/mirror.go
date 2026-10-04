@@ -218,7 +218,7 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 		s.carriedForward = append(s.carriedForward, job.ID)
 		return nil
 	case model.NotApplicable:
-		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
+		ts := tombstone.New("log.txt", gh.JobLogURL(job.ID), tombstone.NotApplicable, "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
 	log := filepath.Join(dir, "log.txt")

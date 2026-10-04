@@ -33,9 +33,9 @@ func newTombstone(target, url string, reason Reason, message string, now time.Ti
 	return Tombstone{LgFormat: 1, TombstonedAt: now.UTC().Truncate(time.Second), Target: target, URL: url, Reason: reason, Message: message}
 }
 
-// NeverProduced tombstones a target that GitHub never produces, so lg never requests url.
-func NeverProduced(target, url, message string, now time.Time) Tombstone {
-	return newTombstone(target, url, NotApplicable, message, now)
+// New tombstones a target for a reason of lg's own, with no HTTP status.
+func New(target, url string, reason Reason, message string, now time.Time) Tombstone {
+	return newTombstone(target, url, reason, message, now)
 }
 
 // FromError tombstones log.txt when err shows GitHub has lost it for good: a
