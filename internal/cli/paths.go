@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/rosenhouse/lg/internal/config"
-	"github.com/rosenhouse/lg/internal/store"
 )
 
 type pathsCmd struct {
@@ -23,9 +22,6 @@ func (p pathsCmd) Run(deps *Deps) error {
 	sep := "\n"
 	if p.Null {
 		sep = "\x00"
-	}
-	if err := store.Check(roots.Store); err != nil {
-		return err
 	}
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil

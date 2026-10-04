@@ -11,6 +11,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 type Deps struct {
@@ -82,7 +83,11 @@ func Main(args []string, deps Deps) (code int) {
 		}
 		return 2
 	}
-	if err := ctx.Run(&deps); err != nil {
+	err = checkStore(ctx.Command(), deps.Env)
+	if err == nil {
+		err = ctx.Run(&deps)
+	}
+	if err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 		var configErr config.Error
 		if errors.As(err, &configErr) {
@@ -91,4 +96,16 @@ func Main(args []string, deps Deps) (code int) {
 		return 1
 	}
 	return 0
+}
+
+// checkStore refuses a store that lg cannot own before any command but version runs.
+func checkStore(command string, env map[string]string) error {
+	if command == "version" {
+		return nil
+	}
+	roots, err := config.Locations(env)
+	if err != nil {
+		return err
+	}
+	return store.Check(roots.Store)
 }

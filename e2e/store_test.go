@@ -105,12 +105,32 @@ var _ = Describe("lg with FORMAT `lg-store 2`", Label("store"), func() {
 		Expect(os.MkdirAll(env.Store(), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(env.Store(), "FORMAT"), []byte("lg-store 2\n"), 0o644)).To(Succeed())
 
-		for _, command := range []string{"sync", "paths"} {
+		for _, command := range []string{"sync", "paths", "root"} {
 			session := env.Lg(command)
 			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(1), command)
 			Expect(string(session.Err.Contents())).To(ContainSubstring(`"lg-store 2"`), command)
 		}
-		Expect(env.Data()).NotTo(BeAnExistingFile())
+		Expect(os.ReadDir(env.Store())).To(HaveExactElements(HaveField("Name()", "FORMAT")))
+		Expect(fake.Requests()).To(BeEmpty())
+	})
+})
+
+var _ = Describe("lg with an LG_HOME holding files lg did not write", Label("store"), func() {
+	It("refuses to run and leaves LG_HOME untouched", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		notes := filepath.Join(env.Tmp(), "project", "notes.txt")
+		Expect(os.MkdirAll(filepath.Dir(notes), 0o755)).To(Succeed())
+		Expect(os.WriteFile(notes, []byte("precious"), 0o644)).To(Succeed())
+		before := treesnap.Snapshot(env.Store())
+
+		for _, command := range []string{"sync", "paths", "root"} {
+			session := env.Lg(command)
+			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(1), command)
+			Expect(string(session.Err.Contents())).To(ContainSubstring("point LG_HOME at an empty or new dir"), command)
+		}
+		Expect(treesnap.Snapshot(env.Store())).To(Equal(before))
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 })
@@ -136,6 +156,19 @@ var _ = Describe("lg sync", Label("store"), func() {
 		Expect(held.Release()).To(Succeed())
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+	})
+})
+
+var _ = Describe("lg sync after tmp/ and data/ are removed", Label("store"), func() {
+	It("recreates them and exits 0", func() {
+		env := harness.New(lgPath)
+		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		Expect(os.RemoveAll(env.Tmp())).To(Succeed())
+		Expect(os.RemoveAll(env.Data())).To(Succeed())
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		Expect(filepath.Join(env.Data(), fixtureRunDir, "attempt-1")).To(BeADirectory())
 	})
 })
 

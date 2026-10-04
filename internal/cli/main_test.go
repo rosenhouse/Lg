@@ -3,6 +3,8 @@ package cli_test
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,6 +33,14 @@ var _ = Describe("Main", Label("cli"), func() {
 		Expect(run(map[string]string{"LG_HOME": "rel"}, "root")).To(Equal(2))
 		Expect(stderr.String()).To(Equal("lg: LG_HOME must be an absolute path: \"rel\"\n"))
 		Expect(stdout.String()).To(BeEmpty())
+	})
+
+	It("prints the version even when it refuses the store", func() {
+		home := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(home, "FORMAT"), []byte("lg-store 2\n"), 0o644)).To(Succeed())
+
+		Expect(run(map[string]string{"LG_HOME": home}, "version")).To(Equal(0))
+		Expect(run(map[string]string{"LG_HOME": home}, "root")).To(Equal(1))
 	})
 
 	It("exits 0 and prints usage for --help", func() {
