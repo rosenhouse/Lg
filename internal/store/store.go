@@ -203,7 +203,7 @@ func (s *Store) checkDirs() error {
 		return err
 	}
 	if dataMount != tmpMount {
-		return fmt.Errorf("%s and %s are on different devices or mounts, so units cannot be renamed into place; to move the store, move LG_HOME as a whole", s.tmp, s.data)
+		return fmt.Errorf("%s and %s are on different devices or mounts, so units cannot be renamed into place; to move the store, move LG_HOME as a whole: %w", s.tmp, s.data, syscall.EXDEV)
 	}
 	return nil
 }

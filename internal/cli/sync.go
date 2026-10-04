@@ -9,6 +9,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
@@ -39,7 +40,7 @@ func (syncCmd) Run(deps *Deps) error {
 	}
 	s, release, err := openForWriting(roots, deps)
 	if err != nil {
-		return err
+		return failure.FromErrno(err)
 	}
 	defer release()
 	m := mirror.Mirror{
