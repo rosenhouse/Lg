@@ -63,12 +63,14 @@ type download struct {
 	file string
 }
 
-// Fault answers a request with Status, or breaks the connection. Drop
+// Fault answers a request with Status, or breaks the connection. Body
+// replaces the error GitHub or blob storage would send with Status. Drop
 // closes it without a response. Truncate sends the response's
 // Content-Length and half its body. Stall sends nothing more until the
 // client gives up. Times limits how many requests it answers; 0 means every one.
 type Fault struct {
 	Status   int
+	Body     string
 	Times    int
 	Drop     bool
 	Truncate bool
@@ -306,6 +308,9 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		case f.Stall:
 			sw.status = 0
 			s.stall(r)
+		case f.Body != "":
+			sw.WriteHeader(f.Status)
+			_, _ = sw.Write([]byte(f.Body))
 		case f.Status != 0 && host == "blob":
 			writeBlobError(sw, f.Status)
 		case f.Status != 0:

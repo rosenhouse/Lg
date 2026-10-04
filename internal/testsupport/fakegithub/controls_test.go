@@ -176,6 +176,14 @@ var _ = Describe("Server controls", func() {
 		}, SpecTimeout(5*time.Second))
 	})
 
+	It("Fail with a Body answers with the fault's status and that body", Label("failures"), func() {
+		fake.Fail("api", "runs/37129390741/attempts/1", fakegithub.Fault{Status: http.StatusOK, Body: "<html>unicorn</html>"})
+
+		attempt := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs/37129390741/attempts/1")
+		Expect(attempt.status).To(Equal(http.StatusOK))
+		Expect(string(attempt.body)).To(Equal("<html>unicorn</html>"))
+	})
+
 	DescribeTable("Fail on the blob host answers with blob storage's XML error", Label("failures"),
 		func(status int, code string) {
 			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: status})
