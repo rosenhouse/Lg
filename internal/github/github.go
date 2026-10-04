@@ -475,10 +475,9 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
-	blocked, refused := failure.FromStatus(e.Status, resp.Header, e.Message, h.clock.Now())
+	blocked, refused := failure.FromStatus(e.Status, resp.Header, e.Message, e.Error()+": "+e.Message, h.clock.Now())
 	switch {
 	case refused && !e.Blob:
-		blocked.Detail = e.Error() + ": " + e.Message
 		return blocked
 	case refused, e.Status >= 500:
 		// lg sends blob storage no token, so its refusals are Transient.

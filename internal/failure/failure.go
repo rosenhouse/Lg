@@ -42,16 +42,16 @@ func (b Blocked) Error() string {
 }
 
 // FromStatus classifies an API response that refuses lg's credentials or
-// rate. Its Detail is message.
-func FromStatus(status int, header http.Header, message string, now time.Time) (Blocked, bool) {
-	rateLimited := status == http.StatusTooManyRequests || status == http.StatusForbidden &&
+// rate by its status, headers and GitHub's message.
+func FromStatus(status int, header http.Header, message, detail string, now time.Time) (Blocked, bool) {
+	rateLimited := status == http.StatusTooManyRequests || (status == http.StatusForbidden &&
 		(header.Get("Retry-After") != "" || header.Get("X-RateLimit-Remaining") == "0" ||
-			strings.Contains(strings.ToLower(message), "secondary rate limit"))
+			strings.Contains(strings.ToLower(message), "secondary rate limit")))
 	switch {
 	case rateLimited:
-		return Blocked{Kind: RateLimit, Detail: message, RetryAt: retryAt(header, now)}, true
+		return Blocked{Kind: RateLimit, Detail: detail, RetryAt: retryAt(header, now)}, true
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		return Blocked{Kind: Auth, Detail: message}, true
+		return Blocked{Kind: Auth, Detail: detail}, true
 	}
 	return Blocked{}, false
 }

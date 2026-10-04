@@ -42,9 +42,9 @@ var _ = Describe("Blocked", Label("blocked"), func() {
 
 var _ = DescribeTable("FromStatus", Label("blocked"),
 	func(status int, header http.Header, message string, kind failure.Kind, retryAt time.Time) {
-		blocked, ok := failure.FromStatus(status, header, message, now)
+		blocked, ok := failure.FromStatus(status, header, message, "GET /x: "+message, now)
 		Expect(ok).To(BeTrue())
-		Expect(blocked).To(Equal(failure.Blocked{Kind: kind, Detail: message, RetryAt: retryAt}))
+		Expect(blocked).To(Equal(failure.Blocked{Kind: kind, Detail: "GET /x: " + message, RetryAt: retryAt}))
 	},
 	Entry("401", 401, headers(), "Bad credentials", failure.Auth, time.Time{}),
 	Entry("403 with no rate-limit sign", 403, headers("X-RateLimit-Remaining", "4999", "X-RateLimit-Reset", resetUnix), "Resource not accessible by integration", failure.Auth, time.Time{}),
@@ -61,7 +61,7 @@ var _ = DescribeTable("FromStatus", Label("blocked"),
 
 var _ = DescribeTable("FromStatus of a status that refuses neither credentials nor rate", Label("blocked"),
 	func(status int) {
-		_, ok := failure.FromStatus(status, headers("Retry-After", "30", "X-RateLimit-Remaining", "0"), "secondary rate limit", now)
+		_, ok := failure.FromStatus(status, headers("Retry-After", "30", "X-RateLimit-Remaining", "0"), "secondary rate limit", "", now)
 		Expect(ok).To(BeFalse())
 	},
 	Entry("400", 400),
