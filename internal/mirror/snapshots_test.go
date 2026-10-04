@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
@@ -98,4 +99,55 @@ var _ = Describe("the retry set", Label("artifacts"), func() {
 		Expect(ids(retry)).To(Equal([]int64{5, 3, 4, 7, 2}))
 		Expect(retry[3].Raw).To(MatchJSON(listedArtifact(7).Raw))
 	})
+})
+
+// readPending reads state/pending-artifacts.json as run id -> artifact objects.
+func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
+	GinkgoHelper()
+	raw, err := os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))
+	Expect(err).NotTo(HaveOccurred())
+	var pending map[string][]json.RawMessage
+	Expect(json.Unmarshal(raw, &pending)).To(Succeed())
+	return pending
+}
+
+// servedArtifacts is the run's artifact listing as served, by id.
+func servedArtifacts(env *harness.InProcessEnv) map[string]json.RawMessage {
+	GinkgoHelper()
+	var listing struct{ Artifacts []json.RawMessage }
+	Expect(json.Unmarshal(env.Fake.Served("artifacts.json"), &listing)).To(Succeed())
+	byID := map[string]json.RawMessage{}
+	for _, raw := range listing.Artifacts {
+		var a struct{ ID json.Number }
+		Expect(json.Unmarshal(raw, &a)).To(Succeed())
+		byID[a.ID.String()] = raw
+	}
+	return byID
+}
+
+var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
+	It("keeps each listed artifact object until its dir exists", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(MatchJSON(servedArtifacts(env)[flakyReport]))))
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+
+	It("holds the run's listed artifacts before any zip is requested", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "30"}})
+
+		Expect(env.Sync(ctx)).To(BeBlocked(failure.RateLimit))
+		var listed []any
+		for _, raw := range servedArtifacts(env) {
+			listed = append(listed, MatchJSON(raw))
+		}
+		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(listed...)))
+	}, cycleTimeout)
 })
