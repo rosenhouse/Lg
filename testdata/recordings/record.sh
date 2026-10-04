@@ -36,7 +36,7 @@ for a in $(seq 1 "$n"); do
   done
 done
 mkdir -p artifacts
-for id in $(jq -r '.artifacts[].id' artifacts.json); do
+for id in $(jq -r '.artifacts[].id' ../*/artifacts.json | sort -nu); do # every stage's, so an expired zip is recorded
   fetch "artifacts/$id/zip" "artifacts/$id.zip"
 done
 echo "recorded $label: run $run, $n attempts"
