@@ -53,3 +53,26 @@ var _ = Describe("ReplaceFile", Label("store"), func() {
 		Expect(os.ReadFile(path)).To(Equal([]byte("old")))
 	})
 })
+
+var _ = Describe("Rename", Label("store"), func() {
+	It("renames oldpath to newpath and fsyncs newpath's dir", func() {
+		root := newStore()
+		path := filepath.Join(root, "state", "f.json")
+		Expect(os.WriteFile(path, []byte("old"), 0o644)).To(Succeed())
+		fsys := faultfs.New()
+
+		Expect(openFS(fsys, root).Rename(path, path+".corrupt")).To(Succeed())
+		Expect(os.ReadFile(path + ".corrupt")).To(Equal([]byte("old")))
+		Expect(fsys.Journal()).To(Equal([]faultfs.Op{
+			{Name: "rename", Path: path, To: path + ".corrupt"},
+			{Name: "fsync", Path: filepath.Join(root, "state")},
+		}))
+	})
+})
+
+var _ = Describe("State", Label("store"), func() {
+	It("is the store's state/ dir", func() {
+		root := newStore()
+		Expect(open(root).State()).To(Equal(filepath.Join(root, "state")))
+	})
+})

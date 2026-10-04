@@ -57,8 +57,8 @@ type File interface {
 }
 
 type Store struct {
-	fs        FS
-	data, tmp string
+	fs               FS
+	data, state, tmp string
 }
 
 // Init makes root a store, finishing one that an earlier Init left part
@@ -72,7 +72,7 @@ func InitFS(fsys FS, root string) error {
 		return err
 	}
 	s := newStore(fsys, root)
-	for _, dir := range []string{s.data, filepath.Join(root, "state"), s.tmp} {
+	for _, dir := range []string{s.data, s.state, s.tmp} {
 		if err := mkdirAll(fsys, dir); err != nil {
 			return err
 		}
@@ -224,10 +224,12 @@ func checkFormat(root string) error {
 }
 
 func newStore(fsys FS, root string) *Store {
-	return &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
+	return &Store{fs: fsys, data: filepath.Join(root, "data"), state: filepath.Join(root, "state"), tmp: filepath.Join(root, "tmp")}
 }
 
 func (s *Store) Data() string { return s.data }
+
+func (s *Store) State() string { return s.state }
 
 // Has reports whether target exists.
 func (s *Store) Has(target string) (bool, error) {
@@ -524,4 +526,13 @@ func (s *Store) ReplaceFile(path string, data []byte) error {
 		return err
 	}
 	return s.fs.SyncDir(filepath.Dir(path))
+}
+
+// Rename renames oldpath to newpath and makes it durable. Callers hold
+// state/write.lock.
+func (s *Store) Rename(oldpath, newpath string) error {
+	if err := s.fs.Rename(oldpath, newpath); err != nil {
+		return err
+	}
+	return s.fs.SyncDir(filepath.Dir(newpath))
 }
