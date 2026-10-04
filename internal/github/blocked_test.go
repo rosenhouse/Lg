@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 var start = time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
@@ -72,7 +73,49 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 			HaveField("Detail", ContainSubstring(server.Listener.Addr().String())),
 		))
 	}, hopTimeout)
+
+	It("call a refused dial to HTTPS_PROXY unreachable, naming the host", func(ctx SpecContext) {
+		proxy := httptest.NewServer(answer(http.StatusOK, ""))
+		proxy.Close()
+		client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
+
+		Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
+			HaveField("Kind", failure.Unreachable),
+			HaveField("Detail", ContainSubstring("ghes.example.invalid")),
+		))
+	}, hopTimeout)
+
+	DescribeTable("call a proxy's gateway error to CONNECT unreachable, naming the proxy and the host",
+		func(ctx SpecContext, status int) {
+			proxy, _ := counting(answer(status, ""))
+			client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
+
+			Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
+				HaveField("Kind", failure.Unreachable),
+				HaveField("Detail", ContainSubstring(mustParse(proxy.URL).Host)),
+				HaveField("Detail", ContainSubstring("ghes.example.invalid:443")),
+				HaveField("Detail", ContainSubstring(strconv.Itoa(status))),
+			))
+		},
+		Entry("502", http.StatusBadGateway, hopTimeout),
+		Entry("503", http.StatusServiceUnavailable, hopTimeout),
+		Entry("504", http.StatusGatewayTimeout, hopTimeout),
+	)
+
+	It("leave a proxy's other refusal to CONNECT Transient", func(ctx SpecContext) {
+		proxy, _ := counting(answer(http.StatusForbidden, ""))
+		client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
+
+		Expect(getAttempt(ctx, client)).To(BeTransient())
+	}, hopTimeout)
 })
+
+// viaProxy is a transport that sends every request through proxyURL.
+func viaProxy(proxyURL string) http.RoundTripper {
+	transport := github.NewTransport(shortTimeouts)
+	github.TransportOf(transport).Proxy = http.ProxyURL(mustParse(proxyURL))
+	return transport
+}
 
 var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 	var reset time.Time
