@@ -69,24 +69,39 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
 			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)
-		target := layout.AttemptDir(runDir, 1)
-		published, err := m.Store.Has(target)
+		runDir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
 		if err != nil {
 			return err
 		}
-		if published {
-			continue
-		}
-		err = m.publishAttempt(ctx, gh, run, 1, target)
-		switch {
-		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
-		case err != nil:
+		planned, err := m.planAttempts(run, runDir)
+		if err != nil {
 			return err
+		}
+		for _, n := range planned {
+			err = m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
+			switch {
+			case runScoped(err):
+				failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
+			case err != nil:
+				return err
+			}
 		}
 	}
 	return errors.Join(failed...)
+}
+
+func (m *Mirror) planAttempts(run github.Run, runDir string) ([]int, error) {
+	var onDisk []int
+	for n := 1; n <= run.RunAttempt; n++ {
+		published, err := m.Store.Has(layout.AttemptDir(runDir, n))
+		if err != nil {
+			return nil, err
+		}
+		if published {
+			onDisk = append(onDisk, n)
+		}
+	}
+	return PlanAttempts(run.RunAttempt, onDisk), nil
 }
 
 // getRepo gets the repo's full name, which names the repo dir as GitHub
