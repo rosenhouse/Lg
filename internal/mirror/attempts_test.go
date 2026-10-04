@@ -184,15 +184,15 @@ var _ = Describe("a run whose workflow was renamed before attempt 2", Label("att
 var _ = Describe("an attempt that ended in startup_failure with no jobs", Label("attempts"), func() {
 	It("is published with attempt.json, an empty jobs.json array and no job dirs", func(ctx SpecContext) {
 		env := harness.InProcess()
-		Expect(env.Fake.AddRun(scenario.StartupFailure(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID), 1))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.StartupFailure(scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), cloneID), 2))).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		attempt1 := attemptDir(env, cloneID, 1)
-		Expect(filepath.Join(attempt1, "attempt.json")).To(BeARegularFile())
-		jobs, err := os.ReadFile(filepath.Join(attempt1, "jobs.json"))
+		attempt2 := attemptDir(env, cloneID, 2)
+		Expect(filepath.Join(attempt2, "attempt.json")).To(BeARegularFile())
+		jobs, err := os.ReadFile(filepath.Join(attempt2, "jobs.json"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(jobs).To(MatchJSON(`[]`))
-		Expect(filepath.Join(attempt1, "jobs")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(attempt2, "jobs")).NotTo(BeAnExistingFile())
 	}, cycleTimeout)
 })
 
