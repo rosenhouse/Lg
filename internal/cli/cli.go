@@ -14,6 +14,7 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/execx"
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
@@ -104,9 +105,12 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
 		var configErr config.Error
+		var blocked failure.Blocked
 		switch {
 		case errors.As(err, &configErr):
 			return 2
+		case errors.As(err, &blocked):
+			return 3
 		case errors.Is(err, lock.ErrTimeout):
 			return 4
 		}
