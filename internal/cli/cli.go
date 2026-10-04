@@ -99,7 +99,7 @@ func Main(args []string, deps Deps) (code int) {
 		err = ctx.Run(&deps)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
 		var configErr config.Error
 		switch {
 		case errors.As(err, &configErr):
