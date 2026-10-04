@@ -30,6 +30,12 @@ type Run struct {
 	Raw json.RawMessage
 }
 
+// Artifact is an artifact with the element GitHub served for it.
+type Artifact struct {
+	model.Artifact
+	Raw json.RawMessage
+}
+
 // Job is a job with the element GitHub served for it.
 type Job struct {
 	model.Job
@@ -43,6 +49,9 @@ type Client interface {
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
 	JobLogURL(jobID int64) string
+	ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error)
+	DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error
+	ArtifactZipURL(artifactID int64) string
 }
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
@@ -308,6 +317,18 @@ func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) err
 
 func (h *HTTP) JobLogURL(jobID int64) string {
 	return h.repoURL + fmt.Sprintf("/actions/jobs/%d/logs", jobID)
+}
+
+func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
+	return nil, Source{}, nil
+}
+
+func (h *HTTP) DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error {
+	return nil
+}
+
+func (h *HTTP) ArtifactZipURL(artifactID int64) string {
+	return ""
 }
 
 // list GETs a listing and every page its Link next URLs lead to, returning

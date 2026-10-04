@@ -15,11 +15,19 @@ type Run struct {
 	HeadBranch string    `json:"head_branch"`
 	CreatedAt  time.Time `json:"created_at"`
 	// RunStartedAt is when the latest attempt, or the one fetched, started.
-	RunStartedAt time.Time  `json:"run_started_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	Status       string     `json:"status"`
-	RunAttempt   int        `json:"run_attempt"`
-	Repository   Repository `json:"repository"`
+	RunStartedAt time.Time     `json:"run_started_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	Status       string        `json:"status"`
+	RunAttempt   int           `json:"run_attempt"`
+	Repository   Repository    `json:"repository"`
+	WorkflowID   int64         `json:"workflow_id"`
+	Event        string        `json:"event"`
+	PullRequests []PullRequest `json:"pull_requests"`
+	DisplayTitle string        `json:"display_title"`
+}
+
+type PullRequest struct {
+	Number int `json:"number"`
 }
 
 type Repository struct {

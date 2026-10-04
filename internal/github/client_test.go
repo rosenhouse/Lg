@@ -65,7 +65,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				headers = r.Header
-				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_started_at":"2026-10-03T14:22:54Z","run_attempt":1}`))
+				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"artifacts":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_started_at":"2026-10-03T14:22:54Z","run_attempt":1}`))
 			}))
 			DeferCleanup(server.Close)
 
@@ -80,6 +80,8 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
 		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error { return c.DownloadJobLog(ctx, 1, &bytes.Buffer{}) }),
+		Entry("ListArtifacts", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListArtifacts(ctx, 1); return err }),
+		Entry("DownloadArtifact", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { return c.DownloadArtifact(ctx, 1, &bytes.Buffer{}) }),
 	)
 
 	It("lists runs with their fields and the body served for each", func() {
@@ -97,6 +99,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Status:       "completed",
 			RunAttempt:   1,
 			Repository:   model.Repository{FullName: "rosenhouse/Lg"},
+			WorkflowID:   373958224,
+			Event:        "push",
+			PullRequests: []model.PullRequest{},
+			DisplayTitle: "Add lg-fixture workflow for recording Actions API shapes",
 		}))
 		Expect(runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
 	})
@@ -143,6 +149,34 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		var log bytes.Buffer
 		Expect(client.DownloadJobLog(context.Background(), 111221289888, &log)).To(Succeed())
 		Expect(log.Bytes()).To(Equal(fake.Served("attempt-1/logs/111221289888.txt")))
+	})
+
+	It("lists a run's artifacts on every page, with their fields, the element served for each, and the listing's URL and page count", Label("artifacts"), func() {
+		fake.SetPageCap(3)
+		artifacts, source, err := client.ListArtifacts(context.Background(), runID)
+		Expect(err).NotTo(HaveOccurred())
+
+		var listing struct{ Artifacts []json.RawMessage }
+		Expect(json.Unmarshal(fake.Served("artifacts.json"), &listing)).To(Succeed())
+		Expect(artifacts).To(HaveLen(4))
+		for i, artifact := range artifacts {
+			Expect(artifact.Raw).To(Equal(listing.Artifacts[i]))
+		}
+		Expect(artifacts[1].Artifact).To(Equal(model.Artifact{
+			ID:          11276272069,
+			Name:        "pass-artifact",
+			SizeInBytes: 751,
+			ExpiresAt:   time.Date(2027, 1, 1, 14, 22, 54, 0, time.UTC),
+			Digest:      "sha256:9b47ee49e71ab033f37453c4d1ffb4cb5c1608046721a8bcb15f5d1d70508a61",
+		}))
+		Expect(source).To(Equal(github.Source{URL: fake.URL() + "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100", Pages: 2}))
+	})
+
+	It("downloads an artifact's zip through the redirect, byte for byte", Label("artifacts"), func() {
+		var zip bytes.Buffer
+		Expect(client.DownloadArtifact(context.Background(), 11276272069, &zip)).To(Succeed())
+		Expect(zip.Bytes()).To(Equal(fake.Served("artifacts/11276272069.zip")))
+		Expect(client.ArtifactZipURL(11276272069)).To(Equal(fake.URL() + "/repos/rosenhouse/lg/actions/artifacts/11276272069/zip"))
 	})
 
 	It("sends no Authorization to a blob host on the API host's IP at another port", Label("transport"), func() {
