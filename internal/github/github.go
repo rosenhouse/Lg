@@ -36,6 +36,7 @@ type Job struct {
 }
 
 type Client interface {
+	GetRepo(ctx context.Context) (Repo, error)
 	ListRuns(ctx context.Context) ([]Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
@@ -199,11 +200,12 @@ func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
 
 // Repo is a repository as GET /repos/{owner}/{repo} describes it.
 type Repo struct {
+	URL      string `json:"-"`
 	FullName string `json:"full_name"`
 }
 
 func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
-	var repo Repo
+	repo := Repo{URL: h.repoURL}
 	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}

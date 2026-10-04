@@ -14,6 +14,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
@@ -35,24 +36,37 @@ type Mirror struct {
 
 // Cycle publishes attempt 1 of every listed run once it has completed. An
 // error that runScoped accepts aborts only its run's attempt; Cycle returns
-// these after trying every other run. Any other error stops the cycle.
+// these after trying every other run. Any other error stops the cycle, and
+// a local error that no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
+	err := m.cycle(ctx)
+	var blocked failure.Blocked
+	if errors.As(err, &blocked) {
+		return blocked
+	}
+	return failure.FromErrno(err)
+}
+
+func (m *Mirror) cycle(ctx context.Context) error {
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err
 	}
 	gh := m.NewGitHub(token)
+	repo, err := m.getRepo(ctx, gh)
+	if err != nil {
+		return err
+	}
 	runs, err := gh.ListRuns(ctx)
 	if err != nil {
 		return err
 	}
 	var failed []error
 	for _, run := range runs {
-		// The API's spelling names the repo dir, so it must be the configured repo.
-		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
-			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, m.Repo)
+		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
+			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, run.Repository.FullName), run.Run)
+		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)
 		target := layout.AttemptDir(runDir, 1)
 		published, err := m.Store.Has(target)
 		if err != nil {
@@ -70,6 +84,19 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		}
 	}
 	return errors.Join(failed...)
+}
+
+// getRepo gets the repo's full name, which names the repo dir as GitHub
+// spells it, so a renamed repo gets a new dir.
+func (m *Mirror) getRepo(ctx context.Context, gh github.Client) (github.Repo, error) {
+	repo, err := gh.GetRepo(ctx)
+	if errors.Is(err, github.ErrNotFound) {
+		return github.Repo{}, failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s/%s was not found, or the token lacks access to it", m.Host, m.Repo)}
+	}
+	if err == nil && !config.IsRepo(repo.FullName) {
+		err = fmt.Errorf("%s: full_name %q is not owner/name", repo.URL, repo.FullName)
+	}
+	return repo, err
 }
 
 // runScoped reports whether err leaves other runs worth trying: GitHub

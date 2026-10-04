@@ -63,7 +63,7 @@ func Load(path string) (Config, error) {
 	if !hostName.MatchString(cfg.Host) {
 		return Config{}, Error(fmt.Sprintf("host must be a host name: %q", cfg.Host))
 	}
-	if !ownerName.MatchString(cfg.Repo) || slices.ContainsFunc(strings.Split(cfg.Repo, "/"), isDots) {
+	if !IsRepo(cfg.Repo) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	}
 	if cfg.LogGrace < 0 {
@@ -106,6 +106,11 @@ func onLoopback(u *url.URL) bool {
 	name := strings.ToLower(u.Hostname())
 	ip := net.ParseIP(name)
 	return name == "localhost" || ip != nil && ip.IsLoopback()
+}
+
+// IsRepo reports whether s is owner/name, safe to use as a path.
+func IsRepo(s string) bool {
+	return ownerName.MatchString(s) && !slices.ContainsFunc(strings.Split(s, "/"), isDots)
 }
 
 func isDots(s string) bool { return s == "." || s == ".." }
