@@ -62,6 +62,24 @@ func stall(body string) http.HandlerFunc {
 	}
 }
 
+func getAttempt(ctx context.Context, client *github.HTTP) error {
+	_, _, err := client.GetAttempt(ctx, 1, 1)
+	return err
+}
+
+func listJobs(ctx context.Context, client *github.HTTP) error {
+	_, _, err := client.ListAttemptJobs(ctx, 1, 1)
+	return err
+}
+
+// linking answers an empty jobs page whose Link next is next.
+func linking(next string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Link", "<"+next+`>; rel="next"`)
+		_, _ = w.Write([]byte(`{"total_count":0,"jobs":[]}`))
+	}
+}
+
 type failingWriter struct{ err error }
 
 func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
@@ -133,6 +151,8 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		_, err := hops(nil, answer(http.StatusOK, "log")).DownloadJobLog(ctx, 1, failingWriter{syscall.ENOSPC})
 		Expect(err).To(MatchError(syscall.ENOSPC))
 		Expect(err).NotTo(BeTransient())
+		var malformed *github.MalformedError
+		Expect(errors.As(err, &malformed)).To(BeFalse())
 	}, hopTimeout)
 
 	It("leaves a malformed 200 body non-Transient", func(ctx SpecContext) {
@@ -140,6 +160,26 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		Expect(err).NotTo(BeTransient())
 	}, hopTimeout)
+
+	DescribeTable("calls a 200 that lg cannot use a MalformedError naming its API URL",
+		func(ctx SpecContext, api http.HandlerFunc, get func(context.Context, *github.HTTP) error) {
+			err := get(ctx, hops(api, nil))
+			var malformed *github.MalformedError
+			Expect(errors.As(err, &malformed)).To(BeTrue(), "%v", err)
+			Expect(err).To(MatchError(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/runs/1/attempts/1\S*: `)))
+			Expect(err).NotTo(BeTransient())
+		},
+		Entry("an attempt that is not JSON", answer(http.StatusOK, "<html>"), getAttempt, hopTimeout),
+		Entry("an attempt with a field of the wrong type", answer(http.StatusOK, `{"id":"x"}`), getAttempt, hopTimeout),
+		Entry("jobs that are not JSON", answer(http.StatusOK, "<html>"), listJobs, hopTimeout),
+		Entry("jobs that are not an array", answer(http.StatusOK, `{"total_count":1,"jobs":{}}`), listJobs, hopTimeout),
+		Entry("a job with a field of the wrong type", answer(http.StatusOK, `{"total_count":1,"jobs":[{"id":"x"}]}`), listJobs, hopTimeout),
+		Entry("jobs short of their total_count", answer(http.StatusOK, `{"total_count":2,"jobs":[{"id":1}]}`), listJobs, hopTimeout),
+		Entry("a Link next off the API host", linking("http://other.example/next"), listJobs, hopTimeout),
+		Entry("a Link next that repeats a page", func(w http.ResponseWriter, r *http.Request) {
+			linking("http://"+r.Host+r.URL.RequestURI())(w, r)
+		}, listJobs, hopTimeout),
+	)
 
 	DescribeTable("gives the API URL, the status and the message of a failed hop",
 		func(ctx SpecContext, api, blob http.HandlerFunc, status int, message string) {

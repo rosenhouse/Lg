@@ -155,6 +155,17 @@ func (e *StatusError) Unwrap() error {
 	return nil
 }
 
+// MalformedError is a 200 whose body lg cannot use.
+type MalformedError struct{ Err error }
+
+func (e *MalformedError) Error() string { return e.Err.Error() }
+
+func (e *MalformedError) Unwrap() error { return e.Err }
+
+func malformed(rawURL string, err error) error {
+	return fmt.Errorf("%s: %w", rawURL, &MalformedError{Err: err})
+}
+
 // Source is where a file came from: an API URL, never a blob URL.
 type Source struct {
 	URL   string
@@ -175,7 +186,7 @@ func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string) *HTT
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
-	raws, _, _, err := h.list(ctx, "/actions/runs?per_page=100", "workflow_runs")
+	raws, _, _, err := h.list(ctx, h.repoURL+"/actions/runs?per_page=100", "workflow_runs")
 	if err != nil {
 		return nil, err
 	}
@@ -196,28 +207,29 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 		return Run{}, Source{}, err
 	}
 	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
-		return Run{}, Source{}, err
+		return Run{}, Source{}, malformed(source.URL, err)
 	}
 	return run, source, nil
 }
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error) {
-	path := fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)
-	raws, total, pages, err := h.list(ctx, path, "jobs")
+	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)}
+	raws, total, pages, err := h.list(ctx, source.URL, "jobs")
 	if err != nil {
 		return nil, Source{}, err
 	}
 	if total > len(raws) {
-		return nil, Source{}, fmt.Errorf("%s: listed %d of %d jobs", h.repoURL+path, len(raws), total)
+		return nil, Source{}, malformed(source.URL, fmt.Errorf("listed %d of %d jobs", len(raws), total))
 	}
 	jobs := make([]Job, len(raws))
 	for i, raw := range raws {
 		jobs[i].Raw = raw
 		if err := json.Unmarshal(raw, &jobs[i].Job); err != nil {
-			return nil, Source{}, err
+			return nil, Source{}, malformed(source.URL, err)
 		}
 	}
-	return jobs, Source{URL: h.repoURL + path, Pages: pages}, nil
+	source.Pages = pages
+	return jobs, source, nil
 }
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
@@ -239,11 +251,11 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 
 // list GETs a listing and every page its Link next URLs lead to, returning
 // the elements of field, the total_count and the number of pages.
-func (h *HTTP) list(ctx context.Context, path, field string) ([]json.RawMessage, int, int, error) {
+func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMessage, int, int, error) {
 	var elements []json.RawMessage
 	var total int
 	followed := map[string]bool{}
-	for pageURL := h.repoURL + path; pageURL != ""; {
+	for pageURL := firstURL; pageURL != ""; {
 		followed[pageURL] = true
 		var page map[string]json.RawMessage
 		var items []json.RawMessage
@@ -251,19 +263,22 @@ func (h *HTTP) list(ctx context.Context, path, field string) ([]json.RawMessage,
 		err := h.get(ctx, pageURL, func(resp *http.Response) error {
 			next = nextLink(resp.Header.Get("Link"))
 			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-				return err
+				return &MalformedError{Err: err}
 			}
-			return errors.Join(json.Unmarshal(page["total_count"], &total), json.Unmarshal(page[field], &items))
+			if err := errors.Join(json.Unmarshal(page["total_count"], &total), json.Unmarshal(page[field], &items)); err != nil {
+				return &MalformedError{Err: err}
+			}
+			return nil
 		})
 		if err != nil {
 			return nil, 0, 0, err
 		}
 		if next != "" {
 			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
-				return nil, 0, 0, fmt.Errorf("%s: Link next %s is not on the API host", pageURL, next)
+				return nil, 0, 0, malformed(pageURL, fmt.Errorf("Link next %s is not on the API host", next))
 			}
 			if followed[next] {
-				return nil, 0, 0, fmt.Errorf("%s: Link next %s repeats an earlier page", pageURL, next)
+				return nil, 0, 0, malformed(pageURL, fmt.Errorf("Link next %s repeats an earlier page", next))
 			}
 		}
 		elements = append(elements, items...)
@@ -298,7 +313,10 @@ func port(u *url.URL) string {
 
 func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 	return h.get(ctx, rawURL, func(resp *http.Response) error {
-		return json.NewDecoder(resp.Body).Decode(v)
+		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+			return &MalformedError{Err: err}
+		}
+		return nil
 	})
 }
 
