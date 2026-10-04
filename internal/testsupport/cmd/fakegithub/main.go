@@ -1,5 +1,6 @@
 // Command fakegithub serves recorded runs for trying lg by hand. lg sync
-// against it needs LG_GH to name a program that prints any token.
+// against it needs LG_GH to name a program that prints any token. Until lg
+// handles a log that 404s, lg sync fails while 37129738159=logs-deleted is served.
 package main
 
 import (
