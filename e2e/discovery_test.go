@@ -84,6 +84,43 @@ var _ = Describe("lg init", Label("discovery"), func() {
 		Expect(os.ReadFile(env.ConfigFile())).To(Equal(before))
 		Expect(filepath.Join(env.Store(), "FORMAT")).NotTo(BeAnExistingFile())
 	})
+
+	DescribeTable("exits 2 for a repo that is not owner/name or a host that is not a host name, writing nothing",
+		func(args []string, message string) {
+			env := harness.New(lgPath)
+
+			session := env.Lg(append([]string{"init"}, args...)...)
+			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(2))
+			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(message)))
+			Expect(env.ConfigFile()).NotTo(BeAnExistingFile())
+			Expect(env.Store()).NotTo(BeADirectory())
+		},
+		Entry("a bare repo name", []string{"--repo", "foo"}, `repo must be owner/name: "foo"`),
+		Entry("a host with a space", []string{"--repo", "a/b", "--host", "bad host"}, `host must be a host name: "bad host"`),
+	)
+
+	It("creates no store when the config file's parent is not a directory", func() {
+		env := harness.New(lgPath)
+		parent := filepath.Join(env.Home(), "afile")
+		Expect(os.WriteFile(parent, nil, 0o644)).To(Succeed())
+		env.Setenv("LG_CONFIG", filepath.Join(parent, "config.yaml"))
+
+		session := env.Lg("init", "--repo", "a/b")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(1))
+		Expect(session.Err).To(gbytes.Say("not a directory"))
+		Expect(env.Store()).NotTo(BeADirectory())
+	})
+
+	It("exits 2 in every process but one when several race to init the same config", func() {
+		env := harness.New(lgPath)
+
+		session := env.Sh(`for i in 1 2 3 4 5 6; do (lg init --repo a/b; echo "exit $?") & done; wait`)
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		exits := strings.Fields(strings.ReplaceAll(string(session.Out.Contents()), "exit ", ""))
+		Expect(exits).To(ConsistOf("0", "2", "2", "2", "2", "2"))
+		Expect(strings.Count(string(session.Err.Contents()), "already exists")).To(Equal(5))
+		Expect(os.ReadFile(env.ConfigFile())).To(BeEquivalentTo("host: github.com\nrepo: a/b\n"))
+	})
 })
 
 var _ = Describe("lg sync", Label("discovery"), func() {
