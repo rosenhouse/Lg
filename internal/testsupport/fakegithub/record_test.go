@@ -2,6 +2,7 @@ package fakegithub_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,7 +23,7 @@ func recordingsCopy(siblings ...recording) string {
 	dir := GinkgoT().TempDir()
 	copyFile(filepath.Join(recordings.Root(), "record.sh"), filepath.Join(dir, "record.sh"))
 	for _, s := range siblings {
-		stage := filepath.Join(dir, filepath.Base(filepath.Dir(recordings.Dir(s.run, s.stage))), s.stage)
+		stage := filepath.Join(dir, fmt.Sprintf("run-%d", s.run), s.stage)
 		Expect(os.MkdirAll(stage, 0o755)).To(Succeed())
 		copyFile(filepath.Join(recordings.Dir(s.run, s.stage), "artifacts.json"), filepath.Join(stage, "artifacts.json"))
 	}
@@ -33,7 +34,7 @@ func copyFile(from, to string) {
 	GinkgoHelper()
 	data, err := os.ReadFile(from)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(os.WriteFile(to, data, 0o755)).To(Succeed())
+	Expect(os.WriteFile(to, data, 0o644)).To(Succeed())
 }
 
 // record runs dir's record.sh against fake, with tmpDir as TMPDIR and

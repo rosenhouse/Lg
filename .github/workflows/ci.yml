@@ -40,9 +40,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Install ripgrep
+      - name: Install ripgrep and jq
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then brew install ripgrep; else sudo apt-get update && sudo apt-get install -y ripgrep; fi
+          if [ "$RUNNER_OS" = macOS ]; then brew install ripgrep jq; else sudo apt-get update && sudo apt-get install -y ripgrep jq; fi
       - run: make test build
       - if: runner.os == 'Linux'
         run: GOOS=darwin GOARCH=arm64 go build ./...
