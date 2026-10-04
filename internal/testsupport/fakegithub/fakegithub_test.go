@@ -185,7 +185,7 @@ func expectErrorBodyStatus(recorded []byte, line recordings.Line) {
 }
 
 var _ = Describe("fakegithub replay", Label("transport"), func() {
-	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
+	It("serves every line of the after-attempt and logs-deleted recordings' status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
 		for _, r := range []recording{
 			{runID, "after-attempt-1"},
 			{runID, "after-attempt-2"},
@@ -239,7 +239,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		api, err := url.Parse(fake.URL())
 		Expect(err).NotTo(HaveOccurred())
 		actions := fake.URL() + "/repos/rosenhouse/lg/actions/"
-		recording := recordings.Dir(runID, "after-attempt-1")
+		dir := recordings.Dir(runID, "after-attempt-1")
 
 		for _, l := range []struct {
 			path, field string
@@ -247,11 +247,11 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		}{
 			{"runs?per_page=100", "workflow_runs", []json.RawMessage{
 				recordedRun(recordings.Dir(logsDeletedRun, "logs-deleted")),
-				recordedRun(recording),
+				recordedRun(dir),
 			}},
-			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(recording, "jobs-all.json"), "jobs")},
-			{"runs/37129390741/attempts/1/jobs?per_page=100", "jobs", recordedElements(filepath.Join(recording, "attempt-1", "jobs.json"), "jobs")},
-			{"runs/37129390741/artifacts?per_page=100", "artifacts", recordedElements(filepath.Join(recording, "artifacts.json"), "artifacts")},
+			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(dir, "jobs-all.json"), "jobs")},
+			{"runs/37129390741/attempts/1/jobs?per_page=100", "jobs", recordedElements(filepath.Join(dir, "attempt-1", "jobs.json"), "jobs")},
+			{"runs/37129390741/artifacts?per_page=100", "artifacts", recordedElements(filepath.Join(dir, "artifacts.json"), "artifacts")},
 		} {
 			elements, followed := listing(actions+l.path, l.field)
 			expectJSONElements(elements, l.want)
@@ -267,14 +267,14 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 
 	It("serves every route under /api/v3 as well", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
-		recording := recordings.Dir(runID, "after-attempt-1")
+		dir := recordings.Dir(runID, "after-attempt-1")
 
 		routes := map[string]int{
 			"/repos/rosenhouse/lg":                               http.StatusOK,
 			"/repos/rosenhouse/lg/actions/runs?per_page=100":     http.StatusOK,
 			"/repos/rosenhouse/lg/actions/artifacts/11276401837": http.StatusOK,
 		}
-		for _, line := range recordedStatus(recording) {
+		for _, line := range recordedStatus(dir) {
 			routes["/repos/rosenhouse/lg/actions/"+line.Path] = line.First
 		}
 		for path, code := range routes {
@@ -287,7 +287,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 
 		fake.SetPageCap(5)
 		elements, followed := listing(fake.URL()+"/api/v3/repos/rosenhouse/lg/actions/runs/37129390741/attempts/1/jobs?per_page=100", "jobs")
-		expectJSONElements(elements, recordedElements(filepath.Join(recording, "attempt-1", "jobs.json"), "jobs"))
+		expectJSONElements(elements, recordedElements(filepath.Join(dir, "attempt-1", "jobs.json"), "jobs"))
 		Expect(followed).To(HaveLen(2))
 		for _, next := range followed {
 			Expect(next).To(HavePrefix(fake.URL() + "/api/v3/repositories/" + repoID + "/actions/"))
@@ -410,9 +410,9 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 	})
 })
 
-func recordedRun(recording string) json.RawMessage {
+func recordedRun(dir string) json.RawMessage {
 	GinkgoHelper()
-	raw, err := os.ReadFile(filepath.Join(recording, "run.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "run.json"))
 	Expect(err).NotTo(HaveOccurred())
 	return raw
 }
