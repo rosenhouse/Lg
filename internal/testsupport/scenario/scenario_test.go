@@ -233,4 +233,20 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(field(unnumbered, "attempt-2/attempt.json", "run_attempt")).To(BeEquivalentTo(2))
 		})
 	})
+
+	Describe("Expire", Label("artifacts"), func() {
+		It("lists the artifact as expired, leaving the others and the original run unchanged", func() {
+			expired := scenario.Expire(run, 7_011275917910)
+
+			var listing struct {
+				TotalCount int `json:"total_count"`
+				Artifacts  []map[string]any
+			}
+			Expect(json.Unmarshal(expired.Files["artifacts.json"].Data, &listing)).To(Succeed())
+			Expect(listing.Artifacts).To(HaveLen(listing.TotalCount))
+			Expect(listing.Artifacts).To(ContainElement(SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("expired", true))))
+			Expect(listing.Artifacts).To(HaveEach(Or(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("expired", false))))
+			Expect(string(run.Files["artifacts.json"].Data)).NotTo(ContainSubstring(`"expired":true`))
+		})
+	})
 })
