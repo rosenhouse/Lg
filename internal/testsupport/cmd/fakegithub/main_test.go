@@ -17,6 +17,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 )
 
 var _ = Describe("the fakegithub dev server", Label("transport"), func() {
@@ -28,17 +29,23 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		return session
 	}
 
-	get := func(url string) (http.Header, []byte) {
+	fetch := func(url string) (int, http.Header, string) {
 		GinkgoHelper()
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
 		Expect(err).NotTo(HaveOccurred())
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK), url)
 		body, err := io.ReadAll(resp.Body)
 		Expect(err).NotTo(HaveOccurred())
-		return resp.Header, body
+		return resp.StatusCode, resp.Header, string(body)
+	}
+
+	get := func(url string) (http.Header, []byte) {
+		GinkgoHelper()
+		status, header, body := fetch(url)
+		Expect(status).To(Equal(http.StatusOK), url)
+		return header, []byte(body)
 	}
 
 	It("serves each -run at its stage, paging at -page-cap", func() {
@@ -99,18 +106,6 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 	})
 
 	// fetch GETs url, whatever its status.
-	fetch := func(url string) (int, http.Header, string) {
-		GinkgoHelper()
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
-		Expect(err).NotTo(HaveOccurred())
-		resp, err := http.DefaultClient.Do(req)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-		body, err := io.ReadAll(resp.Body)
-		Expect(err).NotTo(HaveOccurred())
-		return resp.StatusCode, resp.Header, string(body)
-	}
-
 	It("sets the rate limit from -rate-limit and the clock from -now", Label("blocked"), func() {
 		now := time.Date(2027, 1, 2, 3, 4, 5, 0, time.UTC)
 		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-rate-limit", "100,12", "-now", now.Format(time.RFC3339))
@@ -234,6 +229,6 @@ func clockOf(header http.Header) time.Time {
 	Expect(err).NotTo(HaveOccurred())
 	reset, err := strconv.ParseInt(header.Get("X-Ratelimit-Reset"), 10, 64)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(time.Unix(reset, 0)).To(BeTemporally("~", date.Add(time.Hour), time.Second))
+	Expect(time.Unix(reset, 0)).To(BeTemporally("~", date.Add(fakegithub.ResetAfter), time.Second))
 	return date
 }
