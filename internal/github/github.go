@@ -174,8 +174,7 @@ func nextLink(header string) string {
 }
 
 func (h *HTTP) onAPIHost(u *url.URL) bool {
-	return u.Host != "" && u.Scheme == h.api.Scheme &&
-		strings.EqualFold(u.Hostname(), h.api.Hostname()) && port(u) == port(&h.api)
+	return u.Scheme == h.api.Scheme && strings.EqualFold(u.Hostname(), h.api.Hostname()) && port(u) == port(&h.api)
 }
 
 func port(u *url.URL) string {
