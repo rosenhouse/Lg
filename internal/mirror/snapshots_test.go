@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -228,3 +229,35 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 		Expect(env.Sync(ctx)).To(BeTransient())
 	}, cycleTimeout)
 })
+
+var _ = Describe("a snapshot whose listing a re-run overtook", Label("artifacts"), func() {
+	It("records in fetch.json the run_attempt read after the listing, not the one ListRuns gave", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		heldZip := "artifacts/11276128157/zip"
+		release := env.Fake.Hold(heldZip)
+		cycled := make(chan error, 1)
+		go func() { cycled <- env.Mirror.Cycle(ctx) }()
+		Eventually(env.Fake.Requests).WithTimeout(10 * time.Second).Should(ContainElement(HaveField("Path", HaveSuffix(heldZip))))
+		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+		release()
+		Eventually(cycled).WithTimeout(10 * time.Second).Should(Receive())
+
+		attempt1 := attemptDir(env, runID, 1)
+		Expect(os.ReadFile(filepath.Join(attempt1, "artifacts.json"))).To(MatchJSON(jsonField(env.Fake.Served("artifacts.json"), "artifacts")))
+		Expect(readJSONFile(filepath.Join(attempt1, "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(3)))
+		Expect(readJSONFile(filepath.Join(artifactDir(env, runID, "11275729552"), "fetch.json"))).To(SatisfyAll(
+			HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(3)),
+			HaveKeyWithValue("run_status_at_fetch", "completed"),
+		))
+	}, cycleTimeout)
+})
+
+// jsonField is a field of a JSON object.
+func jsonField(raw []byte, name string) json.RawMessage {
+	GinkgoHelper()
+	var object map[string]json.RawMessage
+	Expect(json.Unmarshal(raw, &object)).To(Succeed())
+	return object[name]
+}

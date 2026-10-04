@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
@@ -44,6 +45,19 @@ func servedArtifact(fake *fakegithub.Server, id int64) []byte {
 	}
 	Fail("artifact " + strconv.FormatInt(id, 10) + " is not listed")
 	return nil
+}
+
+// listedInAttempt1 matches an artifact's fetch.json whose artifact.json came
+// from the listing taken while the run was at attempt 1.
+func listedInAttempt1(fake *fakegithub.Server) types.GomegaMatcher {
+	return SatisfyAll(
+		HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(1)),
+		HaveKeyWithValue("run_status_at_fetch", "completed"),
+		HaveKeyWithValue("sources", HaveKeyWithValue("artifact.json", SatisfyAll(
+			HaveKeyWithValue("url", fake.URL()+"/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100"),
+			HaveKeyWithValue("pages", BeEquivalentTo(1)),
+		))),
+	)
 }
 
 var _ = Describe("attempt-N", Label("artifacts"), func() {
@@ -87,6 +101,7 @@ var _ = Describe("an artifact whose zip and whose attempt's log both failed tran
 			HaveKeyWithValue("reason", "deleted"),
 			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
 		))
+		Expect(readJSON(filepath.Join(dir, "fetch.json"))).To(listedInAttempt1(fake))
 	})
 })
 
@@ -107,5 +122,6 @@ var _ = Describe("an artifact listed only in an on-disk attempt snapshot, after 
 			HaveKeyWithValue("reason", "deleted"),
 			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
 		))
+		Expect(readJSON(filepath.Join(dir, "fetch.json"))).To(listedInAttempt1(fake))
 	})
 })
