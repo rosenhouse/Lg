@@ -35,6 +35,17 @@ var _ = Describe("Server rate-limit headers", Label("blocked"), func() {
 		Expect(resetOf(fetch(fake.URL() + "/repos/rosenhouse/lg"))).To(Equal(later.Add(fakegithub.ResetAfter)))
 	})
 
+	It("sends a Date from its clock on both hosts", func() {
+		later := harness.DefaultNow().AddDate(1, 0, 0)
+		fake.SetClock(clock.NewFake(later))
+
+		redirect := fetch(fake.URL() + logPath)
+		blob := fetch(redirect.header.Get("Location"))
+
+		Expect(redirect.header.Get("Date")).To(Equal(later.Format(http.TimeFormat)))
+		Expect(blob.header.Get("Date")).To(Equal(later.Format(http.TimeFormat)))
+	})
+
 	It("counts each API request against X-RateLimit-Limit 5000, and no blob request", func() {
 		first := fetch(fake.URL() + "/repos/rosenhouse/lg")
 		redirect := fetch(fake.URL() + logPath)
