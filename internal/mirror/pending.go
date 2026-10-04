@@ -35,13 +35,16 @@ func loadPending(s *store.Store, stateDir string) (*pending, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(raw, &p.runs); err != nil {
-		p.runs = map[int64][]github.Artifact{}
+	var runs map[int64][]github.Artifact
+	if err := json.Unmarshal(raw, &runs); err != nil {
 		aside := p.path + ".corrupt"
 		if err := os.Rename(p.path, aside); err != nil {
 			return nil, err
 		}
 		return p, fmt.Errorf("%s, moved to %s: %w", p.path, aside, &github.MalformedError{Err: err})
+	}
+	if runs != nil {
+		p.runs = runs
 	}
 	return p, nil
 }
