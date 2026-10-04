@@ -289,13 +289,18 @@ func (q RunQuery) Values() url.Values {
 	return v
 }
 
+// ListingCap is the most results GitHub serves for a filtered run listing.
+const ListingCap = 1000
+
 // ListRuns lists the runs q selects, newest first, with the listing's
-// total_count. PerPage defaults to 100.
+// total_count. PerPage defaults to 100. A listing whose total_count reaches
+// ListingCap stops after its first page, since GitHub serves no more of it;
+// the caller narrows q.
 func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) ([]Run, int, error) {
 	if q.PerPage == 0 {
 		q.PerPage = 100
 	}
-	raws, total, _, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs")
+	raws, total, _, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", ListingCap)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -382,7 +387,7 @@ func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Sour
 // listByID lists the elements of field, which decode reads with their ids.
 // It refuses a listing short of its total_count or one that repeats an id.
 func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, decode func(json.RawMessage) (T, int64, error)) ([]T, Source, error) {
-	raws, total, pages, err := h.list(ctx, listURL, field)
+	raws, total, pages, err := h.list(ctx, listURL, field, 0)
 	if err != nil {
 		return nil, Source{}, err
 	}
@@ -418,8 +423,9 @@ func (h *HTTP) ArtifactZipURL(artifactID int64) string {
 }
 
 // list GETs a listing and every page its Link next URLs lead to, returning
-// the elements of field, the total_count and the number of pages.
-func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMessage, int, int, error) {
+// the elements of field, the total_count and the number of pages. It stops
+// after a page whose total_count reaches cap, when cap is set.
+func (h *HTTP) list(ctx context.Context, firstURL, field string, cap int) ([]json.RawMessage, int, int, error) {
 	var elements []json.RawMessage
 	var total int
 	followed := map[string]bool{}
@@ -451,6 +457,9 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMess
 		}
 		elements = append(elements, items...)
 		pageURL = next
+		if cap > 0 && total >= cap {
+			break
+		}
 	}
 	return elements, total, len(followed), nil
 }

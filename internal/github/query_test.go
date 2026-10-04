@@ -1,14 +1,21 @@
 package github_test
 
 import (
+	"context"
+	"net/http"
 	"net/url"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
+
+const day = 24 * time.Hour
 
 var _ = Describe("RunQuery", Label("discovery"), func() {
 	It("encodes created=<from>..<to> in RFC3339 UTC, status, per_page and page", func() {
@@ -30,5 +37,39 @@ var _ = Describe("RunQuery", Label("discovery"), func() {
 
 	It("omits what is unset", func() {
 		Expect(github.RunQuery{Status: "in_progress"}.Values()).To(Equal(url.Values{"status": {"in_progress"}}))
+	})
+})
+
+var _ = Describe("ListRuns", Label("discovery"), func() {
+	It("stops after the first page when total_count reaches ListingCap, since GitHub serves no more than that of a filtered listing", func() {
+		fake := fakegithub.New()
+		DeferCleanup(fake.Close)
+		from := time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
+		for i := range int64(github.ListingCap) {
+			fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*time.Minute)))
+		}
+		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
+
+		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: from, To: from.Add(day)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(total).To(Equal(github.ListingCap))
+		Expect(runs).To(HaveLen(100))
+		Expect(fake.Requests()).To(HaveLen(1))
+	})
+
+	It("follows every page of a listing under ListingCap", func() {
+		fake := fakegithub.New()
+		DeferCleanup(fake.Close)
+		from := time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
+		for i := range int64(github.ListingCap - 1) {
+			fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*time.Minute)))
+		}
+		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
+
+		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: from, To: from.Add(day)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(total).To(Equal(github.ListingCap - 1))
+		Expect(runs).To(HaveLen(github.ListingCap - 1))
+		Expect(fake.Requests()).To(HaveLen(10))
 	})
 })
