@@ -36,7 +36,7 @@ var _ = Describe("Load", Label("sync"), func() {
 		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 90m\n"))).To(HaveField("LogGrace", 90*time.Minute))
 	})
 
-	It("accepts a log_grace of 0, which tombstones a 404 at once", Label("failures"), func() {
+	It("accepts a log_grace of 0", Label("failures"), func() {
 		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 0s\n"))).To(HaveField("LogGrace", time.Duration(0)))
 	})
 
