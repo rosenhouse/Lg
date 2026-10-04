@@ -107,16 +107,20 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(err).To(MatchError(context.DeadlineExceeded))
 	})
 
-	It("answers a body=FILE -fail with a 200 of FILE's bytes", Label("artifacts"), func() {
-		file := filepath.Join(GinkgoT().TempDir(), "bad.zip")
-		Expect(os.WriteFile(file, []byte("not a zip"), 0o600)).To(Succeed())
-		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-fail", "blob,/artifacts/11276401837.zip,body="+file)
-		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
-		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
+	DescribeTable("answers a body=FILE -fail with a 200 of FILE's bytes", Label("artifacts"),
+		func(contents string) {
+			file := filepath.Join(GinkgoT().TempDir(), "bad.zip")
+			Expect(os.WriteFile(file, []byte(contents), 0o600)).To(Succeed())
+			session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-fail", "blob,/artifacts/11276401837.zip,body="+file)
+			Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+			url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
 
-		_, body := get(url + "/repos/rosenhouse/lg/actions/artifacts/11276401837/zip")
-		Expect(string(body)).To(Equal("not a zip"))
-	})
+			_, body := get(url + "/repos/rosenhouse/lg/actions/artifacts/11276401837/zip")
+			Expect(string(body)).To(Equal(contents))
+		},
+		Entry("some bytes", "not a zip"),
+		Entry("no bytes", ""),
+	)
 
 	It("lists each -expire artifact as expired", Label("artifacts"), func() {
 		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-expire", "11275917910")
