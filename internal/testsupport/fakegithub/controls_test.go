@@ -105,6 +105,11 @@ var _ = Describe("Server controls", func() {
 		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token").status).To(Equal(http.StatusFound))
 	})
 
+	It("Advance refuses a run that is not loaded", Label("transport"), func() {
+		Expect(fake.Advance(1, "after-attempt-3")).To(MatchError("run 1 is not loaded"))
+		Expect(fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs/1").status).To(Equal(http.StatusNotFound))
+	})
+
 	It("Requests reports each request's status and whether it carried Authorization", Label("transport"), func() {
 		fetch(fake.URL() + "/repos/rosenhouse/lg")
 		fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token")

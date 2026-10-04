@@ -309,6 +309,28 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		Expect(fetch(fake.URL() + "/repos/rosenhouse/other").status).To(Equal(http.StatusNotFound))
 	})
 
+	DescribeTable("pages listings at per_page up to 100, or 30 when per_page is missing or below 1",
+		func(query string, size int) {
+			fake := fakegithub.New()
+			DeferCleanup(fake.Close)
+			for i := range 150 {
+				fake.AddRun(json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":"2026-10-02T00:00:00Z","status":"completed"}`, i+1)))
+			}
+
+			resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs" + query)
+			Expect(resp.status).To(Equal(http.StatusOK))
+			var page struct {
+				WorkflowRuns []any `json:"workflow_runs"`
+			}
+			Expect(json.Unmarshal(resp.body, &page)).To(Succeed())
+			Expect(page.WorkflowRuns).To(HaveLen(size))
+		},
+		Entry("per_page=7", "?per_page=7", 7),
+		Entry("per_page=500", "?per_page=500", 100),
+		Entry("no per_page", "", 30),
+		Entry("per_page=0", "?per_page=0", 30),
+	)
+
 	It("returns at most 1,000 runs for a listing filtered by created or status", func() {
 		fake := fakegithub.New()
 		DeferCleanup(fake.Close)
