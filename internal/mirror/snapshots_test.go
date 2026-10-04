@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -176,5 +177,22 @@ var _ = Describe("mirror.Cycle when an attempt's artifacts.json is not JSON", La
 		Expect(err).To(MatchError(ContainSubstring("artifacts.json")))
 		Expect(mirror.RunScoped(err)).To(BeTrue())
 		Expect(env.AttemptDirs(deletedRun)).To(HaveLen(1))
+	}, cycleTimeout)
+})
+
+var _ = Describe("an artifact published from state/pending-artifacts.json", Label("artifacts"), func() {
+	It("keeps &, < and > in artifact.json as listed, so rg finds them", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		listing := strings.Replace(string(env.Fake.Served("artifacts.json")), `"head_branch":"lg-fixture"`, `"head_branch":"fix&<feat>"`, -1)
+		env.Fake.Fail("api", "runs/37129390741/artifacts", fakegithub.Fault{Status: http.StatusOK, Body: listing, Times: 1})
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		raw, err := os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(ContainSubstring(`"head_branch": "fix&<feat>"`))
 	}, cycleTimeout)
 })
