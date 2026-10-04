@@ -75,9 +75,9 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p, err := loadPending(m.State)
-	if err != nil {
-		return err
+	p, pendingErr := loadPending(m.Store, m.State)
+	if p == nil {
+		return pendingErr
 	}
 	artifactsFailed, err := m.artifactPhase(ctx, gh, runs, p)
 	if err != nil {
@@ -87,7 +87,7 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(append(artifactsFailed, attemptsFailed...)...)
+	return errors.Join(slices.Concat([]error{pendingErr}, artifactsFailed, attemptsFailed)...)
 }
 
 // listedRun is a listed run with its dir and this cycle's listing of its

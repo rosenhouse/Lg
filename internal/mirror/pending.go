@@ -11,18 +11,23 @@ import (
 	"slices"
 
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 // pending is state/pending-artifacts.json: each run's listed artifacts that
 // have no dir yet. A re-run of all jobs deletes a run's artifacts, so the
 // next listing may not name one that failed.
 type pending struct {
-	path string
-	runs map[int64][]github.Artifact
+	store *store.Store
+	path  string
+	runs  map[int64][]github.Artifact
 }
 
-func loadPending(stateDir string) (*pending, error) {
-	p := &pending{path: filepath.Join(stateDir, "pending-artifacts.json"), runs: map[int64][]github.Artifact{}}
+// loadPending reads the file. One that does not parse is moved aside, since
+// snapshots still name the artifacts of published attempts, and loadPending
+// returns a MalformedError with an empty pending.
+func loadPending(s *store.Store, stateDir string) (*pending, error) {
+	p := &pending{store: s, path: filepath.Join(stateDir, "pending-artifacts.json"), runs: map[int64][]github.Artifact{}}
 	raw, err := os.ReadFile(p.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return p, nil
@@ -30,18 +35,30 @@ func loadPending(stateDir string) (*pending, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := p.decode(raw); err != nil {
+		p.runs = map[int64][]github.Artifact{}
+		aside := p.path + ".corrupt"
+		if err := os.Rename(p.path, aside); err != nil {
+			return nil, err
+		}
+		return p, fmt.Errorf("%s, moved to %s: %w", p.path, aside, &github.MalformedError{Err: err})
+	}
+	return p, nil
+}
+
+func (p *pending) decode(raw []byte) error {
 	var runs map[int64][]json.RawMessage
 	if err := json.Unmarshal(raw, &runs); err != nil {
-		return nil, fmt.Errorf("%s: %w", p.path, err)
+		return err
 	}
 	for runID, raws := range runs {
 		artifacts, err := decodeArtifacts(raws)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p.path, err)
+			return err
 		}
 		p.runs[runID] = artifacts
 	}
-	return p, nil
+	return nil
 }
 
 // set records the run's pending artifacts, and saves the file when their ids changed.
@@ -65,7 +82,6 @@ func ids(artifacts []github.Artifact) []int64 {
 	return ids
 }
 
-// save replaces the file whole, so a crash leaves the old one or the new one.
 func (p *pending) save() error {
 	runs := map[int64][]json.RawMessage{}
 	for runID, artifacts := range p.runs {
@@ -80,19 +96,5 @@ func (p *pending) save() error {
 	if err := enc.Encode(runs); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p.path), ".pending-artifacts-*")
-	if err != nil {
-		return err
-	}
-	_, err = tmp.Write(buf.Bytes())
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(tmp.Name(), p.path)
-	}
-	if err != nil {
-		return errors.Join(err, os.Remove(tmp.Name()))
-	}
-	return nil
+	return p.store.ReplaceFile(p.path, buf.Bytes())
 }
