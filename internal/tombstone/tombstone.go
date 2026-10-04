@@ -16,6 +16,7 @@ const (
 	Expired       Reason = "expired"
 	Deleted       Reason = "deleted"
 	NotApplicable Reason = "not_applicable"
+	TooLarge      Reason = "too_large"
 )
 
 // Tombstone is stored as <target>.tombstone in place of target.

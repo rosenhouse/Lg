@@ -55,6 +55,8 @@ func (syncCmd) Run(deps *Deps) error {
 		Repo:     cfg.Repo,
 		Clock:    deps.Clock,
 		LogGrace: time.Duration(cfg.LogGrace),
+
+		ArtifactMaxBytes: int64(cfg.ArtifactMaxBytes),
 	}
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

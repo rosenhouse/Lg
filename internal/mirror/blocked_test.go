@@ -46,9 +46,9 @@ func endWithOnly(suffix string, status int) types.GomegaMatcher {
 	)
 }
 
-// fetchedOneAttempt matches requests that fetch attempt 1 of exactly one run.
-func fetchedOneAttempt() types.GomegaMatcher {
-	return WithTransform(func(requests []fakegithub.Request) []fakegithub.Request { return endingIn(requests, "/attempts/1") }, HaveLen(1))
+// listedOneRunsArtifacts matches requests that list the artifacts of exactly one run.
+func listedOneRunsArtifacts() types.GomegaMatcher {
+	return WithTransform(func(requests []fakegithub.Request) []fakegithub.Request { return endingIn(requests, "/artifacts") }, HaveLen(1))
 }
 
 var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request", Label("blocked"),
@@ -99,10 +99,10 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		SatisfyAll(blockedAs(failure.Unreachable, time.Time{}), HaveField("Detail", MatchRegexp(`127\.0\.0\.1:\d+`))), BeEmpty(), cycleTimeout),
 	Entry("ENOSPC writing a member: local_io",
 		func(env *harness.InProcessEnv) { env.FS.FailOn("write", syscall.ENOSPC) },
-		blockedAs(failure.LocalIO, time.Time{}), fetchedOneAttempt(), cycleTimeout),
+		blockedAs(failure.LocalIO, time.Time{}), listedOneRunsArtifacts(), cycleTimeout),
 	Entry("EXDEV publishing: local_io",
 		func(env *harness.InProcessEnv) { env.FS.FailOn("rename", syscall.EXDEV) },
-		blockedAs(failure.LocalIO, time.Time{}), fetchedOneAttempt(), cycleTimeout),
+		blockedAs(failure.LocalIO, time.Time{}), listedOneRunsArtifacts(), cycleTimeout),
 )
 
 var _ = Describe("mirror.Cycle", Label("blocked"), func() {

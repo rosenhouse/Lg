@@ -70,6 +70,8 @@ func InProcess() *InProcessEnv {
 			Repo:      "rosenhouse/lg",
 			Clock:     clk,
 			LogGrace:  time.Duration(config.Defaults().LogGrace),
+
+			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 		},
 		root: root,
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
-	"github.com/rosenhouse/lg/internal/version"
 )
 
 type Mirror struct {
@@ -36,10 +35,12 @@ type Mirror struct {
 	ArtifactMaxBytes int64
 }
 
-// Cycle publishes each completed attempt of every listed run that is not on
-// disk. An error that runScoped accepts aborts only its attempt; Cycle
-// returns these after trying every other attempt. Any other error stops the
-// cycle, and a local error that no retry fixes blocks it.
+// Cycle publishes every listed artifact, newest run first, and then each
+// completed attempt of every listed run, that is not on disk. Artifacts go
+// first because a re-run of all jobs deletes them. An error that runScoped
+// accepts aborts only its artifact or attempt; Cycle returns these after
+// trying every other. Any other error stops the cycle, and a local error that
+// no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	err := m.cycle(ctx)
 	var blocked failure.Blocked
@@ -66,22 +67,41 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var failed []error
-	for _, run := range runs {
+	dirs := make([]string, len(runs))
+	for i, run := range runs {
 		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
 			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
+		if dirs[i], err = m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)); err != nil {
+			return err
+		}
+	}
+	var failed []error
+	for _, i := range newestFirst(runs) {
+		runFailed, err := m.syncArtifacts(ctx, gh, dirs[i], runs[i])
 		if err != nil {
 			return err
 		}
-		runFailed, err := m.syncRun(ctx, gh, runDir, run)
+		failed = append(failed, runFailed...)
+	}
+	for i, run := range runs {
+		runFailed, err := m.syncRun(ctx, gh, dirs[i], run)
 		if err != nil {
 			return err
 		}
 		failed = append(failed, runFailed...)
 	}
 	return errors.Join(failed...)
+}
+
+// newestFirst gives the indexes of runs, newest created first.
+func newestFirst(runs []github.Run) []int {
+	order := make([]int, len(runs))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return runs[b].CreatedAt.Compare(runs[a].CreatedAt) })
+	return order
 }
 
 // syncRun publishes the run's planned attempts. It returns the errors that
@@ -258,18 +278,11 @@ func writeValue(unit *store.Unit, name string, v any) error {
 	return unit.WriteJSON(name, buf.Bytes())
 }
 
-// fetch is fetch.json: how and when lg fetched its unit.
+// fetch is an attempt's fetch.json.
 type fetch struct {
-	LgFormat          int               `json:"lg_format"`
-	LgVersion         string            `json:"lg_version"`
-	FetchedAt         time.Time         `json:"fetched_at"`
-	Host              string            `json:"host"`
-	Repo              string            `json:"repo"`
-	RunID             int64             `json:"run_id"`
-	Attempt           int               `json:"attempt"`
-	RunCreatedAt      time.Time         `json:"run_created_at"`
-	RunAttemptAtFetch int               `json:"run_attempt_at_fetch"`
-	Sources           map[string]source `json:"sources"`
+	unitFetch
+	Attempt int               `json:"attempt"`
+	Sources map[string]source `json:"sources"`
 	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
 	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
 }
@@ -284,15 +297,8 @@ type source struct {
 
 func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		LgFormat:           1,
-		LgVersion:          version.Version,
-		FetchedAt:          m.Clock.Now().UTC().Truncate(time.Second),
-		Host:               m.Host,
-		Repo:               run.Repository.FullName,
-		RunID:              run.ID,
+		unitFetch:          m.unitFetch(run),
 		Attempt:            attempt.RunAttempt,
-		RunCreatedAt:       run.CreatedAt,
-		RunAttemptAtFetch:  run.RunAttempt,
 		Sources:            s.sources,
 		CarriedForwardJobs: s.carriedForward,
 	})
