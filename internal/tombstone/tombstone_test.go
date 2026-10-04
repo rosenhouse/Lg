@@ -123,13 +123,11 @@ var _ = Describe("FromError", Label("failures"), func() {
 // recordedArtifact is an element of a recorded artifact listing.
 func recordedArtifact(runID int64, stage string, id int64) model.Artifact {
 	GinkgoHelper()
-	raw, err := os.ReadFile(filepath.Join(recordings.Dir(runID, stage), "artifacts.json"))
+	artifacts, err := recordings.Artifacts(runID, stage)
 	Expect(err).NotTo(HaveOccurred())
-	var listing struct{ Artifacts []model.Artifact }
-	Expect(json.Unmarshal(raw, &listing)).To(Succeed())
-	i := slices.IndexFunc(listing.Artifacts, func(a model.Artifact) bool { return a.ID == id })
+	i := slices.IndexFunc(artifacts, func(a model.Artifact) bool { return a.ID == id })
 	Expect(i).To(BeNumerically(">=", 0), "artifact %d at %s", id, stage)
-	return listing.Artifacts[i]
+	return artifacts[i]
 }
 
 // recordedZipError is the first-hop failure that record.sh wrote for an artifact's zip.
@@ -170,6 +168,7 @@ var _ = Describe("FromZipError over the after-expiry recording of run 3712939074
 
 	It("tombstones 11276327411 as expired on its 410", func() {
 		artifact := recordedArtifact(run, "after-attempt-3", 11276327411)
+		Expect(artifact.ExpiresAt).To(BeTemporally("<", recordedAt))
 
 		t, err := tombstone.FromZipError(recordedZipError(run, "after-expiry", 11276327411), artifact, grace, recordedAt)
 		Expect(err).NotTo(HaveOccurred())

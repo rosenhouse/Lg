@@ -3,6 +3,7 @@ package recordings
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rosenhouse/lg/internal/model"
 )
 
 // DefaultNow is past log_grace for every recorded attempt.
@@ -81,4 +84,17 @@ func RecordedAt(runID int64, stage string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return at.UTC(), nil
+}
+
+// Artifacts is the listing in a stage's artifacts.json.
+func Artifacts(runID int64, stage string) ([]model.Artifact, error) {
+	raw, err := os.ReadFile(filepath.Join(Dir(runID, stage), "artifacts.json"))
+	if err != nil {
+		return nil, err
+	}
+	var listing struct{ Artifacts []model.Artifact }
+	if err := json.Unmarshal(raw, &listing); err != nil {
+		return nil, err
+	}
+	return listing.Artifacts, nil
 }
