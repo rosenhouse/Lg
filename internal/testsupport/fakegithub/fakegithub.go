@@ -171,7 +171,11 @@ func (s *Server) loadFS(runID int64, files fs.FS) error {
 func (s *Server) AddRun(r scenario.Run) error { return s.loadFS(r.ID, r.Files) }
 
 // Remove stops serving a run, as if it were deleted.
-func (s *Server) Remove(runID int64) {}
+func (s *Server) Remove(runID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.runs, strconv.FormatInt(runID, 10))
+}
 
 // Advance serves a loaded run at another stage.
 func (s *Server) Advance(runID int64, stage string) error {
