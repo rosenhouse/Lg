@@ -61,7 +61,7 @@ var _ = Describe("Load", Label("sync"), func() {
 
 	It("rejects a negative log_grace", Label("failures"), func() {
 		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: -1m\n"))
-		Expect(err).To(MatchError(config.Error(`log_grace must not be negative: "-1m0s"`)))
+		Expect(err).To(MatchError(config.Error("log_grace must not be negative: -1m")))
 	})
 
 	It("defaults artifact_max_bytes to 500MB", Label("artifacts"), func() {

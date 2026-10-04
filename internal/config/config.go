@@ -153,7 +153,7 @@ func Validate(cfg Config) error {
 	case cfg.Backfill > cfg.Retention:
 		return Error(fmt.Sprintf("backfill must not exceed retention: %s > %s", cfg.Backfill, cfg.Retention))
 	case cfg.LogGrace < 0:
-		return Error(fmt.Sprintf("log_grace must not be negative: %q", time.Duration(cfg.LogGrace)))
+		return Error(fmt.Sprintf("log_grace must not be negative: %s", cfg.LogGrace))
 	case cfg.ArtifactMaxBytes < 1:
 		return Error("artifact_max_bytes must be at least 1B")
 	case cfg.APIURL != "":
