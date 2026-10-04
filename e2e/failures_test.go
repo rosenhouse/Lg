@@ -31,6 +31,7 @@ var _ = Describe("lg sync of run-37129738159/logs-deleted past log_grace", Label
 		ran := 0
 		for _, job := range listing.Jobs {
 			id := job.ID.String()
+			logURL := fake.URL() + "/repos/rosenhouse/lg/actions/jobs/" + id + "/logs"
 			raw, err := os.ReadFile(filepath.Join(jobDir(attempts[0], id), "log.txt.tombstone"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(filepath.Join(jobDir(attempts[0], id), "log.txt")).NotTo(BeAnExistingFile())
@@ -40,6 +41,7 @@ var _ = Describe("lg sync of run-37129738159/logs-deleted past log_grace", Label
 				Expect(tombstone).To(SatisfyAll(
 					HaveKeyWithValue("reason", "not_applicable"),
 					HaveKeyWithValue("http_status", BeNil()),
+					HaveKeyWithValue("url", logURL),
 				), "job %s", id)
 				Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", HaveSuffix("/jobs/"+id+"/logs"))))
 				continue
@@ -49,6 +51,7 @@ var _ = Describe("lg sync of run-37129738159/logs-deleted past log_grace", Label
 				HaveKeyWithValue("reason", "deleted"),
 				HaveKeyWithValue("http_status", BeEquivalentTo(404)),
 				HaveKeyWithValue("message", "Not Found"),
+				HaveKeyWithValue("url", logURL),
 			), "job %s", id)
 		}
 		Expect(ran).To(Equal(10))

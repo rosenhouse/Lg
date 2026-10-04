@@ -128,7 +128,7 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 		return err
 	}
 	if model.Classify(job.Job) == model.NotApplicable {
-		ts := tombstone.NeverProduced("log.txt", job.URL, "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
+		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
 	log := filepath.Join(dir, "log.txt")

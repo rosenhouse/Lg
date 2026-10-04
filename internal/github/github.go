@@ -40,6 +40,7 @@ type Client interface {
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error)
+	JobLogURL(jobID int64) string
 }
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
@@ -214,7 +215,7 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error) {
-	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/jobs/%d/logs", jobID), Status: http.StatusOK}
+	source := Source{URL: h.JobLogURL(jobID), Status: http.StatusOK}
 	err := h.get(ctx, source.URL, func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err
@@ -223,6 +224,10 @@ func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (So
 		return Source{}, err
 	}
 	return source, nil
+}
+
+func (h *HTTP) JobLogURL(jobID int64) string {
+	return h.repoURL + fmt.Sprintf("/actions/jobs/%d/logs", jobID)
 }
 
 // list GETs a listing and every page its Link next URLs lead to, returning

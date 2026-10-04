@@ -198,7 +198,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 })
 
 var _ = Describe("mirror.Cycle with a job that has no steps and no runner", Label("failures"), func() {
-	It("tombstones its log as not_applicable with the job's URL and the clock's time", func(ctx SpecContext) {
+	It("tombstones its log as not_applicable with the log's URL and the clock's time", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 
@@ -207,7 +207,7 @@ var _ = Describe("mirror.Cycle with a job that has no steps and no runner", Labe
 			"lg_format":     1.0,
 			"tombstoned_at": "2026-10-03T18:00:00Z",
 			"target":        "log.txt",
-			"url":           "https://api.github.com/repos/rosenhouse/Lg/actions/jobs/111221290616",
+			"url":           env.Fake.URL() + "/repos/rosenhouse/lg/actions/jobs/111221290616/logs",
 			"http_status":   nil,
 			"reason":        "not_applicable",
 			"message":       "GitHub produces no log for a job with no steps and no runner",
