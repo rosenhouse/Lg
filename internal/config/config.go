@@ -22,8 +22,12 @@ type Config struct {
 	Repo   string `yaml:"repo"`
 	APIURL string `yaml:"api_url"`
 
-	LogGrace Duration `yaml:"log_grace"`
+	LogGrace         Duration `yaml:"log_grace"`
+	ArtifactMaxBytes Bytes    `yaml:"artifact_max_bytes"`
 }
+
+// Bytes is a size in bytes.
+type Bytes int64
 
 // Duration is a Go duration such as 1h or 0s, or a bare 0.
 type Duration time.Duration

@@ -21,7 +21,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	It("reads host, repo and api_url", func() {
 		cfg, err := config.Load(write("host: ghe.corp.example\nrepo: platform/infra\napi_url: http://127.0.0.1:1/api/v3\n"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour)}))
+		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour), ArtifactMaxBytes: 500_000_000}))
 	})
 
 	It("defaults host to github.com", func() {
@@ -60,6 +60,40 @@ var _ = Describe("Load", Label("sync"), func() {
 		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: -1m\n"))
 		Expect(err).To(MatchError(config.Error(`log_grace must not be negative: "-1m0s"`)))
 	})
+
+	It("defaults artifact_max_bytes to 500MB", Label("artifacts"), func() {
+		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(HaveField("ArtifactMaxBytes", config.Bytes(500_000_000)))
+	})
+
+	DescribeTable("reads artifact_max_bytes with MB and GB decimal, and MiB and GiB binary",
+		func(value string, bytes config.Bytes) {
+			Expect(config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + value + "\n"))).To(HaveField("ArtifactMaxBytes", bytes))
+		},
+		Entry("bare", "700", config.Bytes(700), Label("artifacts")),
+		Entry("B", "700B", config.Bytes(700), Label("artifacts")),
+		Entry("KB", "2KB", config.Bytes(2_000), Label("artifacts")),
+		Entry("MB", "500MB", config.Bytes(500_000_000), Label("artifacts")),
+		Entry("GB", "2GB", config.Bytes(2_000_000_000), Label("artifacts")),
+		Entry("TB", "1TB", config.Bytes(1_000_000_000_000), Label("artifacts")),
+		Entry("KiB", "2KiB", config.Bytes(2<<10), Label("artifacts")),
+		Entry("MiB", "1MiB", config.Bytes(1<<20), Label("artifacts")),
+		Entry("GiB", "1GiB", config.Bytes(1<<30), Label("artifacts")),
+		Entry("TiB", "1TiB", config.Bytes(1<<40), Label("artifacts")),
+	)
+
+	DescribeTable("rejects an artifact_max_bytes that is not a size",
+		func(value, message string) {
+			_, err := config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + value + "\n"))
+			Expect(err).To(MatchError(HaveSuffix("config.yaml: line 2: " + message)))
+			Expect(err).To(BeAssignableToTypeOf(config.Error("")))
+		},
+		Entry("negative", "-1", `want a size such as 500MB, not "-1"`, Label("artifacts")),
+		Entry("a fraction", "1.5GB", `want a size such as 500MB, not "1.5GB"`, Label("artifacts")),
+		Entry("an unknown unit", "5mb", `want a size such as 500MB, not "5mb"`, Label("artifacts")),
+		Entry("no number", "MB", `want a size such as 500MB, not "MB"`, Label("artifacts")),
+		Entry("too large", "9999999TiB", `size "9999999TiB" is too large`, Label("artifacts")),
+		Entry("a sequence", "[1MB]", "want a size such as 500MB, not !!seq", Label("artifacts")),
+	)
 
 	DescribeTable("rejects a repo that is not owner/name",
 		func(repo string) {
