@@ -282,3 +282,8 @@ func jsonArray(jobs []github.Job) []byte {
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
 }
+
+// PlanAttempts lists the attempts up to runAttempt that are not on disk, oldest first.
+func PlanAttempts(runAttempt int, onDisk []int) []int {
+	return nil
+}
