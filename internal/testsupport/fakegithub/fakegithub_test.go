@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -164,10 +165,23 @@ func expectReplay(r recording) {
 			Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
 			Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
 			Expect(resp.body).To(MatchJSON(recorded), line.Path)
+			expectErrorBodyStatus(recorded, line)
 		} else {
 			Expect(resp.body).To(Equal(recorded), line.Path)
 		}
 	}
+}
+
+// expectErrorBodyStatus ties a status.txt line to its body: GitHub's JSON
+// error bodies name their own status.
+func expectErrorBodyStatus(recorded []byte, line recordings.Line) {
+	GinkgoHelper()
+	if line.Final < http.StatusBadRequest {
+		return
+	}
+	var body struct{ Status string }
+	Expect(json.Unmarshal(recorded, &body)).To(Succeed(), line.Path)
+	Expect(body.Status).To(Equal(strconv.Itoa(line.Final)), line.Path)
 }
 
 var _ = Describe("fakegithub replay", Label("transport"), func() {
