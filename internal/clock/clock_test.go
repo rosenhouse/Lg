@@ -29,6 +29,14 @@ var _ = Describe("Fake", Label("failures"), func() {
 		fake.Set(t0.Add(time.Minute))
 		Eventually(fired, time.Second).Should(Receive(Equal(t0.Add(time.Minute))))
 	})
+
+	DescribeTable("fires After at once for a duration that is not positive",
+		func(d time.Duration) {
+			Expect(clock.NewFake(t0).After(d)).To(Receive(Equal(t0)))
+		},
+		Entry("zero", time.Duration(0)),
+		Entry("negative", -time.Second),
+	)
 })
 
 var _ = Describe("Real", Label("failures"), func() {

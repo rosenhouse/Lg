@@ -58,6 +58,10 @@ func (f *Fake) After(d time.Duration) <-chan time.Time {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w := waiter{deadline: f.now.Add(d), fired: make(chan time.Time, 1)}
+	if d <= 0 {
+		w.fired <- f.now
+		return w.fired
+	}
 	f.waiters = append(f.waiters, w)
 	return w.fired
 }
