@@ -2,9 +2,13 @@ package mirror
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"slices"
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
@@ -135,6 +139,67 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run) error {
 	})
 }
 
+// retrySet is the run's artifacts that have no dir on disk: those in this
+// cycle's listing, then in pending, then in each attempt's snapshot. A
+// re-run of all jobs deletes artifacts, so one that failed transiently may
+// be in no later listing.
 func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Artifact, error) {
-	return nil, nil
+	snapshots, err := m.snapshots(run.dir)
+	if err != nil {
+		return nil, err
+	}
+	var retry []github.Artifact
+	seen := map[int64]bool{}
+	for _, artifact := range slices.Concat(run.artifacts, pending, snapshots) {
+		if seen[artifact.ID] {
+			continue
+		}
+		seen[artifact.ID] = true
+		done, err := m.Store.Has(layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
+		if err != nil {
+			return nil, err
+		}
+		if !done {
+			retry = append(retry, artifact)
+		}
+	}
+	return retry, nil
+}
+
+// snapshots gives the artifacts in each attempt's artifacts.json, oldest attempt first.
+func (m *Mirror) snapshots(runDir string) ([]github.Artifact, error) {
+	attempts, err := m.attemptsOnDisk(runDir)
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(attempts)
+	var all []github.Artifact
+	for _, n := range attempts {
+		artifacts, err := readArtifacts(filepath.Join(layout.AttemptDir(runDir, n), "artifacts.json"))
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, artifacts...)
+	}
+	return all, nil
+}
+
+// readArtifacts reads a JSON array of artifacts as GitHub listed them.
+func readArtifacts(path string) ([]github.Artifact, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raws []json.RawMessage
+	if err := json.Unmarshal(raw, &raws); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	artifacts := make([]github.Artifact, len(raws))
+	for i, raw := range raws {
+		artifacts[i].Raw = raw
+		if err := json.Unmarshal(raw, &artifacts[i].Artifact); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return artifacts, nil
 }
