@@ -224,10 +224,7 @@ func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}
-	switch {
-	case repo.FullName == "":
-		return Repo{}, malformed(h.repoURL, "no full_name")
-	case !config.IsRepo(repo.FullName):
+	if !config.IsRepo(repo.FullName) {
 		return Repo{}, malformed(h.repoURL, "full_name %q is not owner/name", repo.FullName)
 	}
 	return repo, nil
