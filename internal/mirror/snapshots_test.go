@@ -123,8 +123,8 @@ func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	return pending
 }
 
-// servedArtifacts is the run's artifact listing as served, by id.
-func servedArtifacts(env *harness.InProcessEnv) map[string]json.RawMessage {
+// servedArtifactsByID is the run's artifact listing as served, by id.
+func servedArtifactsByID(env *harness.InProcessEnv) map[string]json.RawMessage {
 	GinkgoHelper()
 	var listing struct{ Artifacts []json.RawMessage }
 	Expect(json.Unmarshal(env.Fake.Served("artifacts.json"), &listing)).To(Succeed())
@@ -144,7 +144,7 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 
 		Expect(env.Sync(ctx)).To(BeTransient())
-		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(MatchJSON(servedArtifacts(env)[flakyReport]))))
+		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(MatchJSON(servedArtifactsByID(env)[flakyReport]))))
 
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(readPending(env)).To(BeEmpty())
@@ -157,7 +157,7 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 
 		Expect(env.Sync(ctx)).To(BeBlocked(failure.RateLimit))
 		var listed []any
-		for _, raw := range servedArtifacts(env) {
+		for _, raw := range servedArtifactsByID(env) {
 			listed = append(listed, MatchJSON(raw))
 		}
 		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(listed...)))

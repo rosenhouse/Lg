@@ -33,9 +33,9 @@ func servedArtifacts(fake *fakegithub.Server) []byte {
 // servedArtifact is the element of the run's artifact listing as served.
 func servedArtifact(fake *fakegithub.Server, id int64) []byte {
 	GinkgoHelper()
-	var listing []json.RawMessage
-	Expect(json.Unmarshal(servedArtifacts(fake), &listing)).To(Succeed())
-	for _, raw := range listing {
+	var listing struct{ Artifacts []json.RawMessage }
+	Expect(json.Unmarshal(fake.Served("artifacts.json"), &listing)).To(Succeed())
+	for _, raw := range listing.Artifacts {
 		var a struct{ ID int64 }
 		Expect(json.Unmarshal(raw, &a)).To(Succeed())
 		if a.ID == id {
