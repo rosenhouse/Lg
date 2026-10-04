@@ -191,17 +191,14 @@ func (s *Store) Has(target string) (bool, error) {
 	return err == nil, err
 }
 
-// Sweep removes the units in tmp/, which a dead process left behind.
-// Callers hold state/write.lock, so no live unit is there.
+// Sweep empties tmp/ of what dead writers left. Callers hold
+// state/write.lock, so no live writer uses it.
 func (s *Store) Sweep() error {
 	entries, err := s.fs.ReadDir(s.tmp)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if !isUnit(e.Name()) {
-			continue
-		}
 		if err := s.fs.RemoveAll(filepath.Join(s.tmp, e.Name())); err != nil {
 			return err
 		}

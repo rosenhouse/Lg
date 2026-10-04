@@ -180,7 +180,7 @@ var _ = Describe("Open", Label("store"), func() {
 })
 
 var _ = Describe("Sweep", Label("store"), func() {
-	It("removes the units in tmp/ and leaves everything else untouched", func() {
+	It("empties tmp/ and leaves FORMAT, .rgignore, state/ and data/ untouched", func() {
 		root := newStore()
 		s := open(root)
 		Expect(publishAttempt(s, "{}")).To(Succeed())
@@ -188,10 +188,11 @@ var _ = Describe("Sweep", Label("store"), func() {
 		unit, err := s.NewUnit()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(unit.WriteJSON("jobs/1_build/job.json", []byte("{}"))).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(root, "tmp", "trash", "x"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "stray"), nil, 0o644)).To(Succeed())
 		kept := treesnap.Snap{}
 		for path, entry := range treesnap.Snapshot(root) {
-			if !strings.HasPrefix(path, "tmp/unit-") {
+			if !strings.HasPrefix(path, "tmp/") {
 				kept[path] = entry
 			}
 		}

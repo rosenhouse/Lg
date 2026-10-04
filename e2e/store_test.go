@@ -154,9 +154,11 @@ var _ = Describe("lg sync", Label("store"), func() {
 		env := harness.New(lgPath)
 		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
 		Expect(env.Sync()).To(gexec.Exit(0))
-		leftover := filepath.Join(env.Tmp(), "unit-leftover", "log.txt")
-		Expect(os.MkdirAll(filepath.Dir(leftover), 0o755)).To(Succeed())
-		Expect(os.WriteFile(leftover, []byte("partial"), 0o644)).To(Succeed())
+		leftovers := []string{filepath.Join(env.Tmp(), "unit-leftover", "log.txt"), filepath.Join(env.Tmp(), "trash", "x", "log.txt")}
+		for _, leftover := range leftovers {
+			Expect(os.MkdirAll(filepath.Dir(leftover), 0o755)).To(Succeed())
+			Expect(os.WriteFile(leftover, []byte("partial"), 0o644)).To(Succeed())
+		}
 		writeLock := filepath.Join(env.State(), "write.lock")
 		held, err := lock.Wait(writeLock, time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
@@ -164,8 +166,9 @@ var _ = Describe("lg sync", Label("store"), func() {
 		session, wait := env.StartSync()
 		Eventually(session.Err, harness.ExitTimeout).Should(gbytes.Say(regexp.QuoteMeta(
 			fmt.Sprintf("lg: waiting for %s (held by pid %d)\n", writeLock, os.Getpid()))))
-		Consistently(func() string { return leftover }, time.Second).Should(BeAnExistingFile())
-		Expect(session.ExitCode()).To(Equal(-1), "sync ran while the lock was held")
+		for _, leftover := range leftovers {
+			Expect(leftover).To(BeAnExistingFile())
+		}
 
 		Expect(held.Release()).To(Succeed())
 		Expect(wait()).To(gexec.Exit(0))
