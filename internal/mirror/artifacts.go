@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
@@ -81,49 +82,26 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 	if err != nil {
 		return &github.MalformedError{Err: err}
 	}
-	w, err := s.unit.Create("artifact.zip", m.ArtifactMaxBytes)
-	if err != nil {
+	download := func(w io.Writer) error { return gh.DownloadArtifact(ctx, artifact.ID, w) }
+	lost := func(err error) (tombstone.Tombstone, error) { return m.zipTombstone(err, artifact, url) }
+	if err := s.download("artifact.zip", url, m.ArtifactMaxBytes, download, lost); err != nil {
 		return err
 	}
-	err = gh.DownloadArtifact(ctx, artifact.ID, w)
-	if closeErr := w.Close(); closeErr != nil {
-		return errors.Join(err, closeErr)
+	// A zip that does not match its digest is Transient, so the next cycle downloads it again.
+	if got, ok := s.sources["artifact.zip"]; ok && want != "" && got.SHA256 != want {
+		return failure.Transient{Err: fmt.Errorf("%s: sha256 %s does not match digest sha256:%s", url, got.SHA256, want)}
 	}
-	if err == nil {
-		return verifyZip(s, want, url)
-	}
-	ts, ok := m.zipTombstone(err, artifact, url)
-	if !ok {
-		return err
-	}
-	if err := s.unit.Remove("artifact.zip"); err != nil {
-		return err
-	}
-	return writeTombstone(s.unit, ".", ts)
+	return nil
 }
 
 // zipTombstone tombstones a zip whose download failed for good: GitHub lost
 // it, or its stream exceeded ArtifactMaxBytes.
-func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (tombstone.Tombstone, bool) {
+func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (tombstone.Tombstone, error) {
 	if errors.Is(err, store.ErrTooLarge) {
 		message := fmt.Sprintf("the zip exceeded artifact_max_bytes %d although size_in_bytes is %d", m.ArtifactMaxBytes, artifact.SizeInBytes)
-		return tombstone.New("artifact.zip", url, tombstone.TooLarge, message, m.Clock.Now()), true
+		return tombstone.New("artifact.zip", url, tombstone.TooLarge, message, m.Clock.Now()), nil
 	}
 	return tombstone.FromZipError(err, artifact.ExpiresAt, m.Clock.Now())
-}
-
-// verifyZip records artifact.zip's source once its bytes match want, the
-// SHA-256 GitHub lists, if any. A mismatch is Transient, so the next cycle
-// downloads it again.
-func verifyZip(s *staged, want, url string) error {
-	sum, err := s.unit.Sum("artifact.zip")
-	if err != nil {
-		return err
-	}
-	if want != "" && sum.SHA256 != want {
-		return failure.Transient{Err: fmt.Errorf("%s: sha256 %s does not match digest sha256:%s", url, sum.SHA256, want)}
-	}
-	return s.record("artifact.zip", github.Source{URL: url})
 }
 
 // artifactFetch is an artifact's fetch.json. It holds the run's facts as

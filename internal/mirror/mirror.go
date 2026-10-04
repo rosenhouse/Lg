@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -278,26 +279,11 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 		ts := tombstone.New("log.txt", gh.JobLogURL(job.ID), tombstone.NotApplicable, "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
-	log := filepath.Join(dir, "log.txt")
-	w, err := s.unit.Create(log, store.Unlimited)
-	if err != nil {
-		return err
+	download := func(w io.Writer) error { return gh.DownloadJobLog(ctx, job.ID, w) }
+	lost := func(err error) (tombstone.Tombstone, error) {
+		return tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
 	}
-	err = gh.DownloadJobLog(ctx, job.ID, w)
-	if closeErr := w.Close(); closeErr != nil {
-		return errors.Join(err, closeErr)
-	}
-	if err == nil {
-		return s.record(log, github.Source{URL: gh.JobLogURL(job.ID)})
-	}
-	ts, err := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
-	if err != nil {
-		return err
-	}
-	if err := s.unit.Remove(log); err != nil {
-		return err
-	}
-	return writeTombstone(s.unit, dir, ts)
+	return s.download(filepath.Join(dir, "log.txt"), gh.JobLogURL(job.ID), store.Unlimited, download, lost)
 }
 
 func writeTombstone(unit *store.Unit, dir string, ts tombstone.Tombstone) error {
@@ -387,6 +373,30 @@ func (s *staged) record(name string, from github.Source) error {
 	}
 	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
 	return nil
+}
+
+// download stages name from get. When get fails, it stages the tombstone
+// that lost gives instead, or returns lost's error.
+func (s *staged) download(name, url string, maxBytes int64, get func(io.Writer) error, lost func(error) (tombstone.Tombstone, error)) error {
+	w, err := s.unit.Create(name, maxBytes)
+	if err != nil {
+		return err
+	}
+	err = get(w)
+	if closeErr := w.Close(); closeErr != nil {
+		return errors.Join(err, closeErr)
+	}
+	if err == nil {
+		return s.record(name, github.Source{URL: url})
+	}
+	ts, err := lost(err)
+	if err != nil {
+		return err
+	}
+	if err := s.unit.Remove(name); err != nil {
+		return err
+	}
+	return writeTombstone(s.unit, filepath.Dir(name), ts)
 }
 
 // jsonArray joins the jobs as served into one array, as if GitHub had sent a single page.

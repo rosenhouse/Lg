@@ -119,8 +119,8 @@ var _ = Describe("FromZipError", Label("artifacts"), func() {
 	DescribeTable("tombstones artifact.zip with the failed hop's status and message",
 		func(lost *github.StatusError, now time.Time, reason tombstone.Reason) {
 			lost.URL = zipURL
-			t, ok := tombstone.FromZipError(lost, expiresAt, now)
-			Expect(ok).To(BeTrue())
+			t, err := tombstone.FromZipError(lost, expiresAt, now)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(asJSON(t)).To(Equal(map[string]any{
 				"lg_format":     1.0,
 				"tombstoned_at": now.Format(time.RFC3339),
@@ -139,15 +139,15 @@ var _ = Describe("FromZipError", Label("artifacts"), func() {
 	)
 
 	It("calls a 404 deleted when the artifact has no expires_at", func() {
-		t, ok := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, time.Time{}, expiresAt)
-		Expect(ok).To(BeTrue())
+		t, err := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, time.Time{}, expiresAt)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(t.Reason).To(Equal(tombstone.Deleted))
 	})
 
-	DescribeTable("gives nothing for any other error",
+	DescribeTable("gives back any other error",
 		func(other error) {
-			_, ok := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
-			Expect(ok).To(BeFalse())
+			_, err := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
+			Expect(err).To(Equal(other))
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 500}}),
 		Entry("a Transient ErrNotFound", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 404}}),
