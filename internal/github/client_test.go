@@ -55,11 +55,11 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			}))
 			DeferCleanup(server.Close)
 
-			Expect(call(context.Background(), github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token"))).To(Succeed())
+			Expect(call(context.Background(), github.NewHTTP(http.DefaultClient, server.URL, "o/r", "gho_header_test"))).To(Succeed())
 			Expect(headers.Get("Accept")).To(Equal("application/vnd.github+json"))
 			Expect(headers.Get("X-GitHub-Api-Version")).To(Equal("2022-11-28"))
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
-			Expect(headers.Get("Authorization")).To(Equal("Bearer lg-test-token"))
+			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetAttempt(ctx, 1, 1); return err }),
