@@ -115,7 +115,11 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		scenario.RenameWorkflow(run, 2, "renamed")
 		scenario.InProgress(run, 2)
 		scenario.StartupFailure(run, 2)
+		scenario.QueueJob(run, 2, "flaky")
+		scenario.WithoutRunAttempt(run)
 
+		Expect(field(run, "run.json", "run_attempt")).To(BeEquivalentTo(2))
+		Expect(jobs(run, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("status", "completed"))))
 		Expect(string(run.Files["attempt-2/attempt.json"].Data)).To(Equal(before))
 		Expect(run.Files).To(HaveKey("attempt-2/logs/7111221661475.txt"))
 	})
@@ -197,6 +201,36 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(jobs(failed, "attempt-2")).To(BeEmpty())
 			Expect(failed.Files).NotTo(HaveKey(HavePrefix("attempt-2/logs/")))
 			Expect(jobs(failed, "attempt-1")).To(HaveLen(12))
+		})
+	})
+
+	Describe("QueueJob", func() {
+		It("leaves the attempt's job of that name queued, with no steps, runner, start, end or conclusion", func() {
+			queued := scenario.QueueJob(run, 2, "flaky")
+
+			Expect(jobs(queued, "attempt-2")).To(ContainElement(SatisfyAll(
+				HaveKeyWithValue("name", "flaky"),
+				HaveKeyWithValue("status", "queued"),
+				HaveKeyWithValue("conclusion", BeNil()),
+				HaveKeyWithValue("steps", BeEmpty()),
+				HaveKeyWithValue("runner_name", BeNil()),
+				HaveKeyWithValue("started_at", BeNil()),
+				HaveKeyWithValue("completed_at", BeNil()),
+			)))
+			Expect(jobs(queued, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "timeout"), HaveKeyWithValue("status", "completed"))))
+			Expect(jobs(queued, "attempt-1")).To(HaveEach(HaveKeyWithValue("status", "completed")))
+		})
+	})
+
+	Describe("WithoutRunAttempt", func() {
+		It("drops run_attempt from the listed run only", func() {
+			unnumbered := scenario.WithoutRunAttempt(run)
+
+			var listed map[string]any
+			Expect(json.Unmarshal(unnumbered.Files["run.json"].Data, &listed)).To(Succeed())
+			Expect(listed).NotTo(HaveKey("run_attempt"))
+			Expect(listed).To(HaveKeyWithValue("id", BeEquivalentTo(7)))
+			Expect(field(unnumbered, "attempt-2/attempt.json", "run_attempt")).To(BeEquivalentTo(2))
 		})
 	})
 })

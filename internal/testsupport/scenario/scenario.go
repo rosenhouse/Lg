@@ -152,6 +152,30 @@ func StartupFailure(r Run, attempt int) Run {
 	return out
 }
 
+// QueueJob leaves attempt's jobs named name queued, with no steps, runner,
+// start, end or conclusion.
+func QueueJob(r Run, attempt int, name string) Run {
+	out := r.copy()
+	out.editJobs(attempt, func(jobs []any) []any {
+		for _, job := range jobs {
+			job := job.(map[string]any)
+			if job["name"] == name {
+				job["status"], job["steps"] = "queued", []any{}
+				job["conclusion"], job["runner_name"], job["started_at"], job["completed_at"] = nil, nil, nil, nil
+			}
+		}
+		return jobs
+	})
+	return out
+}
+
+// WithoutRunAttempt drops run_attempt from the listed run.
+func WithoutRunAttempt(r Run) Run {
+	out := r.copy()
+	out.edit("run.json", func(run map[string]any) { delete(run, "run_attempt") })
+	return out
+}
+
 func (r Run) conclude(attempt int, status string, conclusion any) Run {
 	out := r.copy()
 	set := func(run map[string]any) { run["status"], run["conclusion"] = status, conclusion }
