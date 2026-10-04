@@ -70,12 +70,11 @@ type download struct {
 
 // Fault answers a request with Status, or breaks the connection. Headers are
 // set on the response, over the rate-limit headers. Body replaces the error
-// GitHub or blob storage would send with Status. Drop
-// closes it partway through the status line. Truncate sends the response's
-// Content-Length and half its body. Stall sends nothing more until the
-// client gives up. Truncate cuts the matched response, so a log's belongs on
-// its blob, not on the API hop's redirect. Times limits how many requests it
-// answers; 0 means every one.
+// GitHub or blob storage would send with Status. Drop closes it partway
+// through the status line. Truncate sends the response's Content-Length and
+// half its body. Stall sends nothing more until the client gives up. Truncate
+// cuts the matched response, so a log's belongs on its blob, not on the API
+// hop's redirect. Times limits how many requests it answers; 0 means every one.
 type Fault struct {
 	Status   int
 	Headers  map[string]string

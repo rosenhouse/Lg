@@ -101,7 +101,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall, truncate+stall, ratelimit for a 403 with none remaining, secondary for a secondary-limit 403, or retry-after=SECONDS for a 429), at most TIMES times (repeatable); truncate a log or zip on the blob host, since the API hop only redirects")
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
-	rateLimit := flags.String("rate-limit", "5000,5000", "start X-RateLimit-Limit at `LIMIT,REMAINING`")
+	rateLimit := flags.String("rate-limit", "5000,5000", "set X-RateLimit-Limit to LIMIT and X-RateLimit-Remaining to REMAINING before the first request, given as `LIMIT,REMAINING`")
 	now := flags.String("now", "", "start the clock that Date and X-RateLimit-Reset come from at the RFC 3339 `time`, not the real time")
 	if err := flags.Parse(args); err != nil {
 		return 2
