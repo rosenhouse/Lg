@@ -64,7 +64,6 @@ var _ = Describe("FS", Label("store"), func() {
 			"rename "+dir+"/d "+dir+"/e",
 			"remove "+dir+"/e",
 		))
-		Expect(f.Failed()).To(BeFalse())
 	})
 
 	DescribeTable("fails op k and every later op with the given error, leaving the disk as it was before op k",
@@ -73,7 +72,6 @@ var _ = Describe("FS", Label("store"), func() {
 			Expect(writeFile()).To(MatchError(syscall.ENOSPC))
 			Expect(f.Mkdir(filepath.Join(dir, "later"))).To(MatchError(syscall.ENOSPC))
 
-			Expect(f.Failed()).To(BeTrue())
 			Expect(f.Journal()).To(HaveLen(k - 1))
 			var found []string
 			Expect(filepath.Walk(dir, func(path string, _ os.FileInfo, err error) error {

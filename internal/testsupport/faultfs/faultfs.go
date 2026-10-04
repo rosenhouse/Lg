@@ -27,7 +27,6 @@ type FS struct {
 	mu       sync.Mutex
 	failFrom int
 	err      error
-	failed   bool
 	journal  []Op
 	devices  map[string]uint64
 }
@@ -39,12 +38,6 @@ func (f *FS) FailFrom(k int, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failFrom, f.err = k, err
-}
-
-func (f *FS) Failed() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.failed
 }
 
 // Journal lists the ops that reached the inner FS.
@@ -63,8 +56,7 @@ func (f *FS) SetDevice(path string, dev uint64) {
 // do journals op and runs it, unless it is op k or later.
 func (f *FS) do(op Op, run func() error) error {
 	f.mu.Lock()
-	if f.failed || (f.failFrom > 0 && len(f.journal)+1 >= f.failFrom) {
-		f.failed = true
+	if f.failFrom > 0 && len(f.journal)+1 >= f.failFrom {
 		f.mu.Unlock()
 		return &fs.PathError{Op: op.Name, Path: op.Path, Err: f.err}
 	}
