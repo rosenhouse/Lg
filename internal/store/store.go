@@ -135,11 +135,12 @@ func check(fsys fsOps, root string) error {
 }
 
 // isOwn reports whether name, in a root without FORMAT, is what Init, a
-// writer waiting on state/write.lock, mkfs or Finder left there.
+// writer waiting on state/write.lock, mkfs or Finder left there, or lg's
+// config when LG_CONFIG points there.
 func isOwn(fsys fsOps, root, name string) (bool, error) {
 	var ownChild func(string) bool
 	switch name {
-	case ".rgignore", ".DS_Store":
+	case ".rgignore", ".DS_Store", "config.yaml":
 		return true, nil
 	case "data", "lost+found":
 		ownChild = func(string) bool { return false }

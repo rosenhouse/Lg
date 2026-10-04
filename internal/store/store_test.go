@@ -64,7 +64,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(filepath.Join(root, "state")).To(BeADirectory())
 	})
 
-	It("claims a root holding only what lg writes before FORMAT", func() {
+	It("claims a root holding only what lg writes before FORMAT, and lg's config.yaml", func() {
 		Expect(os.MkdirAll(filepath.Join(root, "data"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "unit-1"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "unit-1", "FORMAT"), nil, 0o644)).To(Succeed())
@@ -73,6 +73,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(os.WriteFile(filepath.Join(root, ".rgignore"), []byte("state/\n"), 0o644)).To(Succeed())
 		Expect(os.Mkdir(filepath.Join(root, "lost+found"), 0o700)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, ".DS_Store"), []byte("finder"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(root, "config.yaml"), []byte("repo: o/r\n"), 0o644)).To(Succeed())
 
 		Expect(store.Check(root)).To(Succeed())
 		Expect(store.Init(root)).To(Succeed())
