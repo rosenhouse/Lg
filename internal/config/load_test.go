@@ -109,6 +109,11 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("with a unit", "0GB"),
 	)
 
+	It("rejects a disk_cap of 0", Label("discovery"), func() {
+		_, err := config.Load(write("repo: rosenhouse/lg\ndisk_cap: 0\n"))
+		Expect(err).To(MatchError(config.Error("disk_cap must be at least 1B")))
+	})
+
 	DescribeTable("rejects a repo that is not owner/name",
 		func(repo string) {
 			_, err := config.Load(write("repo: '" + repo + "'\n"))
@@ -194,18 +199,22 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("http to host", "ghe.corp.example", "http://ghe.corp.example/api/v3", "api_url must use https unless it is on a loopback address"),
 	)
 
-	It("rejects an unknown key", func() {
+	It("rejects an unknown key, naming it and its line", func() {
 		path := write("repo: rosenhouse/lg\napi-url: http://127.0.0.1:1\n")
 		_, err := config.Load(path)
-		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
-		Expect(err).To(MatchError(And(HavePrefix(path+": "), ContainSubstring("api-url"))))
+		Expect(err).To(MatchError(config.Error(path + `: line 2: unknown key "api-url"`)))
 	})
 
-	It("returns a config.Error for a missing file", func() {
+	It("names every unknown key", func() {
+		path := write("repo: rosenhouse/lg\nfoo: 1\nHost: github.com\n")
+		_, err := config.Load(path)
+		Expect(err).To(MatchError(config.Error(path + `: line 2: unknown key "foo"; line 3: unknown key "Host"`)))
+	})
+
+	It("tells how to create a missing file", func() {
 		path := filepath.Join(GinkgoT().TempDir(), "missing.yaml")
 		_, err := config.Load(path)
-		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
-		Expect(err).To(MatchError(ContainSubstring(path)))
+		Expect(err).To(MatchError(config.Error(path + " does not exist; run `lg init --repo owner/name`")))
 	})
 
 	It("returns a config.Error naming the file for invalid YAML", func() {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net"
 	"net/url"
@@ -121,6 +122,9 @@ func Defaults() Config {
 
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Config{}, Error(path + " does not exist; run `lg init --repo owner/name`")
+	}
 	if err != nil {
 		return Config{}, Error(err.Error())
 	}
@@ -128,13 +132,28 @@ func Load(path string) (Config, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-		return Config{}, Error(fmt.Sprintf("%s: %s", path, err))
+		return Config{}, Error(fmt.Sprintf("%s: %s", path, describe(err)))
 	}
 	cfg.Host = strings.ToLower(cfg.Host)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+var unknownField = regexp.MustCompile(`^line (\d+): field (.+) not found in type \S+$`)
+
+// describe names each unknown key in a yaml.TypeError, and gives any other error as is.
+func describe(err error) string {
+	var typeErr *yaml.TypeError
+	if !errors.As(err, &typeErr) {
+		return err.Error()
+	}
+	messages := make([]string, len(typeErr.Errors))
+	for i, message := range typeErr.Errors {
+		messages[i] = unknownField.ReplaceAllString(message, `line $1: unknown key "$2"`)
+	}
+	return strings.Join(messages, "; ")
 }
 
 // Validate returns an Error naming the first key whose value lg cannot use.
@@ -154,6 +173,8 @@ func Validate(cfg Config) error {
 		return Error(fmt.Sprintf("backfill must not exceed retention: %s > %s", cfg.Backfill, cfg.Retention))
 	case cfg.LogGrace < 0:
 		return Error(fmt.Sprintf("log_grace must not be negative: %s", cfg.LogGrace))
+	case cfg.DiskCap < 1:
+		return Error("disk_cap must be at least 1B")
 	case cfg.ArtifactMaxBytes < 1:
 		return Error("artifact_max_bytes must be at least 1B")
 	case cfg.APIURL != "":
