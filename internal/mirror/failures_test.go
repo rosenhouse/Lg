@@ -223,3 +223,16 @@ var _ = Describe("mirror.Cycle with a job that has no steps and no runner", Labe
 		}))
 	}, cycleTimeout)
 })
+
+var _ = Describe("mirror.Cycle when the jobs of a listed run's attempt return 404", Label("failures"), func() {
+	It("skips that run and publishes the others", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusNotFound})
+
+		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
+	}, cycleTimeout)
+})
