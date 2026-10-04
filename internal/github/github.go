@@ -309,7 +309,11 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error {
-	return h.get(ctx, h.JobLogURL(jobID), func(resp *http.Response) error {
+	return h.download(ctx, h.JobLogURL(jobID), w)
+}
+
+func (h *HTTP) download(ctx context.Context, rawURL string, w io.Writer) error {
+	return h.get(ctx, rawURL, func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err
 	})
@@ -320,15 +324,29 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 }
 
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
-	return nil, Source{}, nil
+	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)}
+	raws, _, pages, err := h.list(ctx, source.URL, "artifacts")
+	if err != nil {
+		return nil, Source{}, err
+	}
+	artifacts := make([]Artifact, len(raws))
+	for i, raw := range raws {
+		artifacts[i].Raw = raw
+		if err := json.Unmarshal(raw, &artifacts[i].Artifact); err != nil {
+			return nil, Source{}, malformed(source.URL, "%w", err)
+		}
+	}
+	source.Pages = pages
+	return artifacts, source, nil
 }
 
+// DownloadArtifact copies the artifact's zip to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error {
-	return nil
+	return h.download(ctx, h.ArtifactZipURL(artifactID), w)
 }
 
 func (h *HTTP) ArtifactZipURL(artifactID int64) string {
-	return ""
+	return h.repoURL + fmt.Sprintf("/actions/artifacts/%d/zip", artifactID)
 }
 
 // list GETs a listing and every page its Link next URLs lead to, returning

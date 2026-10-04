@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -345,6 +346,18 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListAttemptJobs(context.Background(), 1, 1)
 		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: listed 1 of 2 jobs"))
+	})
+
+	It("calls an artifacts listing with an unparsable element malformed, naming its URL", Label("artifacts"), func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"total_count":1,"artifacts":[{"id":"1"}]}`))
+		}))
+		DeferCleanup(server.Close)
+
+		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListArtifacts(context.Background(), 1)
+		var malformed *github.MalformedError
+		Expect(errors.As(err, &malformed)).To(BeTrue())
+		Expect(err).To(MatchError(HavePrefix(server.URL + "/repos/o/r/actions/runs/1/artifacts?per_page=100: ")))
 	})
 
 	It("returns an error naming the URL of a truncated body", func() {
