@@ -59,6 +59,9 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if m.ArtifactMaxBytes < 1 {
 		return fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
 	}
+	if m.State == "" {
+		return errors.New("State is not set")
+	}
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err
