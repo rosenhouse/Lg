@@ -128,26 +128,32 @@ var _ = Describe("Init", Label("store"), func() {
 		}
 	})
 
-	It("makes dirs, then writes, fsyncs and renames .rgignore and then FORMAT into the root, fsyncing it after each", func() {
-		journal := faultfs.New()
-		Expect(store.InitFS(journal, root)).To(Succeed())
-
+	// journal runs Init through faultfs and lists its ops, relative to root's parent.
+	journal := func() []string {
+		GinkgoHelper()
+		fsys := faultfs.New()
+		Expect(store.InitFS(fsys, root)).To(Succeed())
 		var ops []string
-		for _, op := range journal.Journal() {
+		for _, op := range fsys.Journal() {
 			ops = append(ops, strings.ReplaceAll(op.String(), filepath.Dir(root)+"/", ""))
 		}
-		Expect(len(ops)).To(BeNumerically(">", 8))
-		unit := strings.TrimPrefix(ops[8], "mkdir ")
+		return ops
+	}
+
+	It("makes dirs, fsyncs the root and its parent, then writes, fsyncs and renames .rgignore and then FORMAT into the root, fsyncing it after each", func() {
+		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
+
+		ops := journal()
+		Expect(len(ops)).To(BeNumerically(">", 6))
+		unit := strings.TrimPrefix(ops[6], "mkdir ")
 		Expect(unit).To(HavePrefix("lg/tmp/unit-"))
 		Expect(ops).To(HaveExactElements(
-			"mkdir lg",
-			"fsync "+filepath.Dir(root),
 			"mkdir lg/data",
-			"fsync lg",
-			"mkdir lg/state",
 			"fsync lg",
 			"mkdir lg/tmp",
 			"fsync lg",
+			"fsync lg",
+			"fsync "+filepath.Dir(root),
 			"mkdir "+unit,
 			"create "+unit+"/.rgignore",
 			"write "+unit+"/.rgignore",
@@ -163,6 +169,12 @@ var _ = Describe("Init", Label("store"), func() {
 			"fsync lg",
 			"remove "+unit,
 		))
+	})
+
+	It("only fsyncs the root and its parent in a complete store", func() {
+		Expect(store.Init(root)).To(Succeed())
+
+		Expect(journal()).To(HaveExactElements("fsync lg", "fsync "+filepath.Dir(root)))
 	})
 })
 

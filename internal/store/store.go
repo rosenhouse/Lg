@@ -72,6 +72,12 @@ func initFS(fsys fsOps, root string) error {
 			return err
 		}
 	}
+	// A writer makes root and state/ before taking write.lock, without fsync.
+	for _, dir := range []string{root, filepath.Dir(root)} {
+		if err := fsys.SyncDir(dir); err != nil {
+			return err
+		}
+	}
 	if err := s.checkDirs(); err != nil {
 		return err
 	}
@@ -282,9 +288,6 @@ func (s *Store) Publish(u *Unit, target string) error {
 	return s.fs.SyncDir(parent)
 }
 
-// MkdirAll makes dir and its missing parents durably.
-func MkdirAll(dir string) error { return mkdirAll(OSFS{}, dir) }
-
 func mkdirAll(fsys fsOps, dir string) error {
 	_, err := mkdirBelow(fsys, "", dir, true)
 	return err
@@ -307,7 +310,7 @@ func mkdirBelow(fsys fsOps, base, path string, syncParents bool) ([]string, erro
 	}
 	slices.Reverse(missing)
 	for _, dir := range missing {
-		// Two lg processes may race to make state/ before either holds write.lock.
+		// Another lg process may make state/ before it holds write.lock.
 		if err := fsys.Mkdir(dir); err != nil && !errors.Is(err, fs.ErrExist) {
 			return nil, err
 		}
