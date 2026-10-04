@@ -328,6 +328,27 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		}
 	})
 
+	It("answers 410 for the expired artifacts' zips at after-expiry and omits them from the run's listing", func() {
+		for _, expired := range []struct {
+			run int64
+			id  string
+		}{
+			{runID, "11276327411"},
+			{logsDeletedRun, "11276237903"},
+		} {
+			fake := fakegithub.Start(expired.run, "after-expiry")
+			actions := fake.URL() + "/repos/rosenhouse/lg/actions/"
+			Expect(fetch(actions+"artifacts/"+expired.id+"/zip").status).To(Equal(http.StatusGone), expired.id)
+			listed, _ := listing(fmt.Sprintf("%sruns/%d/artifacts?per_page=100", actions, expired.run), "artifacts")
+			Expect(listed).NotTo(BeEmpty())
+			for _, a := range listed {
+				var meta struct{ ID json.Number }
+				Expect(json.Unmarshal(a, &meta)).To(Succeed())
+				Expect(meta.ID.String()).NotTo(Equal(expired.id))
+			}
+		}
+	})
+
 	It("serves GET /repos/rosenhouse/lg case-insensitively with full_name rosenhouse/Lg and default_branch main", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		for _, path := range []string{"/repos/rosenhouse/lg", "/repos/Rosenhouse/LG", "/repositories/" + repoID} {
