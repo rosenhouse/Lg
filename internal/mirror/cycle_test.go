@@ -113,7 +113,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("returns an error and sends no request when State is not set", Label("artifacts"), func() {
 		m.State = ""
 
-		Expect(m.Cycle(context.Background())).To(MatchError("State is not set"))
+		Expect(m.Cycle(context.Background())).To(MatchError("no State dir is set"))
 		Expect(tokens.hosts).To(BeEmpty())
 		Expect(fake.Requests()).To(BeEmpty())
 	})

@@ -54,7 +54,9 @@ var _ = Describe("Server controls", func() {
 	It("Remove deletes a run, so the run listing omits it and its routes and downloads 404", Label("artifacts"), func() {
 		fake.Remove(runID)
 
-		var listing struct{ TotalCount int `json:"total_count"` }
+		var listing struct {
+			TotalCount int `json:"total_count"`
+		}
 		Expect(json.Unmarshal(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs"), &listing)).To(Succeed())
 		Expect(listing.TotalCount).To(BeZero())
 		Expect(get("/repos/rosenhouse/lg/actions/runs/37129390741")).To(Equal(http.StatusNotFound))

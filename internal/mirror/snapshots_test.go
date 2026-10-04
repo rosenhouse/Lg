@@ -120,7 +120,9 @@ func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
-	var pending map[string]struct{ Artifacts []struct{ Artifact json.RawMessage } }
+	var pending map[string]struct {
+		Artifacts []struct{ Artifact json.RawMessage }
+	}
 	Expect(json.Unmarshal(raw, &pending)).To(Succeed())
 	artifacts := map[string][]json.RawMessage{}
 	for runID, run := range pending {
@@ -192,7 +194,7 @@ var _ = Describe("an artifact published from state/pending-artifacts.json", Labe
 	It("keeps &, < and > in artifact.json as listed, so rg finds them", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		listing := strings.Replace(string(env.Fake.Served("artifacts.json")), `"head_branch":"lg-fixture"`, `"head_branch":"fix&<feat>"`, -1)
+		listing := strings.ReplaceAll(string(env.Fake.Served("artifacts.json")), `"head_branch":"lg-fixture"`, `"head_branch":"fix&<feat>"`)
 		env.Fake.Fail("api", "runs/37129390741/artifacts", fakegithub.Fault{Status: http.StatusOK, Body: listing, Times: 1})
 		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 		Expect(env.Sync(ctx)).To(BeTransient())
