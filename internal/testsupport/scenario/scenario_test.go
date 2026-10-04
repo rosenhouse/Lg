@@ -146,6 +146,25 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(jobs(renamed, "attempt-2")).To(HaveEach(HaveKeyWithValue("workflow_name", "renamed")))
 			Expect(jobs(renamed, "attempt-1")).To(HaveEach(HaveKeyWithValue("workflow_name", "lg-fixture")))
 		})
+
+		It("renames every attempt after it", func() {
+			renamed := scenario.RenameWorkflow(scenario.Clone(scenario.Recorded(runID, "after-attempt-3"), 7), 2, "renamed")
+
+			Expect(field(renamed, "attempt-3/attempt.json", "name")).To(Equal("renamed"))
+			Expect(jobs(renamed, "attempt-3")).To(HaveEach(HaveKeyWithValue("workflow_name", "renamed")))
+		})
+
+		It("keeps ids above 2^53 exact", func() {
+			renamed := scenario.RenameWorkflow(scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), 999_999), 2, "renamed")
+
+			Expect(string(renamed.Files["attempt-2/jobs.json"].Data)).To(ContainSubstring(`"id":999999111221661475`))
+		})
+
+		It("keeps <, > and & unescaped", func() {
+			renamed := scenario.RenameWorkflow(run, 2, "renamed")
+
+			Expect(string(renamed.Files["run.json"].Data)).To(ContainSubstring("<noreply@"))
+		})
 	})
 
 	Describe("InProgress", func() {
@@ -157,6 +176,13 @@ var _ = Describe("mutations", Label("attempts"), func() {
 				Expect(field(running, file, "conclusion")).To(BeNil(), file)
 			}
 			Expect(field(running, "attempt-1/attempt.json", "status")).To(Equal("completed"))
+		})
+
+		It("leaves the run completed when the attempt is not its latest", func() {
+			running := scenario.InProgress(run, 1)
+
+			Expect(field(running, "attempt-1/attempt.json", "status")).To(Equal("in_progress"))
+			Expect(field(running, "run.json", "status")).To(Equal("completed"))
 		})
 	})
 
