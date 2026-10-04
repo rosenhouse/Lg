@@ -142,6 +142,7 @@ func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	artifacts := map[string][]json.RawMessage{}
 	for host, runs := range pending {
 		for runID, run := range runs {
+			artifacts[host+"/"+runID] = []json.RawMessage{}
 			for _, c := range run.Artifacts {
 				artifacts[host+"/"+runID] = append(artifacts[host+"/"+runID], c.Artifact)
 			}
