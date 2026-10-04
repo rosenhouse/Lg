@@ -73,8 +73,17 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 }
 
 // runScoped reports whether err leaves other runs worth trying: GitHub
-// failed this run, not lg's store, credentials or rate limit.
+// failed this run, not lg's store, credentials or rate limit. A joined
+// error must be run-scoped in every part.
 func runScoped(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, part := range joined.Unwrap() {
+			if !runScoped(part) {
+				return false
+			}
+		}
+		return true
+	}
 	var statusErr *github.StatusError
 	if errors.As(err, &statusErr) {
 		return !blocksCycle(statusErr)

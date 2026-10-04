@@ -26,4 +26,7 @@ var _ = DescribeTable("RunScoped", Label("failures"),
 	Entry("an API 403", &github.StatusError{Status: 403}, false),
 	Entry("an API 429", &github.StatusError{Status: 429}, false),
 	Entry("a local error", syscall.ENOSPC, false),
+	Entry("a Transient error joined with a local one", errors.Join(failure.Transient{Err: errors.New("connection reset")}, syscall.ENOSPC), false),
+	Entry("a local error joined with a Transient one", errors.Join(syscall.EIO, failure.Transient{Err: errors.New("connection reset")}), false),
+	Entry("a Transient error joined with an API 400", errors.Join(failure.Transient{Err: errors.New("connection reset")}, &github.StatusError{Status: 400}), true),
 )
