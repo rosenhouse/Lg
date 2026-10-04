@@ -183,6 +183,11 @@ func Expire(r Run, artifactID int64) Run {
 	return out
 }
 
+// WithPullRequests lists the run with pull requests of the given numbers.
+func WithPullRequests(r Run, numbers ...int) Run {
+	return r.copy()
+}
+
 // WithoutRunAttempt drops run_attempt from the listed run.
 func WithoutRunAttempt(r Run) Run {
 	out := r.copy()

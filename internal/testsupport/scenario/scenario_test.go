@@ -249,4 +249,16 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(string(run.Files["artifacts.json"].Data)).NotTo(ContainSubstring(`"expired":true`))
 		})
 	})
+
+	Describe("WithPullRequests", Label("artifacts"), func() {
+		It("lists the run with pull requests of the given numbers", func() {
+			opened := scenario.WithPullRequests(run, 42, 7)
+
+			Expect(field(opened, "run.json", "pull_requests")).To(ConsistOf(
+				HaveKeyWithValue("number", BeEquivalentTo(42)),
+				HaveKeyWithValue("number", BeEquivalentTo(7)),
+			))
+			Expect(field(run, "run.json", "pull_requests")).To(BeEmpty())
+		})
+	})
 })
