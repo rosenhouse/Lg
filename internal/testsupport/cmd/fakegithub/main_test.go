@@ -122,22 +122,29 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Entry("no bytes", ""),
 	)
 
-	It("lists each -expire artifact as expired", Label("artifacts"), func() {
-		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-expire", "11275917910")
+	It("lists each -expire artifact as expired, in whichever -run lists it", Label("artifacts"), func() {
+		session := start("-run", "37129390741=after-attempt-1", "-run", "37129738159=logs-deleted", "-addr", "127.0.0.1:0",
+			"-expire", "11275917910", "-expire", "11276401837", "-expire", "11276546973")
 		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
 		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
 
-		_, body := get(url + "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100")
-		var listing struct {
-			Artifacts []struct {
-				ID      int64
-				Expired bool
+		expired := map[int64]bool{}
+		for _, runID := range []string{"37129390741", "37129738159"} {
+			_, body := get(url + "/repos/rosenhouse/lg/actions/runs/" + runID + "/artifacts?per_page=100")
+			var listing struct {
+				Artifacts []struct {
+					ID      int64
+					Expired bool
+				}
+			}
+			Expect(json.Unmarshal(body, &listing)).To(Succeed())
+			for _, artifact := range listing.Artifacts {
+				expired[artifact.ID] = artifact.Expired
 			}
 		}
-		Expect(json.Unmarshal(body, &listing)).To(Succeed())
-		Expect(listing.Artifacts).To(HaveLen(4))
-		for _, artifact := range listing.Artifacts {
-			Expect(artifact.Expired).To(Equal(artifact.ID == 11275917910), "artifact %d", artifact.ID)
+		Expect(expired).To(HaveLen(8))
+		for id, isExpired := range expired {
+			Expect(isExpired).To(Equal(id == 11275917910 || id == 11276401837 || id == 11276546973), "artifact %d", id)
 		}
 	})
 
@@ -226,6 +233,12 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		session := start("-run", "37129390741=after-attempt-1", "-expire", "flaky-report", "-addr", "127.0.0.1:0")
 		Eventually(session, "5s").Should(gexec.Exit(2))
 		Expect(session.Err).To(gbytes.Say(`-expire "flaky-report": want an artifact ID`))
+	})
+
+	It("exits 2 naming an -expire that no -run lists", Label("artifacts"), func() {
+		session := start("-run", "37129390741=after-attempt-1", "-expire", "999", "-addr", "127.0.0.1:0")
+		Eventually(session, "5s").Should(gexec.Exit(2))
+		Expect(session.Err).To(gbytes.Say(`-expire 999: no -run lists that artifact`))
 	})
 
 	It("exits 1 naming an -addr already in use", func() {

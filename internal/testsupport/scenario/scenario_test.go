@@ -250,6 +250,13 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		})
 	})
 
+	Describe("ListsArtifact", Label("artifacts"), func() {
+		It("reports whether the run's artifacts.json lists the id", func() {
+			Expect(run.ListsArtifact(7_011275917910)).To(BeTrue())
+			Expect(run.ListsArtifact(11275917910)).To(BeFalse())
+		})
+	})
+
 	Describe("WithoutDigest", Label("artifacts"), func() {
 		It("drops the artifact's digest, leaving the others and the original run unchanged", func() {
 			undigested := scenario.WithoutDigest(run, 7_011275917910)

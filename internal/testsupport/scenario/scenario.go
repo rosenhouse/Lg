@@ -174,6 +174,13 @@ func Expire(r Run, artifactID int64) Run {
 	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["expired"] = true })
 }
 
+// ListsArtifact reports whether r's artifacts.json lists the artifact.
+func (r Run) ListsArtifact(artifactID int64) bool {
+	var listing struct{ Artifacts []struct{ ID int64 } }
+	mustUnmarshal(r.Files["artifacts.json"].Data, &listing)
+	return slices.ContainsFunc(listing.Artifacts, func(a struct{ ID int64 }) bool { return a.ID == artifactID })
+}
+
 // WithoutDigest lists the artifact with no digest.
 func WithoutDigest(r Run, artifactID int64) Run {
 	return r.editArtifact(artifactID, func(artifact map[string]any) { delete(artifact, "digest") })

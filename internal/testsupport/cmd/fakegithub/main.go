@@ -186,21 +186,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	server := fakegithub.Listen(l)
 	defer server.Close()
+	listed := map[int64]bool{}
 	for runID, stage := range stages {
 		if err := server.Load(runID, stage); err != nil {
 			_, _ = fmt.Fprintf(stderr, "fakegithub: %s\n", err)
 			return 1
 		}
-		if len(expired) == 0 {
-			continue
-		}
 		run := scenario.Recorded(runID, stage)
 		for _, id := range expired {
-			run = scenario.Expire(run, id)
+			if run.ListsArtifact(id) {
+				run, listed[id] = scenario.Expire(run, id), true
+			}
 		}
 		if err := server.AddRun(run); err != nil {
 			_, _ = fmt.Fprintf(stderr, "fakegithub: %s\n", err)
 			return 1
+		}
+	}
+	for _, id := range expired {
+		if !listed[id] {
+			_, _ = fmt.Fprintf(stderr, "fakegithub: -expire %d: no -run lists that artifact\n", id)
+			return 2
 		}
 	}
 	server.SetPageCap(*pageCap)
