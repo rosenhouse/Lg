@@ -111,6 +111,16 @@ var _ = Describe("a first sync at after-attempt-3", Label("attempts"), func() {
 		Expect(env.AttemptDirs(runID)).To(ConsistOf(HaveSuffix("/attempt-1"), HaveSuffix("/attempt-2"), HaveSuffix("/attempt-3")))
 	}, cycleTimeout)
 
+	It("asks for no attempt of the run on the next sync", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		requested := len(env.Fake.Requests())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Fake.Requests()[requested:]).NotTo(ContainElement(HaveField("Path", ContainSubstring("/attempts/"))))
+	}, cycleTimeout)
+
 	It("writes carried_forward_jobs as an empty array for an attempt that carried no job forward", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())

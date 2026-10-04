@@ -72,12 +72,12 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		planned, err := m.planAttempts(run, runDir)
+		onDisk, err := m.attemptsOnDisk(runDir, run.RunAttempt)
 		if err != nil {
 			return err
 		}
 	attempts:
-		for _, n := range planned {
+		for _, n := range PlanAttempts(run.RunAttempt, onDisk) {
 			err = m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
 			switch {
 			case errors.Is(err, errRunGone):
@@ -92,9 +92,9 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	return errors.Join(failed...)
 }
 
-func (m *Mirror) planAttempts(run github.Run, runDir string) ([]int, error) {
+func (m *Mirror) attemptsOnDisk(runDir string, runAttempt int) ([]int, error) {
 	var onDisk []int
-	for n := 1; n <= run.RunAttempt; n++ {
+	for n := 1; n <= runAttempt; n++ {
 		published, err := m.Store.Has(layout.AttemptDir(runDir, n))
 		if err != nil {
 			return nil, err
@@ -103,7 +103,7 @@ func (m *Mirror) planAttempts(run github.Run, runDir string) ([]int, error) {
 			onDisk = append(onDisk, n)
 		}
 	}
-	return PlanAttempts(run.RunAttempt, onDisk), nil
+	return onDisk, nil
 }
 
 // getRepo gets the repo's full name, which names the repo dir as GitHub
