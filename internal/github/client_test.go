@@ -135,9 +135,9 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		api := fake.URL() + "/repos/rosenhouse/lg/actions/"
-		Expect(attempt).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1", Status: 200}))
-		Expect(listing).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1/jobs?per_page=100", Status: 200, Pages: 3}))
-		Expect(log).To(Equal(github.Source{URL: api + "jobs/111221289888/logs", Status: 200}))
+		Expect(attempt).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1"}))
+		Expect(listing).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1/jobs?per_page=100", Pages: 3}))
+		Expect(log).To(Equal(github.Source{URL: api + "jobs/111221289888/logs"}))
 	})
 
 	It("downloads a job log through the redirect, byte for byte", func() {

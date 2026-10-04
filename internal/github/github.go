@@ -157,9 +157,8 @@ func (e *StatusError) Unwrap() error {
 
 // Source is where a file came from: an API URL, never a blob URL.
 type Source struct {
-	URL    string
-	Status int
-	Pages  int
+	URL   string
+	Pages int
 }
 
 // HTTP sends requests straight to a transport, so that only lg follows
@@ -191,7 +190,7 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
-	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt), Status: http.StatusOK}
+	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt)}
 	var run Run
 	if err := h.getJSON(ctx, source.URL, &run.Raw); err != nil {
 		return Run{}, Source{}, err
@@ -218,12 +217,12 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 			return nil, Source{}, err
 		}
 	}
-	return jobs, Source{URL: h.repoURL + path, Status: http.StatusOK, Pages: pages}, nil
+	return jobs, Source{URL: h.repoURL + path, Pages: pages}, nil
 }
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error) {
-	source := Source{URL: h.JobLogURL(jobID), Status: http.StatusOK}
+	source := Source{URL: h.JobLogURL(jobID)}
 	err := h.get(ctx, source.URL, func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err

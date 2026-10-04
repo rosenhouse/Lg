@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -225,7 +226,7 @@ func (s *staged) record(name string, from github.Source) error {
 	if err != nil {
 		return err
 	}
-	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: from.Status, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
+	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
 	return nil
 }
 
