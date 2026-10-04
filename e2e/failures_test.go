@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,5 +52,30 @@ var _ = Describe("lg sync of run-37129738159/logs-deleted past log_grace", Label
 			), "job %s", id)
 		}
 		Expect(ran).To(Equal(10))
+	})
+})
+
+var _ = Describe("lg sync with LG_TEST_NOW", Label("failures"), func() {
+	It("starts its clock there, for fetched_at and for log_grace", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(37129738159, "logs-deleted")
+		env.WriteConfig(fake.URL())
+		env.Setenv("LG_TEST_NOW", "2026-10-03T15:00:00Z")
+
+		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(os.ReadDir(env.Data())).To(BeEmpty())
+
+		env.Setenv("LG_TEST_NOW", "2026-10-03T15:31:00Z")
+		Expect(env.Sync()).To(gexec.Exit(0))
+		fetchJSON, err := filepath.Glob(filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03/37129738159_*/attempt-1/fetch.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fetchJSON).To(HaveLen(1))
+		raw, err := os.ReadFile(fetchJSON[0])
+		Expect(err).NotTo(HaveOccurred())
+		var fetch struct {
+			FetchedAt time.Time `json:"fetched_at"`
+		}
+		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+		Expect(fetch.FetchedAt).To(BeTemporally("~", time.Date(2026, 10, 3, 15, 31, 0, 0, time.UTC), harness.ExitTimeout))
 	})
 })

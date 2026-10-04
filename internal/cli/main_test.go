@@ -54,6 +54,12 @@ var _ = Describe("Main", Label("cli"), func() {
 		Expect(stderr.String()).To(Equal("lg: disk full\n"))
 	})
 
+	It("exits 2 for an LG_TEST_NOW that is not RFC 3339", Label("failures"), func() {
+		Expect(run(map[string]string{"LG_TEST_NOW": "yesterday"}, "version")).To(Equal(2))
+		Expect(stderr.String()).To(HavePrefix(`lg: LG_TEST_NOW: parsing time "yesterday"`))
+		Expect(stdout.String()).To(BeEmpty())
+	})
+
 	It("exits 2 when no command is given", func() {
 		Expect(run(map[string]string{})).To(Equal(2))
 		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"root\", \"version\", \"sync\", \"paths\"\nUsage: lg <command>"))
