@@ -40,9 +40,14 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 		return "", ctx.Err()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist), errors.Is(err, fs.ErrPermission):
 		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; install gh or set LG_GH to its path", err)}
+	case errors.Is(err, errHung):
+		// gh hangs on an OS keyring that lg cannot reach, as under launchd.
+		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s --insecure-storage`", err, host)}
 	}
 	return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
 }
+
+var errHung = errors.New("did not exit")
 
 func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	gh := cmp.Or(g.Env["LG_GH"], "gh")
@@ -53,7 +58,7 @@ func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	defer cancel()
 	stdout, stderr, err := g.Runner.Run(ctx, gh, args, g.Env)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "", fmt.Errorf("%s did not exit within %s", command, timeout)
+		return "", fmt.Errorf("%s %w within %s", command, errHung, timeout)
 	}
 	if err != nil {
 		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
