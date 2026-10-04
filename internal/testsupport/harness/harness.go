@@ -45,6 +45,8 @@ func (e *Env) GH() *fakegh.GH { return e.gh }
 
 func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 
+func (e *Env) Getenv(key string) string { return e.vars[key] }
+
 func (e *Env) Lg(args ...string) *gexec.Session {
 	return e.start(exec.CommandContext(ginkgo.GinkgoT().Context(), e.lgPath, args...))
 }
@@ -124,9 +126,16 @@ func (e *Env) ConfigFile() string {
 	return path
 }
 
-// NewLive is for specs that reach github.com through the real gh.
+// NewLive gives the calling spec its own LG_HOME and LG_CONFIG, the real gh
+// at LG_GH, no LG_TEST_NOW, and the environment ScrubLive keeps.
 func NewLive(lgPath string) *Env {
-	return &Env{lgPath: lgPath, vars: map[string]string{}}
+	vars := ScrubLive(os.Environ(), filepath.Dir(lgPath))
+	vars["LG_HOME"] = ginkgo.GinkgoT().TempDir()
+	vars["LG_CONFIG"] = filepath.Join(ginkgo.GinkgoT().TempDir(), "config.yaml")
+	gh, err := exec.LookPath("gh")
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	vars["LG_GH"] = gh
+	return &Env{lgPath: lgPath, vars: vars}
 }
 
 // WriteLiveConfig writes config.yaml for rosenhouse/lg on github.com, plus any further lines.
