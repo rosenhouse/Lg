@@ -123,9 +123,9 @@ var _ = Describe("Server controls", func() {
 	Describe("faults that break the connection", Label("failures"), func() {
 		// download follows the redirect and reads the whole body, giving up after a second.
 		download := func(ctx context.Context) ([]byte, error) {
-			ctx, cancel := context.WithTimeout(ctx, time.Second)
+			timeout, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			req, err := http.NewRequestWithContext(timeout, http.MethodGet, fake.URL()+logPath, http.NoBody)
 			Expect(err).NotTo(HaveOccurred())
 			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
 			if err != nil {
@@ -160,10 +160,19 @@ var _ = Describe("Server controls", func() {
 
 		It("Truncate with Stall sends half the body, then nothing until the client gives up", func(ctx SpecContext) {
 			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true, Stall: true})
+			timeout, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(timeout, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
 
-			body, err := download(ctx)
+			half := make([]byte, len(recorded())/2)
+			Expect(io.ReadFull(resp.Body, half)).To(Equal(len(half)))
+			Expect(half).To(Equal(recorded()[:len(half)]))
+			_, err = resp.Body.Read(make([]byte, 1))
 			Expect(err).To(MatchError(context.DeadlineExceeded))
-			Expect(body).To(Equal(recorded()[:len(recorded())/2]))
 		}, SpecTimeout(5*time.Second))
 	})
 
