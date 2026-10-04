@@ -150,7 +150,7 @@ var _ = Describe("mirror.Cycle", Label("artifacts"), func() {
 	}, cycleTimeout)
 })
 
-var _ = Describe("mirror.Cycle when the listing says expired: true, as the docs describe and no recording shows", Label("artifacts"), func() {
+var _ = Describe("mirror.Cycle when the listing says expired: true", Label("artifacts"), func() {
 	It("writes an expired tombstone without a request", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.AddRun(scenario.Expire(scenario.Recorded(runID, "after-attempt-1"), 11275917910))).To(Succeed())

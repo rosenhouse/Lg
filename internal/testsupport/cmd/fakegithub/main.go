@@ -106,7 +106,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var runs, failFlags, expireFlags repeated
 	flags.Var(&runs, "run", "serve run `ID=STAGE` from testdata/recordings (repeatable)")
 	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall, truncate+stall, ratelimit for a 403 with none remaining, secondary for a secondary-limit 403, retry-after=SECONDS for a 429, or body=FILE for a 200 of FILE's bytes), at most TIMES times (repeatable); truncate a log or zip on the blob host, since the API hop only redirects")
-	flags.Var(&expireFlags, "expire", "list artifact `ID` as expired: true, which no recording shows (repeatable)")
+	flags.Var(&expireFlags, "expire", "list artifact `ID` as expired: true (repeatable)")
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
 	rateLimit := flags.String("rate-limit", "5000,5000", "set X-RateLimit-Limit to LIMIT and X-RateLimit-Remaining to REMAINING before the first request, given as `LIMIT,REMAINING`")
