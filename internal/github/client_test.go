@@ -116,8 +116,13 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(run.Raw).To(Equal(json.RawMessage(fake.Served("run.json"))))
 	})
 
-	It("calls an unparsable run malformed, naming its URL", Label("artifacts"), func() {
-		fake.Fail("api", "runs/37129390741", fakegithub.Fault{Status: http.StatusOK, Body: "<"})
+	It("maps a 404 on GetRun to ErrNotFound", Label("artifacts"), func() {
+		_, err := client.GetRun(context.Background(), 9)
+		Expect(err).To(MatchError(github.ErrNotFound))
+	})
+
+	It("calls a run with a field of the wrong type malformed, naming its URL", Label("artifacts"), func() {
+		fake.Fail("api", "runs/37129390741", fakegithub.Fault{Status: http.StatusOK, Body: `{"id":"x"}`})
 		_, err := client.GetRun(context.Background(), runID)
 		var malformed *github.MalformedError
 		Expect(errors.As(err, &malformed)).To(BeTrue())
