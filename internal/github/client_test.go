@@ -46,7 +46,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		client = github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg", "lg-test-token")
 	})
 
-	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every request",
+	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every request", Label("transport"),
 		func(call func(context.Context, *github.HTTP) error) {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +125,19 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 		Expect(github.NewHTTP(http.DefaultClient, api.URL, "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).To(Succeed())
 		Expect(blobAuthorization).To(Equal([]string{""}))
+	})
+
+	It("stops after 10 redirects", Label("transport"), func() {
+		var requests int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+			http.Redirect(w, r, r.URL.String(), http.StatusFound)
+		}))
+		DeferCleanup(server.Close)
+
+		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		Expect(err).To(MatchError(ContainSubstring("stopped after 10 redirects")))
+		Expect(requests).To(Equal(10))
 	})
 
 	It("lists runs and jobs 100 per page", func() {
