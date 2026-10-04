@@ -3,12 +3,15 @@ package github_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -178,18 +181,29 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	DescribeTable("follows Link next only on the API host's scheme, host and port", Label("transport"),
 		func(apiURL, next string, onAPIHost bool) {
 			var requests []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests = append(requests, r.URL.String())
 				if len(requests) == 1 {
 					w.Header().Set("Link", "<"+next+`>; rel="next"`)
 				}
 				_, _ = w.Write([]byte(`{"total_count":2,"workflow_runs":[{"id":1}]}`))
 			}))
+			if strings.HasPrefix(apiURL, "https:") {
+				server.StartTLS()
+			} else {
+				server.Start()
+			}
 			DeferCleanup(server.Close)
+			roots := x509.NewCertPool()
+			if server.Certificate() != nil {
+				roots.AddCert(server.Certificate())
+			}
 			everyHostIsServer := &http.Client{Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 					return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 				},
+				// httptest's certificate is for example.com.
+				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "example.com", MinVersion: tls.VersionTLS12},
 			}}
 
 			runs, err := github.NewHTTP(everyHostIsServer, apiURL, "o/r", "lg-test-token").ListRuns(context.Background())
@@ -207,6 +221,8 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("api_url in upper case", "http://API.EXAMPLE", "http://api.example/repositories/1/actions/runs?page=2", true),
 		Entry("api_url with the default port", "http://api.example:80", "http://api.example/repositories/1/actions/runs?page=2", true),
 		Entry("the Link with the default port", "http://api.example", "http://api.example:80/repositories/1/actions/runs?page=2", true),
+		Entry("https api_url with the default port", "https://api.example:443", "https://api.example/repositories/1/actions/runs?page=2", true),
+		Entry("the https Link with the default port", "https://api.example", "https://api.example:443/repositories/1/actions/runs?page=2", true),
 		Entry("another port", "http://api.example", "http://api.example:8080/repositories/1/actions/runs?page=2", false),
 		Entry("another scheme", "http://api.example:8443", "https://api.example:8443/repositories/1/actions/runs?page=2", false),
 		Entry("another host", "http://api.example", "http://blob.example/repositories/1/actions/runs?page=2", false),
