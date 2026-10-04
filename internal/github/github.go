@@ -354,6 +354,9 @@ func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, 
 		if err != nil {
 			return nil, Source{}, malformed(listURL, "%w", err)
 		}
+		if id <= 0 {
+			return nil, Source{}, malformed(listURL, "%s #%d has no id", noun, i)
+		}
 		if listed[id] {
 			return nil, Source{}, malformed(listURL, "%s %d listed twice", noun, id)
 		}
