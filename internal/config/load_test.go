@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -79,6 +80,7 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("MiB", "1MiB", config.Bytes(1<<20), Label("artifacts")),
 		Entry("GiB", "1GiB", config.Bytes(1<<30), Label("artifacts")),
 		Entry("TiB", "1TiB", config.Bytes(1<<40), Label("artifacts")),
+		Entry("the largest", "9223372036854775807", config.Bytes(math.MaxInt64), Label("artifacts")),
 	)
 
 	DescribeTable("rejects an artifact_max_bytes that is not a size",
