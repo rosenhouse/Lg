@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os/exec"
 	"strings"
 	"time"
 	"unicode"
@@ -21,7 +23,8 @@ type TokenSource interface {
 
 // GhTokenSource asks gh, or the program LG_GH names, for host's token. It
 // kills gh after Timeout, or 30s when Timeout is 0, since a gh waiting on a
-// keyring prompt would never exit. Every failure blocks the cycle as auth.
+// keyring prompt would never exit. Every failure but ctx's end blocks the
+// cycle as auth.
 type GhTokenSource struct {
 	Runner  execx.Runner
 	Env     map[string]string
@@ -30,10 +33,15 @@ type GhTokenSource struct {
 
 func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 	token, err := g.token(ctx, host)
-	if err != nil {
-		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
+	switch {
+	case err == nil:
+		return token, nil
+	case ctx.Err() != nil:
+		return "", ctx.Err()
+	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist), errors.Is(err, fs.ErrPermission):
+		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; install gh or set LG_GH to its path", err)}
 	}
-	return token, nil
+	return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
 }
 
 func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
