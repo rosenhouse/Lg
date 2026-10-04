@@ -235,6 +235,9 @@ func (s *Server) RequireToken(token string) {
 	s.token = token
 }
 
+// SecondaryLimitBody is the body of GitHub's 403 for a secondary rate limit.
+const SecondaryLimitBody = `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits","status":"403"}`
+
 // ResetAfter is how long after its clock's time the fake says the rate limit resets.
 const ResetAfter = time.Hour
 
