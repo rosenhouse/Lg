@@ -40,10 +40,13 @@ type candidate struct {
 // returns the listing, or nil when the run was not found or its listing
 // failed, and the errors that runScoped accepts. It stops at any other error.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listedRun, p *pending) (*artifactListing, []error, error) {
-	listing, err := listArtifacts(ctx, gh, run.ID)
+	listing, err := m.listArtifacts(ctx, gh, run)
+	var failed []error
 	switch {
 	case errors.Is(err, github.ErrNotFound):
 		// The run is deleted, but its artifacts that lg saw still need dirs.
+	case runScoped(err) && listing != nil:
+		failed = append(failed, fmt.Errorf("run %d: %w", run.ID, err))
 	case runScoped(err):
 		return nil, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	case err != nil:
@@ -52,7 +55,7 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	run.artifacts = listing
 	retry, err := m.retrySet(run, p.runs[run.ID].Artifacts)
 	if runScoped(err) {
-		return listing, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+		return listing, append(failed, fmt.Errorf("run %d artifacts: %w", run.ID, err)), nil
 	}
 	if err == nil {
 		err = p.set(run.Run, retry)
@@ -60,7 +63,6 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	if err != nil {
 		return nil, nil, err
 	}
-	var failed []error
 	var unpublished []candidate
 	for _, c := range retry {
 		err := m.publishArtifact(ctx, gh, run.Run, c, layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
@@ -75,21 +77,49 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	return listing, failed, p.set(run.Run, unpublished)
 }
 
-// listArtifacts lists the run's artifacts, then gets the run, since a
-// re-run may have started after ListRuns.
-func listArtifacts(ctx context.Context, gh github.Client, runID int64) (*artifactListing, error) {
-	artifacts, source, err := gh.ListArtifacts(ctx, runID)
+// listArtifacts lists the run's artifacts. When a listed artifact has no dir
+// or an attempt of the run is planned, it then gets the run, since a re-run
+// may have started after ListRuns. When that fails, it returns the listing
+// with the error.
+func (m *Mirror) listArtifacts(ctx context.Context, gh github.Client, run listedRun) (*artifactListing, error) {
+	artifacts, source, err := gh.ListArtifacts(ctx, run.ID)
 	if err != nil {
 		return nil, err
 	}
-	run, err := gh.GetRun(ctx, runID)
-	if err != nil {
-		return nil, err
+	listing := &artifactListing{artifacts: artifacts, origin: origin{URL: source.URL, Pages: source.Pages}}
+	needed, err := m.needsRun(run, artifacts)
+	if err != nil || !needed {
+		return listing, err
 	}
-	return &artifactListing{
-		artifacts: artifacts,
-		origin:    origin{URL: source.URL, Pages: source.Pages, RunAttempt: run.RunAttempt, RunStatus: run.Status},
-	}, nil
+	got, err := gh.GetRun(ctx, run.ID)
+	if err != nil {
+		return listing, err
+	}
+	listing.origin.RunAttempt, listing.origin.RunStatus = got.RunAttempt, got.Status
+	listing.runRead = true
+	return listing, nil
+}
+
+// needsRun reports whether a listed artifact has no dir or an attempt of the
+// run is planned, since publishing either records the run's run_attempt.
+func (m *Mirror) needsRun(run listedRun, artifacts []github.Artifact) (bool, error) {
+	onDisk, err := m.attemptsOnDisk(run.dir)
+	if err != nil {
+		return false, err
+	}
+	if len(Plan(run.Run, onDisk)) > 0 {
+		return true, nil
+	}
+	for _, a := range artifacts {
+		done, err := m.Store.Has(layout.ArtifactDir(run.dir, a.ID, a.Name))
+		if err != nil {
+			return false, err
+		}
+		if !done {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *Mirror) publishArtifact(ctx context.Context, gh github.Client, run github.Run, c candidate, target string) error {

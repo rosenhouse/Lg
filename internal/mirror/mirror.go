@@ -95,10 +95,12 @@ type listedRun struct {
 	artifacts *artifactListing
 }
 
-// artifactListing is a run's artifacts as one listing gave them.
+// artifactListing is a run's artifacts as one listing gave them. Its
+// origin's RunAttempt and RunStatus are unknown unless runRead.
 type artifactListing struct {
 	artifacts []github.Artifact
 	origin    origin
+	runRead   bool
 }
 
 func (l *artifactListing) candidates() []candidate {
@@ -158,12 +160,12 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 }
 
 // attemptPhase publishes the attempts of every run whose artifacts this cycle
-// listed, since each attempt holds that listing. It returns the errors that
-// runScoped accepts, and stops at any other.
+// listed, and whose run_attempt it read after that, since each attempt holds
+// both. It returns the errors that runScoped accepts, and stops at any other.
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for _, run := range runs {
-		if run.artifacts == nil {
+		if run.artifacts == nil || !run.artifacts.runRead {
 			continue
 		}
 		runFailed, err := m.syncAttempts(ctx, gh, run)
