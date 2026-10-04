@@ -85,7 +85,7 @@ func runScoped(err error) bool {
 }
 
 func blocksCycle(e *github.StatusError) bool {
-	return e.Status == http.StatusUnauthorized || e.Status == http.StatusTooManyRequests || e.Status == http.StatusForbidden && !e.Blob
+	return !e.Blob && github.Refusal(e.Status)
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {

@@ -425,10 +425,16 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
-	if e.Status >= 500 || e.Status == http.StatusForbidden && e.Blob {
+	if e.Status >= 500 || e.Blob && Refusal(e.Status) {
 		return failure.Transient{Err: e}
 	}
 	return e
+}
+
+// Refusal reports a status that refuses the API's credentials or rate.
+// lg sends blob storage no token, so there it is Transient.
+func Refusal(status int) bool {
+	return status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusTooManyRequests
 }
 
 // message is GitHub's JSON message, or the first line of blob storage's XML

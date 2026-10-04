@@ -116,6 +116,8 @@ var _ = DescribeTable("mirror.Cycle on a transient log failure publishes no atte
 	Entry("API 502", "api", ranJobLog, fakegithub.Fault{Status: http.StatusBadGateway}, cycleTimeout),
 	Entry("blob 503", "blob", ranJobBlob, fakegithub.Fault{Status: http.StatusServiceUnavailable}, cycleTimeout),
 	Entry("blob 403 AuthenticationFailed", "blob", ranJobBlob, fakegithub.Fault{Status: http.StatusForbidden}, cycleTimeout),
+	Entry("blob 401", "blob", ranJobBlob, fakegithub.Fault{Status: http.StatusUnauthorized}, cycleTimeout),
+	Entry("blob 429", "blob", ranJobBlob, fakegithub.Fault{Status: http.StatusTooManyRequests}, cycleTimeout),
 	Entry("dropped connection", "api", ranJobLog, fakegithub.Fault{Drop: true}, cycleTimeout),
 	Entry("body shorter than Content-Length", "blob", ranJobBlob, fakegithub.Fault{Truncate: true}, cycleTimeout),
 	Entry("headers stalled past the header timeout", "api", ranJobLog, fakegithub.Fault{Stall: true}, cycleTimeout),

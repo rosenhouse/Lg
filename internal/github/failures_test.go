@@ -108,7 +108,9 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("a blob 410 is ErrGone", nil, answer(http.StatusGone, ""), MatchError(github.ErrGone), hopTimeout),
 		Entry("an API 500 is Transient", answer(http.StatusInternalServerError, ""), nil, BeTransient(), hopTimeout),
 		Entry("an API 502 is Transient", answer(http.StatusBadGateway, ""), nil, BeTransient(), hopTimeout),
+		Entry("a blob 401 is Transient", nil, answer(http.StatusUnauthorized, ""), BeTransient(), hopTimeout),
 		Entry("a blob 403 is Transient", nil, answer(http.StatusForbidden, ""), BeTransient(), hopTimeout),
+		Entry("a blob 429 is Transient", nil, answer(http.StatusTooManyRequests, ""), BeTransient(), hopTimeout),
 		Entry("a blob 503 is Transient", nil, answer(http.StatusServiceUnavailable, ""), BeTransient(), hopTimeout),
 		Entry("a short body is Transient", nil, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Length", "100")
