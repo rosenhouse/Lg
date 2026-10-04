@@ -115,3 +115,37 @@ func readJSON(path string) map[string]any {
 	Expect(json.Unmarshal(raw, &fields)).To(Succeed())
 	return fields
 }
+
+var _ = Describe("lg sync at after-attempt-3 and logs-deleted, then at after-expiry", Label("artifacts"), func() {
+	It("keeps the zips it already has and writes no tombstone for them", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-3")
+		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
+		env.WriteConfig(fake.URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		zips, err := filepath.Glob(filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/*/*/artifacts/*/artifact.zip"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(zips).To(SatisfyAll(
+			HaveLen(9),
+			ContainElement(HaveSuffix("/11276327411_expires-in-1-day/artifact.zip")),
+			ContainElement(HaveSuffix("/11276237903_expires-in-1-day/artifact.zip")),
+		))
+		before := map[string][]byte{}
+		for _, zip := range zips {
+			before[zip], err = os.ReadFile(zip)
+			Expect(err).NotTo(HaveOccurred())
+		}
+		for _, run := range []int64{fixtureRun, logsDeletedRun} {
+			Expect(fake.Advance(run, "after-expiry")).To(Succeed())
+		}
+		recordedAt, err := recordings.RecordedAt(logsDeletedRun, "after-expiry")
+		Expect(err).NotTo(HaveOccurred())
+		env.SetNow(recordedAt, fake)
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		for zip, bytes := range before {
+			Expect(os.ReadFile(zip)).To(Equal(bytes), zip)
+		}
+		Expect(filepath.Glob(filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/*/*/artifacts/*/*.tombstone"))).To(BeEmpty())
+	})
+})
