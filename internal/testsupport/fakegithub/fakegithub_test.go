@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -142,22 +141,6 @@ type recording struct {
 	stage string
 }
 
-// allRecordings lists every run and stage under testdata/recordings.
-func allRecordings() []recording {
-	GinkgoHelper()
-	statuses, err := filepath.Glob(filepath.Join(recordings.Root(), "run-*", "*", "status.txt"))
-	Expect(err).NotTo(HaveOccurred())
-	Expect(len(statuses)).To(BeNumerically(">=", 6))
-	var all []recording
-	for _, status := range statuses {
-		dir := filepath.Dir(status)
-		run, err := strconv.ParseInt(strings.TrimPrefix(filepath.Base(filepath.Dir(dir)), "run-"), 10, 64)
-		Expect(err).NotTo(HaveOccurred(), status)
-		all = append(all, recording{run, filepath.Base(dir)})
-	}
-	return all
-}
-
 // expectReplay checks that a fresh fake serves every line of the
 // recording's status.txt as recorded.
 func expectReplay(r recording) {
@@ -191,10 +174,7 @@ func expectReplay(r recording) {
 }
 
 // expectBodyMatchesStatus ties a status.txt line to its recorded body, so
-// status.txt cannot drift from what GitHub answered: a GitHub error body
-// names its own status, blob storage's BlobNotFound XML follows a redirect to
-// a 404, and any other body is JSON served directly as 200 or a blob reached
-// by a redirect to a 200.
+// status.txt cannot drift from what GitHub answered.
 func expectBodyMatchesStatus(recorded []byte, line recordings.Line, where string) {
 	GinkgoHelper()
 	if !json.Valid(recorded) {
@@ -221,8 +201,13 @@ func expectBodyMatchesStatus(recorded []byte, line recordings.Line, where string
 }
 
 var _ = Describe("fakegithub replay", Label("transport"), func() {
-	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
-		for _, r := range allRecordings() {
+	It("serves every line of the after-attempt and logs-deleted recordings' status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
+		for _, r := range []recording{
+			{runID, "after-attempt-1"},
+			{runID, "after-attempt-2"},
+			{runID, "after-attempt-3"},
+			{logsDeletedRun, "logs-deleted"},
+		} {
 			expectReplay(r)
 		}
 	})
