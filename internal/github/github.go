@@ -75,19 +75,18 @@ func NewTransport(t Timeouts) http.RoundTripper {
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
 	base.OnProxyConnectResponse = func(_ context.Context, proxy *url.URL, req *http.Request, resp *http.Response) error {
-		switch resp.StatusCode {
-		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return &proxyGatewayError{proxy: proxy.Host, target: req.Host, status: resp.Status}
+		if resp.StatusCode/100 != 2 {
+			return &proxyConnectError{proxy: proxy.Host, target: req.Host, status: resp.Status}
 		}
 		return nil
 	}
 	return &idleTransport{base: base, timeouts: t}
 }
 
-// proxyGatewayError is a proxy's answer that it cannot reach the API host.
-type proxyGatewayError struct{ proxy, target, status string }
+// proxyConnectError is a proxy's refusal to tunnel to the API host.
+type proxyConnectError struct{ proxy, target, status string }
 
-func (e *proxyGatewayError) Error() string {
+func (e *proxyConnectError) Error() string {
 	return fmt.Sprintf("proxy %s answered CONNECT %s with %s", e.proxy, e.target, e.status)
 }
 
@@ -394,11 +393,11 @@ func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", rawURL, err)
 		var opErr *net.OpError
-		var gatewayErr *proxyGatewayError
+		var connectErr *proxyConnectError
 		switch {
 		case ctx.Err() != nil:
 			return err
-		case errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect"), errors.As(err, &gatewayErr):
+		case errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect"), errors.As(err, &connectErr):
 			return failure.Blocked{Kind: failure.Unreachable, Detail: err.Error()}
 		}
 		return failure.Transient{Err: err}
