@@ -41,6 +41,9 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 	err := m.cycle(ctx)
 	var blocked failure.Blocked
 	if errors.As(err, &blocked) {
+		if errors.Is(err, github.ErrUnauthorized) {
+			blocked.Detail += fmt.Sprintf("; run `gh auth login --hostname %s`", m.Host)
+		}
 		return blocked
 	}
 	return failure.FromErrno(err)

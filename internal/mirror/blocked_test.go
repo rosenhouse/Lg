@@ -65,12 +65,14 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
 	},
-	Entry("401: auth",
+	Entry("401: auth, advising `gh auth login`",
 		failAttempts(fakegithub.Fault{Status: http.StatusUnauthorized}),
-		blockedAs(failure.Auth, time.Time{}), endWithOnly("/attempts/1", http.StatusUnauthorized), cycleTimeout),
-	Entry("API 403 with no rate-limit sign: auth",
+		BeBlocked(failure.Auth, HaveField("Detail", HaveSuffix("; run `gh auth login --hostname github.com`"))),
+		endWithOnly("/attempts/1", http.StatusUnauthorized), cycleTimeout),
+	Entry("API 403 with no rate-limit sign: auth, advising nothing",
 		failAttempts(fakegithub.Fault{Status: http.StatusForbidden}),
-		blockedAs(failure.Auth, time.Time{}), endWithOnly("/attempts/1", http.StatusForbidden), cycleTimeout),
+		BeBlocked(failure.Auth, HaveField("Detail", Not(ContainSubstring("gh auth login")))),
+		endWithOnly("/attempts/1", http.StatusForbidden), cycleTimeout),
 	Entry("403 with X-RateLimit-Remaining 0: rate_limit, retry_at from X-RateLimit-Reset",
 		failAttempts(fakegithub.Fault{Status: http.StatusForbidden, Headers: map[string]string{
 			"X-RateLimit-Remaining": "0",

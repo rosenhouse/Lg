@@ -47,6 +47,12 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 		))
 	}, hopTimeout)
 
+	It("mark a 401 from the API as ErrUnauthorized", func(ctx SpecContext) {
+		client := hops(answer(http.StatusUnauthorized, `{"message":"Bad credentials"}`), nil)
+
+		Expect(client.DownloadJobLog(ctx, 1, &bytes.Buffer{})).To(MatchError(github.ErrUnauthorized))
+	}, hopTimeout)
+
 	It("take retry_at from the client's clock", func(ctx SpecContext) {
 		server := serve(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Retry-After", "30")

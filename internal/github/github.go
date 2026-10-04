@@ -142,7 +142,13 @@ var (
 	ErrNotFound    = errors.New("not found")
 	ErrBlobMissing = errors.New("blob missing")
 	ErrGone        = errors.New("gone")
+	// ErrUnauthorized marks a Blocked caused by the API's 401.
+	ErrUnauthorized = errors.New("unauthorized")
 )
+
+type unauthorized struct{ failure.Blocked }
+
+func (u unauthorized) Unwrap() []error { return []error{u.Blocked, ErrUnauthorized} }
 
 // StatusError is a response other than 200 to a request for URL, an API
 // URL even when blob storage answered.
@@ -478,6 +484,8 @@ func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
 	blocked, refused := failure.FromStatus(e.Status, resp.Header, e.Message, e.Error()+": "+e.Message, h.clock.Now())
 	switch {
+	case refused && !e.Blob && e.Status == http.StatusUnauthorized:
+		return unauthorized{blocked}
 	case refused && !e.Blob:
 		return blocked
 	case refused, e.Status >= 500:
