@@ -146,6 +146,10 @@ func Validate(cfg Config) error {
 		return Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	case cfg.SyncInterval < Duration(time.Minute):
 		return Error(fmt.Sprintf("sync_interval must be at least 1m: %s", cfg.SyncInterval))
+	case cfg.Backfill <= 0:
+		return Error(fmt.Sprintf("backfill must be positive: %s", cfg.Backfill))
+	case cfg.Retention <= 0:
+		return Error(fmt.Sprintf("retention must be positive: %s", cfg.Retention))
 	case cfg.Backfill > cfg.Retention:
 		return Error(fmt.Sprintf("backfill must not exceed retention: %s > %s", cfg.Backfill, cfg.Retention))
 	case cfg.LogGrace < 0:

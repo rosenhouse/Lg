@@ -49,6 +49,17 @@ var _ = Describe("Load", Label("discovery"), func() {
 		Expect(err).To(MatchError(config.Error("sync_interval must be at least 1m: 59s")))
 	})
 
+	DescribeTable("rejects a backfill or retention that is not positive, naming the key",
+		func(line, message string) {
+			_, err := config.Load(write("repo: rosenhouse/lg\n" + line + "\n"))
+			Expect(err).To(MatchError(config.Error(message)))
+		},
+		Entry("a negative backfill", "backfill: -24h", "backfill must be positive: -1d"),
+		Entry("a zero backfill", "backfill: 0", "backfill must be positive: 0s"),
+		Entry("a zero retention", "retention: 0d", "retention must be positive: 0s"),
+		Entry("a negative retention", "retention: -1h", "retention must be positive: -1h"),
+	)
+
 	It("rejects a backfill longer than retention, naming both", func() {
 		_, err := config.Load(write("repo: rosenhouse/lg\nbackfill: 10d\nretention: 36h\n"))
 		Expect(err).To(MatchError(config.Error("backfill must not exceed retention: 10d > 36h")))

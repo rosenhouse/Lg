@@ -103,6 +103,9 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 		Entry("an unknown key", "sync-interval: 10m", "sync-interval"),
 		Entry("a sync_interval under 1m", "sync_interval: 59s", "sync_interval must be at least 1m: 59s"),
 		Entry("a backfill longer than retention", "backfill: 91d", "backfill must not exceed retention: 91d > 90d"),
+		Entry("a negative backfill", "backfill: -24h", "backfill must be positive: -1d"),
+		Entry("a zero backfill", "backfill: 0", "backfill must be positive: 0s"),
+		Entry("a zero retention", "retention: 0d", "retention must be positive: 0s"),
 	)
 
 	It("lists the backfill window as one closed created range from LG_TEST_NOW minus 7d to LG_TEST_NOW with per_page=100, and from minus 30d with backfill 30d", func() {
