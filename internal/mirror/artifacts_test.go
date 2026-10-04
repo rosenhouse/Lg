@@ -99,7 +99,10 @@ var _ = Describe("mirror.Cycle for a run still in progress", Label("artifacts"),
 		Expect(env.Fake.AddRun(scenario.InProgress(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID), 1))).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(glob(filepath.Join(env.Data(), "*", "*", "*", "runs", "*", "1_*", "artifacts", "*", "artifact.zip"))).To(HaveLen(4))
+		Expect(env.ArtifactDirs(cloneID)).To(SatisfyAll(
+			HaveLen(4),
+			HaveEach(WithTransform(func(dir string) string { return filepath.Join(dir, "artifact.zip") }, BeARegularFile())),
+		))
 		Expect(env.AttemptDirs(cloneID)).To(BeEmpty())
 	}, cycleTimeout)
 })
