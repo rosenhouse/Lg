@@ -65,9 +65,9 @@ func initFS(fsys fsOps, root string) error {
 	if err := check(fsys, root); err != nil {
 		return err
 	}
-	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
+	s := newStore(fsys, root)
 	for _, dir := range []string{s.data, filepath.Join(root, "state"), s.tmp} {
-		if _, err := mkdirAll(fsys, dir, true); err != nil {
+		if err := mkdirAll(fsys, dir); err != nil {
 			return err
 		}
 	}
@@ -156,7 +156,7 @@ func openFS(fsys fsOps, root string) (*Store, error) {
 	if err := checkFormat(root); err != nil {
 		return nil, err
 	}
-	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
+	s := newStore(fsys, root)
 	dataMount, err := fsys.Mount(s.data)
 	if err != nil {
 		return nil, err
@@ -183,6 +183,10 @@ func checkFormat(root string) error {
 		return fmt.Errorf("%w: %s is %q; this lg reads %q", ErrFormat, formatFile, v, format)
 	}
 	return nil
+}
+
+func newStore(fsys fsOps, root string) *Store {
+	return &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
 }
 
 func (s *Store) Data() string { return s.data }
@@ -236,7 +240,7 @@ func (s *Store) Publish(u *Unit, target string) error {
 		}
 	}
 	parent := filepath.Dir(target)
-	if _, err := mkdirAll(s.fs, parent, true); err != nil {
+	if err := mkdirAll(s.fs, parent); err != nil {
 		return err
 	}
 	if err := s.fs.Rename(u.dir, target); err != nil {
@@ -249,21 +253,16 @@ func (s *Store) Publish(u *Unit, target string) error {
 }
 
 // MkdirAll makes dir and its missing parents durably.
-func MkdirAll(dir string) error { return mkdirAllFS(OSFS{}, dir) }
+func MkdirAll(dir string) error { return mkdirAll(OSFS{}, dir) }
 
-func mkdirAllFS(fsys fsOps, dir string) error {
-	_, err := mkdirAll(fsys, dir, true)
+func mkdirAll(fsys fsOps, dir string) error {
+	_, err := mkdirBelow(fsys, "", dir, true)
 	return err
 }
 
-// mkdirAll makes path and any missing parents, returning those it made,
-// parents first. With syncParents, it fsyncs each new dir's parent.
-func mkdirAll(fsys fsOps, path string, syncParents bool) ([]string, error) {
-	return mkdirBelow(fsys, "", path, syncParents)
-}
-
-// mkdirBelow is mkdirAll that never makes base or its parents, so it fails
-// once base is gone.
+// mkdirBelow makes path and any missing parents below base, returning those
+// it made, parents first. With syncParents, it fsyncs each new dir's parent.
+// It never makes base, so it fails once base is gone.
 func mkdirBelow(fsys fsOps, base, path string, syncParents bool) ([]string, error) {
 	var missing []string
 	for dir := path; dir != base; dir = filepath.Dir(dir) {

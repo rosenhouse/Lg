@@ -5,5 +5,5 @@ type FS = fsOps
 var (
 	OpenFS     = openFS
 	InitFS     = initFS
-	MkdirAllFS = mkdirAllFS
+	MkdirAllFS = mkdirAll
 )
