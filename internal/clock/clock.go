@@ -80,8 +80,8 @@ func FromEnv(env map[string]string, base Clock) (Clock, error) {
 	return shifted{Clock: base, start: start, baseStart: base.Now()}, nil
 }
 
-// shifted adds base's elapsed time to start. An offset between the two
-// would saturate centuries apart.
+// shifted adds base's elapsed time to start. Storing start minus base as a
+// time.Duration would overflow when they are centuries apart.
 type shifted struct {
 	Clock
 	start, baseStart time.Time
