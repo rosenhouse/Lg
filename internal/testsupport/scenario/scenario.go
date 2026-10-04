@@ -185,7 +185,13 @@ func Expire(r Run, artifactID int64) Run {
 
 // WithPullRequests lists the run with pull requests of the given numbers.
 func WithPullRequests(r Run, numbers ...int) Run {
-	return r.copy()
+	prs := make([]any, len(numbers))
+	for i, n := range numbers {
+		prs[i] = map[string]any{"number": n}
+	}
+	out := r.copy()
+	out.edit("run.json", func(run map[string]any) { run["pull_requests"] = prs })
+	return out
 }
 
 // WithoutRunAttempt drops run_attempt from the listed run.
