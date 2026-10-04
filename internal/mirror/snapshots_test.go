@@ -271,14 +271,18 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 		Entry("an entry with no artifact", `{"github.com":{"1":{"run":{"id":1},"artifacts":[{}]}}}`, cycleTimeout),
 		Entry("an entry with a null artifact", `{"github.com":{"1":{"run":{"id":1},"artifacts":[{"artifact":null}]}}}`, cycleTimeout),
 	)
+})
 
-	It("syncs a null file as an empty one", func(ctx SpecContext) {
+var _ = Describe("mirror.Cycle when state/pending-artifacts.json is null", Label("artifacts"), func() {
+	It("syncs as if it were empty, and keeps it in place", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
-		Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte("null"), 0o644)).To(Succeed())
+		pending := filepath.Join(env.State(), "pending-artifacts.json")
+		Expect(os.WriteFile(pending, []byte("null"), 0o644)).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(pending + ".corrupt").NotTo(BeAnExistingFile())
 	}, cycleTimeout)
 })
 
