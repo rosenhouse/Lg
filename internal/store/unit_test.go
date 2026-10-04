@@ -97,4 +97,50 @@ var _ = Describe("Unit", Label("sync"), func() {
 		_, err = unit.Create("log.txt")
 		Expect(err).To(MatchError(os.ErrExist))
 	})
+
+	It("gives the bytes and sha256 of each closed member", Label("failures"), func() {
+		w, err := unit.Create("jobs/1_build/log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		_, err = w.Write([]byte("ab"))
+		Expect(err).NotTo(HaveOccurred())
+		_, err = w.Write([]byte("c"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w.Close()).To(Succeed())
+		Expect(unit.WriteJSON("a.json", []byte(`{}`))).To(Succeed())
+
+		Expect(unit.Sum("jobs/1_build/log.txt")).To(Equal(store.Sum{Bytes: 3, SHA256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}))
+		Expect(unit.Sum("a.json")).To(Equal(store.Sum{Bytes: 3, SHA256: "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"}))
+	})
+
+	It("refuses the sum of a member not closed or never created", Label("failures"), func() {
+		w, err := unit.Create("log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(w.Close)
+
+		_, err = unit.Sum("log.txt")
+		Expect(err).To(MatchError(`member "log.txt" is not closed`))
+		_, err = unit.Sum("other.txt")
+		Expect(err).To(MatchError(`member "other.txt" is not closed`))
+	})
+
+	It("Remove deletes a closed member, so Publish leaves it out", Label("failures"), func() {
+		w, err := unit.Create("jobs/1_build/log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w.Close()).To(Succeed())
+		Expect(unit.WriteJSON("jobs/1_build/log.txt.tombstone", []byte(`{}`))).To(Succeed())
+
+		Expect(unit.Remove("jobs/1_build/log.txt")).To(Succeed())
+		_, err = unit.Sum("jobs/1_build/log.txt")
+		Expect(err).To(HaveOccurred())
+		Expect(s.Publish(unit, target)).To(Succeed())
+		Expect(os.ReadDir(filepath.Join(target, "jobs/1_build"))).To(HaveExactElements(HaveField("Name()", "log.txt.tombstone")))
+	})
+
+	It("Remove refuses a member still open", Label("failures"), func() {
+		w, err := unit.Create("log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(w.Close)
+
+		Expect(unit.Remove("log.txt")).To(MatchError(`member "log.txt" is not closed`))
+	})
 })

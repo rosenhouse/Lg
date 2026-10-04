@@ -344,6 +344,15 @@ func (u *Unit) place(name, content, dir string) error {
 	return u.fs.SyncDir(dir)
 }
 
+type Sum struct {
+	Bytes  int64
+	SHA256 string
+}
+
+func (u *Unit) Sum(name string) (Sum, error) { return Sum{}, nil }
+
+func (u *Unit) Remove(name string) error { return nil }
+
 // Abort removes the staged unit.
 func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
 
