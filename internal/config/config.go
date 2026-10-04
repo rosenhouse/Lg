@@ -29,12 +29,16 @@ var (
 	hostName  = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 )
 
+func Defaults() Config {
+	return Config{Host: "github.com", LogGrace: time.Hour}
+}
+
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, Error(err.Error())
 	}
-	cfg := Config{Host: "github.com"}
+	cfg := Defaults()
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
@@ -46,6 +50,9 @@ func Load(path string) (Config, error) {
 	}
 	if !ownerName.MatchString(cfg.Repo) || slices.ContainsFunc(strings.Split(cfg.Repo, "/"), isDots) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
+	}
+	if cfg.LogGrace < 0 {
+		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", cfg.LogGrace))
 	}
 	if cfg.APIURL != "" {
 		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {
