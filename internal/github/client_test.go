@@ -200,6 +200,34 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("a subdomain", "http://api.example", "http://blob.api.example/repositories/1/actions/runs?page=2", false),
 	)
 
+	It("follows the URL marked rel=\"next\" when Link lists prev first", Label("transport"), func() {
+		var requests []string
+		var server *httptest.Server
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests = append(requests, r.URL.String())
+			page := func(n int) string { return fmt.Sprintf("<%s/repositories/1/actions/runs?page=%d>", server.URL, n) }
+			switch len(requests) {
+			case 1:
+				w.Header().Set("Link", page(2)+`; rel="next", `+page(3)+`; rel="last"`)
+			case 2:
+				w.Header().Set("Link", page(1)+`; rel="prev", `+page(3)+`; rel="next", `+page(3)+`; rel="last", `+page(1)+`; rel="first"`)
+			case 3:
+				w.Header().Set("Link", page(2)+`; rel="prev", `+page(1)+`; rel="first"`)
+			}
+			_, _ = w.Write([]byte(`{"total_count":3,"workflow_runs":[{"id":1}]}`))
+		}))
+		DeferCleanup(server.Close)
+
+		runs, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").ListRuns(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(HaveLen(3))
+		Expect(requests).To(Equal([]string{
+			"/repos/o/r/actions/runs?per_page=100",
+			"/repositories/1/actions/runs?page=2",
+			"/repositories/1/actions/runs?page=3",
+		}))
+	})
+
 	It("refuses a Link next that repeats an earlier page without requesting it again", Label("transport"), func() {
 		var requests int
 		var server *httptest.Server
