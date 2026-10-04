@@ -100,9 +100,9 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 	Entry("ENOSPC writing a member: local_io",
 		func(env *harness.InProcessEnv) { env.FS.FailOn("write", syscall.ENOSPC) },
 		blockedAs(failure.LocalIO, time.Time{}), endWithOnly("/artifacts", http.StatusOK), cycleTimeout),
-	Entry("EXDEV publishing: local_io",
+	Entry("EXDEV replacing state/pending-artifacts.json, before any zip: local_io",
 		func(env *harness.InProcessEnv) { env.FS.FailOn("rename", syscall.EXDEV) },
-		blockedAs(failure.LocalIO, time.Time{}), SatisfyAll(listedOneRunsArtifacts(), endWithOnly(".zip", http.StatusOK)), cycleTimeout),
+		blockedAs(failure.LocalIO, time.Time{}), SatisfyAll(listedOneRunsArtifacts(), endWithOnly("/artifacts", http.StatusOK)), cycleTimeout),
 )
 
 var _ = Describe("mirror.Cycle", Label("blocked"), func() {
