@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
@@ -47,6 +48,13 @@ func BaseURL(host, apiURL string) (*url.URL, error) {
 		return url.Parse("https://" + host + "/api/v3")
 	}
 }
+
+// Timeouts bound each wait on GitHub. No deadline bounds a whole request.
+type Timeouts struct {
+	Dial, TLSHandshake, ResponseHeader, BodyIdle time.Duration
+}
+
+func NewHTTPClient(Timeouts) *http.Client { return &http.Client{} }
 
 type HTTP struct {
 	client  *http.Client

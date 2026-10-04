@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
@@ -24,6 +26,8 @@ type Mirror struct {
 	Store     *store.Store
 	Host      string
 	Repo      string
+	Clock     clock.Clock
+	LogGrace  time.Duration
 }
 
 // Cycle publishes attempt 1 of every listed run once it has completed.

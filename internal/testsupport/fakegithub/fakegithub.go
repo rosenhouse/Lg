@@ -64,8 +64,11 @@ type download struct {
 // Fault answers a request with Status. Times limits how many requests it
 // answers; 0 means every one.
 type Fault struct {
-	Status int
-	Times  int
+	Status   int
+	Times    int
+	Drop     bool
+	Truncate bool
+	Stall    bool
 }
 
 type fault struct {

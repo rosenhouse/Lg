@@ -26,11 +26,12 @@ type Env struct {
 	gh     *fakegh.GH
 }
 
-// New gives the calling spec its own HOME, a fake gh at LG_GH and an
-// environment built from os.Environ by Scrub.
+// New gives the calling spec its own HOME, a fake gh at LG_GH, LG_TEST_NOW
+// at DefaultNow and an environment built from os.Environ by Scrub.
 func New(lgPath string) *Env {
 	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
 	vars["HOME"] = ginkgo.GinkgoT().TempDir()
+	vars["LG_TEST_NOW"] = DefaultNow.Format(time.RFC3339)
 	gh := fakegh.New(ginkgo.GinkgoT().TempDir())
 	vars["LG_GH"] = gh.Path
 	return &Env{lgPath: lgPath, vars: vars, gh: gh}
