@@ -143,8 +143,9 @@ func ofRepo(run github.Run, repo github.Repo) bool {
 
 // rescan lists the runs of RescanWindow that are on disk, an hour or more
 // after state/rescan.json says it last did, so that a rerun of an older run
-// that started and finished between two cycles gets its new attempts. Runs
-// not on disk are left alone. The cycle records the rescan once it finishes.
+// that started and finished between two cycles gets its new attempts. A
+// record from the future, after a clock step, does not delay it. Runs not
+// on disk are left alone. The cycle records the rescan once it finishes.
 func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo, now time.Time) (onDisk []github.Run, rescannedAt time.Time, discarded, err error) {
 	from, to, ok := RescanWindow(now, m.Backfill, m.Retention)
 	if !ok {
@@ -152,7 +153,8 @@ func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo,
 	}
 	var last rescan
 	discarded, err = newStateFile(m.Store, "rescan.json").read(func(raw []byte) error { return json.Unmarshal(raw, &last) })
-	if err != nil || now.Sub(last.RescannedAt) < rescanEvery {
+	since := now.Sub(last.RescannedAt)
+	if err != nil || (since >= 0 && since < rescanEvery) {
 		return nil, time.Time{}, discarded, err
 	}
 	runs, err := Discover(ctx, gh, from, to)

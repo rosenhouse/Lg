@@ -275,6 +275,18 @@ var _ = Describe("mirror.Cycle", Label("discovery"), func() {
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(createdRanges(env.Fake.Requests()[before:])).To(ContainElement(rescanRange))
 	}, cycleTimeout)
+
+	It("rescans when state/rescan.json records a time after now", func(ctx SpecContext) {
+		env := harness.InProcess()
+		now := harness.DefaultNow()
+		rescanJSON := filepath.Join(env.State(), "rescan.json")
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
+		Expect(os.WriteFile(rescanJSON, fmt.Appendf(nil, `{"rescanned_at":%q}`, now.Add(time.Minute).Format(time.RFC3339)), 0o644)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(now.Add(-30*day), now.Add(-7*day))))
+		Expect(readJSONFile(rescanJSON)).To(HaveKeyWithValue("rescanned_at", now.Format(time.RFC3339)))
+	}, cycleTimeout)
 })
 
 var _ = Describe("the watch list", Label("discovery"), func() {
