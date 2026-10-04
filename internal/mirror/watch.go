@@ -12,24 +12,29 @@ import (
 )
 
 // watch is state/watch.json: by host and run id, the runs lg listed that
-// are not complete on disk, as last listed. A run created before the
-// backfill window appears in no listing once it completes, so the cycle gets
-// each watched run that no listing named.
+// are not complete on disk. A run created before the backfill window
+// appears in no listing once it completes, so the cycle gets each watched
+// run that no listing named.
 type watch struct {
 	file  stateFile
 	host  string
-	hosts map[string]map[int64]model.Run
+	hosts map[string]map[int64]watchedRun
 	// runs are the host's runs. The cycle removes each one it resolves and
 	// adds the runs it leaves incomplete.
-	runs   map[int64]model.Run
+	runs   map[int64]watchedRun
 	loaded []int64
+}
+
+type watchedRun struct {
+	ID        int64     `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 	file := newStateFile(s, "watch.json")
-	hosts := map[string]map[int64]model.Run{}
+	hosts := map[string]map[int64]watchedRun{}
 	discarded, err = file.read(func(raw []byte) error {
-		var decoded map[string]map[int64]model.Run
+		var decoded map[string]map[int64]watchedRun
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
 		}
@@ -50,14 +55,24 @@ func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 	}
 	runs := hosts[host]
 	if runs == nil {
-		runs = map[int64]model.Run{}
+		runs = map[int64]watchedRun{}
 	}
 	return &watch{file: file, host: host, hosts: hosts, runs: runs, loaded: slices.Sorted(maps.Keys(runs))}, discarded, nil
 }
 
-// prune drops the runs older than retention, which retention would evict.
+// add watches the run.
+func (w *watch) add(run model.Run) {
+	w.runs[run.ID] = watchedRun{ID: run.ID, CreatedAt: run.CreatedAt}
+}
+
+// prune drops the runs that retention would evict.
 func (w *watch) prune(now time.Time, retention time.Duration) {
-	maps.DeleteFunc(w.runs, func(_ int64, run model.Run) bool { return run.CreatedAt.Before(now.Add(-retention)) })
+	maps.DeleteFunc(w.runs, func(_ int64, run watchedRun) bool { return pastRetention(run.CreatedAt, now, retention) })
+}
+
+// pastRetention reports whether retention evicts a run created at createdAt.
+func pastRetention(createdAt, now time.Time, retention time.Duration) bool {
+	return createdAt.Before(now.Add(-retention))
 }
 
 // save writes the file when the host's run ids changed.

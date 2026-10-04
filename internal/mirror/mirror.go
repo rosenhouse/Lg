@@ -105,7 +105,7 @@ func (m *Mirror) saveWatch(w *watch, runs []listedRun) error {
 			return err
 		}
 		if run.Status != "completed" || len(Plan(run.Run, onDisk)) > 0 {
-			w.runs[run.ID] = run.Run.Run
+			w.add(run.Run.Run)
 		}
 	}
 	return w.save()

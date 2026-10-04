@@ -2,7 +2,9 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -57,10 +59,14 @@ func createdRange(from, to time.Time) string {
 	return from.UTC().Format(time.RFC3339) + ".." + to.UTC().Format(time.RFC3339)
 }
 
-// readWatch reads state/watch.json as the run ids watched per host.
+// readWatch reads state/watch.json as the run ids watched per host, which
+// is empty while the file is missing.
 func readWatch(env *harness.InProcessEnv) map[string][]string {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(env.State(), "watch.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string][]string{}
+	}
 	Expect(err).NotTo(HaveOccurred())
 	var hosts map[string]map[string]json.RawMessage
 	Expect(json.Unmarshal(raw, &hosts)).To(Succeed())
@@ -290,17 +296,47 @@ var _ = Describe("mirror.Cycle", Label("discovery"), func() {
 })
 
 var _ = Describe("the watch list", Label("discovery"), func() {
-	It("drops runs that are complete on disk or older than retention, without fetching them", func(ctx SpecContext) {
+	It("holds each watched run's id and created_at", func(ctx SpecContext) {
 		env := harness.InProcess()
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		created := harness.DefaultNow().Add(-30 * day)
+		Expect(env.Fake.AddRun(scenario.InProgress(cloneAt(1, "after-attempt-2", created), 2))).To(Succeed())
+
 		Expect(env.Sync(ctx)).To(Succeed())
-		watched := fmt.Sprintf(`{"github.com":{"%d":{"id":%d,"created_at":"2026-10-03T14:22:54Z","repository":{"full_name":"rosenhouse/Lg"}},"5":%s}}`,
-			runID, runID, scenario.ListedRun(5, harness.DefaultNow().Add(-91*day)))
+		raw, err := os.ReadFile(filepath.Join(env.State(), "watch.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(raw).To(MatchJSON(fmt.Sprintf(`{"github.com":{"1":{"id":1,"created_at":%q}}}`, created.Format(time.RFC3339))))
+	}, cycleTimeout)
+
+	It("drops a run that is complete on disk after one GET /actions/runs/{id}, and a run older than retention without fetching it", func(ctx SpecContext) {
+		env := harness.InProcess()
+		now := harness.DefaultNow()
+		env.Clock.Set(now.Add(-39 * day))
+		Expect(env.Fake.AddRun(cloneAt(1, "after-attempt-1", now.Add(-40*day)))).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
+		env.Clock.Set(now)
+		watched := fmt.Sprintf(`{"github.com":{"1":%s,"5":%s}}`,
+			scenario.ListedRun(1, now.Add(-40*day)), scenario.ListedRun(5, now.Add(-91*day)))
 		Expect(os.WriteFile(filepath.Join(env.State(), "watch.json"), []byte(watched), 0o644)).To(Succeed())
 		before := len(env.Fake.Requests())
 
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(readWatch(env)).To(HaveKeyWithValue("github.com", BeEmpty()))
-		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/(5|37129390741)$`))))
+		requests := env.Fake.Requests()[before:]
+		Expect(requests).To(ContainElement(HaveField("Path", "/repos/rosenhouse/lg/actions/runs/1")))
+		Expect(requests).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/1/`))))
+		Expect(requests).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/5(/|$)`))))
+	}, cycleTimeout)
+})
+
+var _ = Describe("an in_progress run created before retention", Label("discovery"), func() {
+	It("is neither fetched nor watched", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.InProgress(cloneAt(1, "after-attempt-2", harness.DefaultNow().Add(-91*day)), 2))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/1(/|$)`))))
+		Expect(env.AttemptDirs(1)).To(BeEmpty())
+		Expect(readWatch(env)["github.com"]).NotTo(ContainElement("1"))
 	}, cycleTimeout)
 })

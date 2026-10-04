@@ -94,7 +94,8 @@ type discovery struct {
 // discover lists the runs the cycle syncs: those created in the backfill
 // window, those in a non-terminal status, hourly the runs on disk that a
 // rerun could still change, and the watched runs and the runs with pending
-// artifacts that no listing named.
+// artifacts that no listing named. It leaves out the runs that retention
+// would evict.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
 	listed, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
@@ -108,6 +109,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		}
 		listed = append(listed, runs...)
 	}
+	listed = slices.DeleteFunc(listed, func(run github.Run) bool { return pastRetention(run.CreatedAt, now, m.Retention) })
 	rescanned, rescannedAt, discarded, err := m.rescan(ctx, gh, repo, now)
 	if err != nil {
 		return discovery{}, err
