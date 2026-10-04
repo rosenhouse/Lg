@@ -169,6 +169,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		env := harness.InProcess()
 		// The run listing says attempt 3; attempt 1's own run_attempt says 1.
 		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
+		env.Fake.SetPageCap(5)
 		env.Clock.Set(harness.DefaultNow.Add(500 * time.Millisecond))
 
 		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
@@ -194,6 +195,10 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 			} `json:"sources"`
 		}
 		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+		var fields struct {
+			Sources map[string]map[string]any `json:"sources"`
+		}
+		Expect(json.Unmarshal(raw, &fields)).To(Succeed())
 		Expect(fetch.LgFormat).To(Equal(1))
 		Expect(fetch.LgVersion).To(Equal(version.Version))
 		Expect(fetch.FetchedAt).To(Equal("2026-10-03T18:00:00Z"))
@@ -208,6 +213,11 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		urls := map[string]string{}
 		for name, source := range fetch.Sources {
 			urls[name] = source.URL
+			if name == "jobs.json" {
+				Expect(fields.Sources[name]).To(HaveKeyWithValue("pages", 3.0))
+			} else {
+				Expect(fields.Sources[name]).NotTo(HaveKey("pages"), name)
+			}
 			Expect(source.Status).To(Equal(http.StatusOK), name)
 			stored, err := os.ReadFile(filepath.Join(attempt1, name))
 			Expect(err).NotTo(HaveOccurred())
