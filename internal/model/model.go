@@ -57,3 +57,26 @@ func Classify(job Job, runStartedAt time.Time) JobKind {
 	}
 	return Ran
 }
+
+// Artifact is an element of a run's artifacts listing.
+type Artifact struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	SizeInBytes int64     `json:"size_in_bytes"`
+	Expired     bool      `json:"expired"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Digest      string    `json:"digest"`
+}
+
+// ArtifactAction is what lg does with a listed artifact.
+type ArtifactAction string
+
+const (
+	ArtifactExpired  ArtifactAction = "expired"
+	ArtifactTooLarge ArtifactAction = "too_large"
+	ArtifactDownload ArtifactAction = "download"
+)
+
+func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
+	return ArtifactDownload
+}
