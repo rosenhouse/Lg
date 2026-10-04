@@ -169,7 +169,7 @@ func isOwn(fsys FS, root, name string) (bool, error) {
 
 func Open(root string) (*Store, error) { return OpenFS(OSFS{}, root) }
 
-// OpenFS opens the store at root through fsys, which specs fault. It refuses
+// OpenFS opens the store at root through fsys. It refuses
 // a FORMAT other than lg-store 1, and a tmp/ that cannot be renamed into data/.
 func OpenFS(fsys FS, root string) (*Store, error) {
 	if err := checkFormat(root); err != nil {
