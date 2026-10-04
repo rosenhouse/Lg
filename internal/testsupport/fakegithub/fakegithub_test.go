@@ -135,41 +135,59 @@ func expectJSONElements(actual, expected []json.RawMessage) {
 	}
 }
 
+type recording struct {
+	run   int64
+	stage string
+}
+
+// expectReplay checks that a fresh fake serves every line of the
+// recording's status.txt as recorded.
+func expectReplay(r recording) {
+	GinkgoHelper()
+	dir := recordings.Dir(r.run, r.stage)
+	fake := fakegithub.Start(r.run, r.stage)
+
+	lines := recordedStatus(dir)
+	Expect(len(lines)).To(BeNumerically(">", 10))
+	for _, line := range lines {
+		resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
+		Expect(resp.status).To(Equal(line.First), line.Path)
+		if line.First != line.Final {
+			resp = fetch(resp.header.Get("Location"))
+			Expect(resp.status).To(Equal(line.Final), line.Path)
+		}
+
+		recorded, err := os.ReadFile(recordedFile(dir, line.Path))
+		Expect(err).NotTo(HaveOccurred())
+		if json.Valid(recorded) {
+			var compact bytes.Buffer
+			Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
+			Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
+			Expect(resp.body).To(MatchJSON(recorded), line.Path)
+		} else {
+			Expect(resp.body).To(Equal(recorded), line.Path)
+		}
+	}
+}
+
 var _ = Describe("fakegithub replay", Label("transport"), func() {
 	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
-		for _, r := range []struct {
-			run   int64
-			stage string
-		}{
+		for _, r := range []recording{
 			{runID, "after-attempt-1"},
 			{runID, "after-attempt-2"},
 			{runID, "after-attempt-3"},
 			{logsDeletedRun, "logs-deleted"},
 		} {
-			dir := recordings.Dir(r.run, r.stage)
-			fake := fakegithub.Start(r.run, r.stage)
+			expectReplay(r)
+		}
+	})
 
-			lines := recordedStatus(dir)
-			Expect(len(lines)).To(BeNumerically(">", 10))
-			for _, line := range lines {
-				resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
-				Expect(resp.status).To(Equal(line.First), line.Path)
-				if line.First != line.Final {
-					resp = fetch(resp.header.Get("Location"))
-					Expect(resp.status).To(Equal(line.Final), line.Path)
-				}
-
-				recorded, err := os.ReadFile(recordedFile(dir, line.Path))
-				Expect(err).NotTo(HaveOccurred())
-				if json.Valid(recorded) {
-					var compact bytes.Buffer
-					Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
-					Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
-					Expect(resp.body).To(MatchJSON(recorded), line.Path)
-				} else {
-					Expect(resp.body).To(Equal(recorded), line.Path)
-				}
-			}
+	It("serves every line of the after-expiry recordings with its first-hop and final status", func() {
+		for _, r := range []recording{
+			{runID, "after-expiry"},
+			{logsDeletedRun, "after-expiry"},
+		} {
+			expectReplay(r)
 		}
 	})
 })
