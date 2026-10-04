@@ -76,9 +76,12 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	attempts:
 		for _, n := range planned {
 			err = m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
 			switch {
+			case errors.Is(err, errRunGone):
+				break attempts
 			case runScoped(err):
 				failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
 			case err != nil:
@@ -131,10 +134,13 @@ func runScoped(err error) bool {
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
+// errRunGone is a 404 on an attempt or its jobs, which skips the run.
+var errRunGone = errors.New("run not found")
+
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil
+		return errRunGone
 	}
 	if err != nil {
 		return err
@@ -146,7 +152,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	}
 	jobs, jobsSource, err := gh.ListAttemptJobs(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil
+		return errRunGone
 	}
 	if err != nil {
 		return err

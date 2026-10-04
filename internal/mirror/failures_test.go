@@ -151,6 +151,19 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 	}, cycleTimeout)
 })
 
+// skipsLaterAttempts checks that a 404 at match in attempt 1 of a run with
+// three attempts publishes none and asks for no later attempt.
+func skipsLaterAttempts(ctx SpecContext, match string) {
+	GinkgoHelper()
+	env := harness.InProcess()
+	Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
+	env.Fake.Fail("api", match, fakegithub.Fault{Status: http.StatusNotFound})
+
+	Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+	Expect(env.AttemptDirs(runID)).To(BeEmpty())
+	Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/attempts/[23]\b`))))
+}
+
 var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Label("failures"), func() {
 	It("skips that run without a tombstone and publishes the others", func(ctx SpecContext) {
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
@@ -161,6 +174,10 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 			Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring(strconv.FormatInt(failing, 10)))))
 		})
+	}, cycleTimeout)
+
+	It("skips the run's later attempts", Label("attempts"), func(ctx SpecContext) {
+		skipsLaterAttempts(ctx, fmt.Sprintf("runs/%d/attempts/1", runID))
 	}, cycleTimeout)
 })
 
@@ -310,6 +327,10 @@ var _ = Describe("mirror.Cycle when the jobs of a listed run's attempt return 40
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
+	}, cycleTimeout)
+
+	It("skips the run's later attempts", Label("attempts"), func(ctx SpecContext) {
+		skipsLaterAttempts(ctx, fmt.Sprintf("runs/%d/attempts/1/jobs", runID))
 	}, cycleTimeout)
 })
 
