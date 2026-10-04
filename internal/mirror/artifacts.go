@@ -19,11 +19,28 @@ import (
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
+// origin is where an artifact object was listed: the listing's URL and
+// pages, and the run's run_attempt and status read just after it.
+type origin struct {
+	URL        string `json:"url"`
+	Pages      int    `json:"pages"`
+	RunAttempt int    `json:"run_attempt"`
+	RunStatus  string `json:"run_status"`
+}
+
+func (o origin) source() github.Source { return github.Source{URL: o.URL, Pages: o.Pages} }
+
+// candidate is an artifact object to publish, with its origin.
+type candidate struct {
+	Artifact github.Artifact `json:"artifact"`
+	Origin   origin          `json:"origin"`
+}
+
 // syncArtifacts lists the run's artifacts and publishes its retry set. It
 // returns the listing, or nil when the run was not found or its listing
 // failed, and the errors that runScoped accepts. It stops at any other error.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listedRun, p *pending) (*artifactListing, []error, error) {
-	artifacts, source, err := gh.ListArtifacts(ctx, run.ID)
+	listing, err := listArtifacts(ctx, gh, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
 		return nil, nil, nil
 	}
@@ -33,7 +50,6 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	if err != nil {
 		return nil, nil, err
 	}
-	listing := &artifactListing{artifacts: artifacts, source: source}
 	run.artifacts = listing
 	retry, err := m.retrySet(run, p.runs[run.ID])
 	if runScoped(err) {
@@ -46,13 +62,13 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 		return nil, nil, err
 	}
 	var failed []error
-	var unpublished []github.Artifact
-	for _, artifact := range retry {
-		err := m.publishArtifact(ctx, gh, run.Run, source, artifact, layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
+	var unpublished []candidate
+	for _, c := range retry {
+		err := m.publishArtifact(ctx, gh, run.Run, c, layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
 		switch {
 		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, artifact.ID, err))
-			unpublished = append(unpublished, artifact)
+			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, c.Artifact.ID, err))
+			unpublished = append(unpublished, c)
 		case err != nil:
 			return nil, nil, err
 		}
@@ -60,18 +76,35 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	return listing, failed, p.set(run.ID, unpublished)
 }
 
-func (m *Mirror) publishArtifact(ctx context.Context, gh github.Client, run github.Run, listing github.Source, artifact github.Artifact, target string) error {
+// listArtifacts lists the run's artifacts, then gets the run, since a
+// re-run may have started after ListRuns.
+func listArtifacts(ctx context.Context, gh github.Client, runID int64) (*artifactListing, error) {
+	artifacts, source, err := gh.ListArtifacts(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	run, err := gh.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	return &artifactListing{
+		artifacts: artifacts,
+		origin:    origin{URL: source.URL, Pages: source.Pages, RunAttempt: run.RunAttempt, RunStatus: run.Status},
+	}, nil
+}
+
+func (m *Mirror) publishArtifact(ctx context.Context, gh github.Client, run github.Run, c candidate, target string) error {
 	unit, err := m.Store.NewUnit()
 	if err != nil {
 		return err
 	}
 	s := &staged{unit: unit, sources: map[string]source{}}
-	err = s.writeJSON("artifact.json", artifact.Raw, listing)
+	err = s.writeJSON("artifact.json", c.Artifact.Raw, c.Origin.source())
 	if err == nil {
-		err = m.stageZip(ctx, gh, s, artifact)
+		err = m.stageZip(ctx, gh, s, c.Artifact)
 	}
 	if err == nil {
-		err = m.writeArtifactFetch(s, run)
+		err = m.writeArtifactFetch(s, run, c.Origin)
 	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
@@ -123,29 +156,27 @@ func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (
 // listed, so filters match an artifact whose attempt is not on disk.
 type artifactFetch struct {
 	unitFetch
-	RunStatusAtFetch string            `json:"run_status_at_fetch"`
-	WorkflowID       int64             `json:"workflow_id"`
-	WorkflowName     string            `json:"workflow_name"`
-	Event            string            `json:"event"`
-	PRNumbers        []int             `json:"pr_numbers"`
-	DisplayTitle     string            `json:"display_title"`
-	Sources          map[string]source `json:"sources"`
+	WorkflowID   int64             `json:"workflow_id"`
+	WorkflowName string            `json:"workflow_name"`
+	Event        string            `json:"event"`
+	PRNumbers    []int             `json:"pr_numbers"`
+	DisplayTitle string            `json:"display_title"`
+	Sources      map[string]source `json:"sources"`
 }
 
-func (m *Mirror) writeArtifactFetch(s *staged, run github.Run) error {
+func (m *Mirror) writeArtifactFetch(s *staged, run github.Run, o origin) error {
 	prs := make([]int, len(run.PullRequests))
 	for i, pr := range run.PullRequests {
 		prs[i] = pr.Number
 	}
 	return writeValue(s.unit, "fetch.json", artifactFetch{
-		unitFetch:        m.unitFetch(run),
-		RunStatusAtFetch: run.Status,
-		WorkflowID:       run.WorkflowID,
-		WorkflowName:     run.Name,
-		Event:            run.Event,
-		PRNumbers:        prs,
-		DisplayTitle:     run.DisplayTitle,
-		Sources:          s.sources,
+		unitFetch:    m.unitFetch(run, o),
+		WorkflowID:   run.WorkflowID,
+		WorkflowName: run.Name,
+		Event:        run.Event,
+		PRNumbers:    prs,
+		DisplayTitle: run.DisplayTitle,
+		Sources:      s.sources,
 	})
 }
 
@@ -153,28 +184,28 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run) error {
 // cycle's listing, then in pending, then in each attempt's snapshot. A
 // re-run of all jobs deletes artifacts, so one that failed transiently may
 // be in no later listing.
-func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Artifact, error) {
+func (m *Mirror) retrySet(run listedRun, pending []candidate) ([]candidate, error) {
 	snapshots, err := m.snapshots(run.dir)
 	if err != nil {
 		return nil, err
 	}
-	var retry []github.Artifact
-	seen := map[int64]bool{}
-	var listed []github.Artifact
+	var listed []candidate
 	if run.artifacts != nil {
-		listed = run.artifacts.artifacts
+		listed = run.artifacts.candidates()
 	}
-	for _, artifact := range slices.Concat(listed, pending, snapshots) {
-		if seen[artifact.ID] {
+	var retry []candidate
+	seen := map[int64]bool{}
+	for _, c := range slices.Concat(listed, pending, snapshots) {
+		if seen[c.Artifact.ID] {
 			continue
 		}
-		seen[artifact.ID] = true
-		done, err := m.Store.Has(layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
+		seen[c.Artifact.ID] = true
+		done, err := m.Store.Has(layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
 		if err != nil {
 			return nil, err
 		}
 		if !done {
-			retry = append(retry, artifact)
+			retry = append(retry, c)
 		}
 	}
 	return retry, nil
@@ -182,35 +213,50 @@ func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Ar
 
 // snapshots gives the artifacts in each attempt's artifacts.json, oldest
 // attempt first. An attempt that lg published before it kept snapshots has none.
-func (m *Mirror) snapshots(runDir string) ([]github.Artifact, error) {
+func (m *Mirror) snapshots(runDir string) ([]candidate, error) {
 	attempts, err := m.attemptsOnDisk(runDir)
 	if err != nil {
 		return nil, err
 	}
 	slices.Sort(attempts)
-	var all []github.Artifact
+	var all []candidate
 	for _, n := range attempts {
-		artifacts, err := readArtifacts(filepath.Join(layout.AttemptDir(runDir, n), "artifacts.json"))
+		snapshot, err := readSnapshot(layout.AttemptDir(runDir, n))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, artifacts...)
+		all = append(all, snapshot.candidates()...)
 	}
 	return all, nil
 }
 
-// readArtifacts reads a JSON array of artifacts as GitHub listed them.
-func readArtifacts(path string) ([]github.Artifact, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
+// readSnapshot reads an attempt's artifacts.json, with its origin from fetch.json.
+func readSnapshot(attemptDir string) (*artifactListing, error) {
+	var artifacts []github.Artifact
+	if err := readJSON(filepath.Join(attemptDir, "artifacts.json"), &artifacts); err != nil {
 		return nil, err
 	}
-	var artifacts []github.Artifact
-	if err := json.Unmarshal(raw, &artifacts); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, &github.MalformedError{Err: err})
+	var f fetch
+	if err := readJSON(filepath.Join(attemptDir, "fetch.json"), &f); err != nil {
+		return nil, err
 	}
-	return artifacts, nil
+	listed := f.Sources["artifacts.json"]
+	return &artifactListing{
+		artifacts: artifacts,
+		origin:    origin{URL: listed.URL, Pages: listed.Pages, RunAttempt: f.RunAttemptAtFetch, RunStatus: f.RunStatusAtFetch},
+	}, nil
+}
+
+func readJSON(path string, v any) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("%s: %w", path, &github.MalformedError{Err: err})
+	}
+	return nil
 }

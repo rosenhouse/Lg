@@ -4,6 +4,13 @@ import "github.com/rosenhouse/lg/internal/github"
 
 var RunScoped = runScoped
 
+// RetrySet gives the artifacts of the run's retry set.
 func (m *Mirror) RetrySet(runDir string, listing, pending []github.Artifact) ([]github.Artifact, error) {
-	return m.retrySet(listedRun{dir: runDir, artifacts: &artifactListing{artifacts: listing}}, pending)
+	pendingCandidates := (&artifactListing{artifacts: pending}).candidates()
+	retry, err := m.retrySet(listedRun{dir: runDir, artifacts: &artifactListing{artifacts: listing}}, pendingCandidates)
+	artifacts := make([]github.Artifact, len(retry))
+	for i, c := range retry {
+		artifacts[i] = c.Artifact
+	}
+	return artifacts, err
 }

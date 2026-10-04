@@ -75,6 +75,7 @@ func writeSnapshot(attemptDir string, artifacts ...github.Artifact) {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(os.MkdirAll(attemptDir, 0o755)).To(Succeed())
 	Expect(os.WriteFile(filepath.Join(attemptDir, "artifacts.json"), raw, 0o644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(attemptDir, "fetch.json"), []byte(`{"sources":{}}`), 0o644)).To(Succeed())
 }
 
 func ids(artifacts []github.Artifact) []int64 {
@@ -119,9 +120,15 @@ func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
-	var pending map[string][]json.RawMessage
+	var pending map[string][]struct{ Artifact json.RawMessage }
 	Expect(json.Unmarshal(raw, &pending)).To(Succeed())
-	return pending
+	artifacts := map[string][]json.RawMessage{}
+	for runID, candidates := range pending {
+		for _, c := range candidates {
+			artifacts[runID] = append(artifacts[runID], c.Artifact)
+		}
+	}
+	return artifacts
 }
 
 // servedArtifactsByID is the run's artifact listing as served, by id.
@@ -217,7 +224,9 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 		Entry("empty", "", cycleTimeout),
 		Entry("an array", "[]", cycleTimeout),
 		Entry("a run id that is not a number", `{"abc":[]}`, cycleTimeout),
-		Entry("an artifact id that is not a number", `{"1":[{"id":"x"}]}`, cycleTimeout),
+		Entry("an artifact id that is not a number", `{"1":[{"artifact":{"id":"x"}}]}`, cycleTimeout),
+		Entry("an entry with no artifact", `{"1":[{}]}`, cycleTimeout),
+		Entry("an entry with a null artifact", `{"1":[{"artifact":null}]}`, cycleTimeout),
 	)
 
 	It("syncs a null file as an empty one", func(ctx SpecContext) {

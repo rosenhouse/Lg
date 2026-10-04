@@ -101,7 +101,15 @@ type listedRun struct {
 // artifactListing is a run's artifacts as one listing gave them.
 type artifactListing struct {
 	artifacts []github.Artifact
-	source    github.Source
+	origin    origin
+}
+
+func (l *artifactListing) candidates() []candidate {
+	candidates := make([]candidate, len(l.artifacts))
+	for i, a := range l.artifacts {
+		candidates[i] = candidate{Artifact: a, Origin: l.origin}
+	}
+	return candidates
 }
 
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
@@ -258,13 +266,13 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run liste
 		err = s.writeJSON("jobs.json", jsonArray(jobs, func(j github.Job) json.RawMessage { return j.Raw }), jobsSource)
 	}
 	if err == nil {
-		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.artifacts.source)
+		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.artifacts.origin.source())
 	}
 	if err == nil {
 		err = m.stageJobs(ctx, gh, s, attempt, jobs)
 	}
 	if err == nil {
-		err = m.writeFetch(s, run.Run, attempt)
+		err = m.writeFetch(s, run, attempt)
 	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
@@ -338,9 +346,11 @@ type unitFetch struct {
 	RunID             int64     `json:"run_id"`
 	RunCreatedAt      time.Time `json:"run_created_at"`
 	RunAttemptAtFetch int       `json:"run_attempt_at_fetch"`
+	RunStatusAtFetch  string    `json:"run_status_at_fetch"`
 }
 
-func (m *Mirror) unitFetch(run github.Run) unitFetch {
+// unitFetch gives the run's facts, and its run_attempt and status as o read them.
+func (m *Mirror) unitFetch(run github.Run, o origin) unitFetch {
 	return unitFetch{
 		LgFormat:          1,
 		LgVersion:         version.Version,
@@ -349,7 +359,8 @@ func (m *Mirror) unitFetch(run github.Run) unitFetch {
 		Repo:              run.Repository.FullName,
 		RunID:             run.ID,
 		RunCreatedAt:      run.CreatedAt,
-		RunAttemptAtFetch: run.RunAttempt,
+		RunAttemptAtFetch: o.RunAttempt,
+		RunStatusAtFetch:  o.RunStatus,
 	}
 }
 
@@ -361,9 +372,9 @@ type source struct {
 	SHA256 string `json:"sha256"`
 }
 
-func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
+func (m *Mirror) writeFetch(s *staged, run listedRun, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		unitFetch:          m.unitFetch(run),
+		unitFetch:          m.unitFetch(run.Run, run.artifacts.origin),
 		Attempt:            attempt.RunAttempt,
 		Sources:            s.sources,
 		CarriedForwardJobs: s.carriedForward,
