@@ -2,7 +2,11 @@
 package auth
 
 import (
+	"bytes"
+	"cmp"
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/rosenhouse/lg/internal/execx"
 )
@@ -17,4 +21,17 @@ type GhTokenSource struct {
 	Env    map[string]string
 }
 
-func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) { return "", nil }
+func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
+	gh := cmp.Or(g.Env["LG_GH"], "gh")
+	args := []string{"auth", "token", "--hostname", host}
+	command := gh + " " + strings.Join(args, " ")
+	stdout, stderr, err := g.Runner.Run(ctx, gh, args, g.Env)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w: %s", command, err, bytes.TrimSpace(stderr))
+	}
+	token := string(bytes.TrimSpace(stdout))
+	if token == "" {
+		return "", fmt.Errorf("%s printed no token", command)
+	}
+	return token, nil
+}
