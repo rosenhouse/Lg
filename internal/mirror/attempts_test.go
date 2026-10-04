@@ -2,9 +2,12 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
+	"testing/fstest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -149,6 +152,38 @@ var _ = Describe("an attempt still in progress", Label("attempts"), func() {
 		Expect(env.AttemptDirs(cloneID)).To(ConsistOf(HaveSuffix("/attempt-1"), HaveSuffix("/attempt-2")))
 	}, cycleTimeout)
 })
+
+var _ = Describe("a completed attempt with a job still queued", Label("attempts"), func() {
+	It("is not published, and is published with the job's log by the first sync after the job completes", func(ctx SpecContext) {
+		env := harness.InProcess()
+		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), cloneID)
+		Expect(env.Fake.AddRun(queueFirstJob(run, 2))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(cloneID)).To(ConsistOf(HaveSuffix("/attempt-1")))
+
+		Expect(env.Fake.AddRun(run)).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(glob(filepath.Join(attemptDir(env, cloneID, 2), "jobs", "*_flaky", "log.txt"))).To(HaveLen(1))
+	}, cycleTimeout)
+})
+
+// queueFirstJob gives a copy of run whose attempt lists its first job as
+// queued, with no steps, runner or start.
+func queueFirstJob(run scenario.Run, attempt int) scenario.Run {
+	GinkgoHelper()
+	out := scenario.Run{ID: run.ID, Files: fstest.MapFS{}}
+	maps.Copy(out.Files, run.Files)
+	name := fmt.Sprintf("attempt-%d/jobs.json", attempt)
+	var listing map[string]any
+	Expect(json.Unmarshal(run.Files[name].Data, &listing)).To(Succeed())
+	job := listing["jobs"].([]any)[0].(map[string]any)
+	job["status"], job["conclusion"], job["steps"], job["runner_name"], job["started_at"] = "queued", nil, []any{}, nil, nil
+	data, err := json.Marshal(listing)
+	Expect(err).NotTo(HaveOccurred())
+	out.Files[name] = &fstest.MapFile{Data: data}
+	return out
+}
 
 var _ = Describe("a run whose attempt 2 was created the next UTC day", Label("attempts"), func() {
 	It("keeps both attempts under the date dir of the run's created_at", func(ctx SpecContext) {
