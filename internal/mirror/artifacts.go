@@ -255,7 +255,17 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, &github.MalformedError{Err: err})
+		return &corruptFileError{Path: path, Err: err}
 	}
 	return nil
 }
+
+// corruptFileError is a file in the store that lg cannot parse.
+type corruptFileError struct {
+	Path string
+	Err  error
+}
+
+func (e *corruptFileError) Error() string { return e.Path + ": " + e.Err.Error() }
+
+func (e *corruptFileError) Unwrap() error { return e.Err }

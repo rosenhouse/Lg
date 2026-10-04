@@ -66,7 +66,6 @@ var _ = Describe("Cycle", Label("sync"), func() {
 				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock)
 			},
 			Store:            s,
-			State:            filepath.Join(root, "state"),
 			Host:             "github.com",
 			Repo:             "rosenhouse/lg",
 			Clock:            clock.NewFake(harness.DefaultNow()),
@@ -110,12 +109,16 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending + ".tmp", To: pending}))
 	})
 
-	It("returns an error and sends no request when State is not set", Label("artifacts"), func() {
-		m.State = ""
+	It("moves an unparsable state/pending-artifacts.json aside through the store's FS", Label("artifacts"), func() {
+		fsys := faultfs.New()
+		var err error
+		m.Store, err = store.OpenFS(fsys, root)
+		Expect(err).NotTo(HaveOccurred())
+		pending := filepath.Join(root, "state", "pending-artifacts.json")
+		Expect(os.WriteFile(pending, []byte("<"), 0o644)).To(Succeed())
 
-		Expect(m.Cycle(context.Background())).To(MatchError("no State dir is set"))
-		Expect(tokens.hosts).To(BeEmpty())
-		Expect(fake.Requests()).To(BeEmpty())
+		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring(pending)))
+		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending, To: pending + ".corrupt"}))
 	})
 
 	DescribeTable("refuses a run of another repository and writes nothing",

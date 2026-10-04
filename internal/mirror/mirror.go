@@ -30,7 +30,6 @@ type Mirror struct {
 	Tokens           auth.TokenSource
 	NewGitHub        func(token string) github.Client
 	Store            *store.Store
-	State            string
 	Host             string
 	Repo             string
 	Clock            clock.Clock
@@ -60,9 +59,6 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if m.ArtifactMaxBytes < 1 {
 		return fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
 	}
-	if m.State == "" {
-		return errors.New("no State dir is set")
-	}
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err
@@ -72,9 +68,9 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p, pendingErr := loadPending(m.Store, m.State)
-	if p == nil {
-		return pendingErr
+	p, discarded, err := loadPending(m.Store)
+	if err != nil {
+		return err
 	}
 	runs, err := m.listRuns(ctx, gh, repo, p)
 	if err != nil {
@@ -88,7 +84,7 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(slices.Concat([]error{pendingErr}, artifactsFailed, attemptsFailed)...)
+	return errors.Join(slices.Concat([]error{discarded}, artifactsFailed, attemptsFailed)...)
 }
 
 // listedRun is a listed run with its dir and this cycle's listing of its
@@ -240,7 +236,8 @@ func runScoped(err error) bool {
 	var transient failure.Transient
 	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
+	var corrupt *corruptFileError
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt)
 }
 
 // errRunGone is a 404 on an attempt or its jobs, which skips the run.

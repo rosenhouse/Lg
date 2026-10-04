@@ -2,6 +2,7 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -186,6 +187,7 @@ var _ = Describe("mirror.Cycle when an attempt's artifacts.json is not JSON", La
 		err := env.Sync(ctx)
 		Expect(err).To(MatchError(ContainSubstring("artifacts.json")))
 		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(errors.As(err, new(*github.MalformedError))).To(BeFalse(), "a local file is not a GitHub response")
 		Expect(env.AttemptDirs(deletedRun)).To(HaveLen(1))
 	}, cycleTimeout)
 })
@@ -218,6 +220,7 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 			err := env.Sync(ctx)
 			Expect(err).To(MatchError(ContainSubstring(pending)))
 			Expect(mirror.RunScoped(err)).To(BeTrue())
+			Expect(errors.As(err, new(*github.MalformedError))).To(BeFalse(), "a local file is not a GitHub response")
 			Expect(env.AttemptDirs(runID)).To(HaveLen(1))
 			Expect(os.ReadFile(pending + ".corrupt")).To(Equal([]byte(content)))
 

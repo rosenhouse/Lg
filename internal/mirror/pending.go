@@ -31,28 +31,28 @@ type pendingRun struct {
 
 // loadPending reads the file. One that does not parse is moved aside, since
 // snapshots still name the artifacts of published attempts, and loadPending
-// returns a MalformedError with an empty pending.
-func loadPending(s *store.Store, stateDir string) (*pending, error) {
-	p := &pending{store: s, path: filepath.Join(stateDir, "pending-artifacts.json"), runs: map[int64]pendingRun{}}
+// gives an empty pending and the parse error as discarded.
+func loadPending(s *store.Store) (p *pending, discarded, err error) {
+	p = &pending{store: s, path: filepath.Join(s.State(), "pending-artifacts.json"), runs: map[int64]pendingRun{}}
 	raw, err := os.ReadFile(p.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return p, nil
+		return p, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var runs map[int64]pendingRun
 	if err := decodePending(raw, &runs); err != nil {
 		aside := p.path + ".corrupt"
-		if err := os.Rename(p.path, aside); err != nil {
-			return nil, err
+		if err := s.Rename(p.path, aside); err != nil {
+			return nil, nil, err
 		}
-		return p, fmt.Errorf("%s, moved to %s: %w", p.path, aside, &github.MalformedError{Err: err})
+		return p, &corruptFileError{Path: p.path, Err: fmt.Errorf("moved to %s: %w", aside, err)}, nil
 	}
 	if runs != nil {
 		p.runs = runs
 	}
-	return p, nil
+	return p, nil, nil
 }
 
 func decodePending(raw []byte, runs *map[int64]pendingRun) error {
