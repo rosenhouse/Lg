@@ -200,8 +200,10 @@ type HTTP struct {
 	repoURL   string
 	token     string
 
-	mu        sync.Mutex
-	rateLimit http.Header // of the last API response
+	mu sync.Mutex
+	// rateLimit holds the last API response's header, received at rateLimitAt.
+	rateLimit   http.Header
+	rateLimitAt time.Time
 }
 
 func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk clock.Clock) *HTTP {
@@ -383,7 +385,7 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
 	h.mu.Lock()
-	blocked, reserved := failure.Reserve(h.rateLimit, h.clock.Now(), h.clock.Now())
+	blocked, reserved := failure.Reserve(h.rateLimit, h.rateLimitAt, h.clock.Now())
 	h.mu.Unlock()
 	if reserved {
 		return blocked
@@ -468,7 +470,7 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 	resp, err := h.transport.RoundTrip(req)
 	if err == nil {
 		h.mu.Lock()
-		h.rateLimit = resp.Header
+		h.rateLimit, h.rateLimitAt = resp.Header, h.clock.Now()
 		h.mu.Unlock()
 	}
 	return resp, err

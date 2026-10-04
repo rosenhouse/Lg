@@ -65,23 +65,33 @@ func retryAt(header http.Header, now time.Time) time.Time {
 	if seconds, err := strconv.ParseUint(header.Get("Retry-After"), 10, 64); err == nil {
 		return now.Add(time.Duration(min(seconds, uint64(maxRetryAfter.Seconds()))) * time.Second)
 	}
-	if reset, ok := resetOf(header); ok && header.Get("X-RateLimit-Remaining") == "0" {
+	if reset, ok := resetOf(header, now); ok && header.Get("X-RateLimit-Remaining") == "0" && reset.After(now) {
 		return reset
 	}
 	return now.Add(time.Minute)
 }
 
-func resetOf(header http.Header) (time.Time, bool) {
+// resetOf gives X-RateLimit-Reset on lg's clock. It measures the reset from
+// the response's Date, received at received, since the server's clock may differ.
+func resetOf(header http.Header, received time.Time) (time.Time, bool) {
 	unix, err := strconv.ParseInt(header.Get("X-RateLimit-Reset"), 10, 64)
-	return time.Unix(unix, 0).UTC(), err == nil
+	if err != nil {
+		return time.Time{}, false
+	}
+	reset := time.Unix(unix, 0).UTC()
+	if date, err := http.ParseTime(header.Get("Date")); err == nil {
+		return received.Add(reset.Sub(date)), true
+	}
+	return reset, true
 }
 
 // Reserve blocks until the reset once fewer than 10% of the rate limit's
 // requests remain, keeping the rest for the user's own use of the token.
+// header is the last API response's, received at received.
 func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 	limit, errLimit := strconv.Atoi(header.Get("X-RateLimit-Limit"))
 	remaining, errRemaining := strconv.Atoi(header.Get("X-RateLimit-Remaining"))
-	reset, ok := resetOf(header)
+	reset, ok := resetOf(header, received)
 	if errLimit != nil || errRemaining != nil || !ok || remaining*10 >= limit || !now.Before(reset) {
 		return Blocked{}, false
 	}
