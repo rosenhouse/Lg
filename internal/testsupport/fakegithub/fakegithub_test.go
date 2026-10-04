@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -141,6 +142,22 @@ type recording struct {
 	stage string
 }
 
+// allRecordings lists every run and stage under testdata/recordings.
+func allRecordings() []recording {
+	GinkgoHelper()
+	statuses, err := filepath.Glob(filepath.Join(recordings.Root(), "run-*", "*", "status.txt"))
+	Expect(err).NotTo(HaveOccurred())
+	Expect(len(statuses)).To(BeNumerically(">=", 6))
+	var all []recording
+	for _, status := range statuses {
+		dir := filepath.Dir(status)
+		run, err := strconv.ParseInt(strings.TrimPrefix(filepath.Base(filepath.Dir(dir)), "run-"), 10, 64)
+		Expect(err).NotTo(HaveOccurred(), status)
+		all = append(all, recording{run, filepath.Base(dir)})
+	}
+	return all
+}
+
 // expectReplay checks that a fresh fake serves every line of the
 // recording's status.txt as recorded.
 func expectReplay(r recording) {
@@ -151,47 +168,61 @@ func expectReplay(r recording) {
 	lines := recordedStatus(dir)
 	Expect(len(lines)).To(BeNumerically(">", 10))
 	for _, line := range lines {
+		where := fmt.Sprintf("%d/%s %s", r.run, r.stage, line.Path)
 		resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
-		Expect(resp.status).To(Equal(line.First), line.Path)
+		Expect(resp.status).To(Equal(line.First), where)
 		if line.First != line.Final {
 			resp = fetch(resp.header.Get("Location"))
-			Expect(resp.status).To(Equal(line.Final), line.Path)
+			Expect(resp.status).To(Equal(line.Final), where)
 		}
 
 		recorded, err := os.ReadFile(recordedFile(dir, line.Path))
 		Expect(err).NotTo(HaveOccurred())
 		if json.Valid(recorded) {
 			var compact bytes.Buffer
-			Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
-			Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
-			Expect(resp.body).To(MatchJSON(recorded), line.Path)
-			expectErrorBodyStatus(recorded, line)
+			Expect(json.Compact(&compact, resp.body)).To(Succeed(), where)
+			Expect(resp.body).To(Equal(compact.Bytes()), where)
+			Expect(resp.body).To(MatchJSON(recorded), where)
 		} else {
-			Expect(resp.body).To(Equal(recorded), line.Path)
+			Expect(resp.body).To(Equal(recorded), where)
 		}
+		expectBodyMatchesStatus(recorded, line, where)
 	}
 }
 
-// expectErrorBodyStatus ties a status.txt line to its body: GitHub's JSON
-// error bodies name their own status.
-func expectErrorBodyStatus(recorded []byte, line recordings.Line) {
+// expectBodyMatchesStatus ties a status.txt line to its recorded body, so
+// status.txt cannot drift from what GitHub answered: a GitHub error body
+// names its own status, blob storage's BlobNotFound XML follows a redirect to
+// a 404, and any other body is JSON served directly as 200 or a blob reached
+// by a redirect to a 200.
+func expectBodyMatchesStatus(recorded []byte, line recordings.Line, where string) {
 	GinkgoHelper()
-	if line.Final < http.StatusBadRequest {
+	if !json.Valid(recorded) {
+		Expect(line.First).To(Equal(http.StatusFound), where)
+		if bytes.Contains(recorded, []byte("<Code>BlobNotFound</Code>")) {
+			Expect(line.Final).To(Equal(http.StatusNotFound), where)
+		} else {
+			Expect(line.Final).To(Equal(http.StatusOK), where)
+		}
 		return
 	}
-	var body struct{ Status string }
-	Expect(json.Unmarshal(recorded, &body)).To(Succeed(), line.Path)
-	Expect(body.Status).To(Equal(strconv.Itoa(line.Final)), line.Path)
+	var body struct {
+		Status           string
+		DocumentationURL string `json:"documentation_url"`
+	}
+	Expect(json.Unmarshal(recorded, &body)).To(Succeed(), where)
+	Expect(line.First).To(Equal(line.Final), where)
+	if body.DocumentationURL == "" {
+		Expect(line.Final).To(Equal(http.StatusOK), where)
+		return
+	}
+	Expect(line.Final).To(BeNumerically(">=", http.StatusBadRequest), where)
+	Expect(body.Status).To(Equal(strconv.Itoa(line.Final)), where)
 }
 
 var _ = Describe("fakegithub replay", Label("transport"), func() {
-	It("serves every line of the after-attempt and logs-deleted recordings' status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
-		for _, r := range []recording{
-			{runID, "after-attempt-1"},
-			{runID, "after-attempt-2"},
-			{runID, "after-attempt-3"},
-			{logsDeletedRun, "logs-deleted"},
-		} {
+	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
+		for _, r := range allRecordings() {
 			expectReplay(r)
 		}
 	})
