@@ -132,19 +132,26 @@ func repositoryURL(r *http.Request) *url.URL {
 	}
 }
 
-// linkHeader links to the next and last pages, or is empty on the last page.
+// linkHeader links to the other pages in GitHub's order: prev, next, last, first.
 func linkHeader(u *url.URL, page, last int) string {
-	if page >= last {
-		return ""
-	}
-	at := func(n int) string {
+	at := func(n int, rel string) string {
 		query := u.Query()
 		query.Set("page", strconv.Itoa(n))
 		paged := *u
 		paged.RawQuery = query.Encode()
-		return paged.String()
+		return fmt.Sprintf(`<%s>; rel=%q`, paged.String(), rel)
 	}
-	return fmt.Sprintf(`<%s>; rel="next", <%s>; rel="last"`, at(page+1), at(last))
+	var links []string
+	if page > 1 {
+		links = append(links, at(page-1, "prev"))
+	}
+	if page < last {
+		links = append(links, at(page+1, "next"), at(last, "last"))
+	}
+	if page > 1 {
+		links = append(links, at(1, "first"))
+	}
+	return strings.Join(links, ", ")
 }
 
 var maxTime = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)

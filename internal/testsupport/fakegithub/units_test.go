@@ -2,6 +2,8 @@ package fakegithub_test
 
 import (
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -60,14 +62,21 @@ var _ = Describe("the Link builder", Label("transport"), func() {
 	page := func(n string) *url.URL {
 		return &url.URL{Scheme: "http", Host: "127.0.0.1:1", Path: "/repositories/1402714635/actions/runs", RawQuery: "status=queued&per_page=5&page=" + n}
 	}
+	link := func(n, rel string) string {
+		return `<http://127.0.0.1:1/repositories/1402714635/actions/runs?page=` + n + `&per_page=5&status=queued>; rel="` + rel + `"`
+	}
 
-	It("emits next and last", func() {
-		Expect(fakegithub.LinkHeader(page("1"), 1, 3)).To(Equal(
-			`<http://127.0.0.1:1/repositories/1402714635/actions/runs?page=2&per_page=5&status=queued>; rel="next", ` +
-				`<http://127.0.0.1:1/repositories/1402714635/actions/runs?page=3&per_page=5&status=queued>; rel="last"`))
-	})
-
-	It("emits nothing on the last page", func() {
-		Expect(fakegithub.LinkHeader(page("3"), 3, 3)).To(BeEmpty())
-	})
+	DescribeTable("emits prev, next, last and first in GitHub's order",
+		func(n, last int, rels ...string) {
+			var want []string
+			for i := 0; i < len(rels); i += 2 {
+				want = append(want, link(rels[i], rels[i+1]))
+			}
+			Expect(fakegithub.LinkHeader(page(strconv.Itoa(n)), n, last)).To(Equal(strings.Join(want, ", ")))
+		},
+		Entry("on the first page", 1, 3, "2", "next", "3", "last"),
+		Entry("on a middle page", 2, 3, "1", "prev", "3", "next", "3", "last", "1", "first"),
+		Entry("on the last page", 3, 3, "2", "prev", "1", "first"),
+		Entry("on the only page", 1, 1),
+	)
 })
