@@ -99,7 +99,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		func(fail string) {
 			session := start("-run", "37129390741=after-attempt-1", "-fail", fail, "-addr", "127.0.0.1:0")
 			Eventually(session, "5s").Should(gexec.Exit(2))
-			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(`-fail "`+fail+`": want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall or truncate+stall`)))
+			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(`-fail "` + fail + `": want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall or truncate+stall`)))
 		},
 		Entry("too few fields", "api,jobs/1/logs", Label("failures")),
 		Entry("too many fields", "api,jobs/1/logs,502,1,2", Label("failures")),

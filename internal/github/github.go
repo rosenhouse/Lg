@@ -164,8 +164,8 @@ func (e *MalformedError) Error() string { return e.Err.Error() }
 
 func (e *MalformedError) Unwrap() error { return e.Err }
 
-func malformed(rawURL string, err error) error {
-	return fmt.Errorf("%s: %w", rawURL, &MalformedError{Err: err})
+func malformed(rawURL, format string, args ...any) error {
+	return fmt.Errorf("%s: %w", rawURL, &MalformedError{Err: fmt.Errorf(format, args...)})
 }
 
 // Source is where a file came from: an API URL, never a blob URL.
@@ -214,7 +214,7 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 		return Run{}, Source{}, err
 	}
 	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
-		return Run{}, Source{}, malformed(source.URL, err)
+		return Run{}, Source{}, malformed(source.URL, "%w", err)
 	}
 	return run, source, nil
 }
@@ -226,13 +226,13 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 		return nil, Source{}, err
 	}
 	if total > len(raws) {
-		return nil, Source{}, malformed(source.URL, fmt.Errorf("listed %d of %d jobs", len(raws), total))
+		return nil, Source{}, malformed(source.URL, "listed %d of %d jobs", len(raws), total)
 	}
 	jobs := make([]Job, len(raws))
 	for i, raw := range raws {
 		jobs[i].Raw = raw
 		if err := json.Unmarshal(raw, &jobs[i].Job); err != nil {
-			return nil, Source{}, malformed(source.URL, err)
+			return nil, Source{}, malformed(source.URL, "%w", err)
 		}
 	}
 	source.Pages = pages
@@ -282,10 +282,10 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMess
 		}
 		if next != "" {
 			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
-				return nil, 0, 0, malformed(pageURL, fmt.Errorf("Link next %s is not on the API host", next))
+				return nil, 0, 0, malformed(pageURL, "Link next %s is not on the API host", next)
 			}
 			if followed[next] {
-				return nil, 0, 0, malformed(pageURL, fmt.Errorf("Link next %s repeats an earlier page", next))
+				return nil, 0, 0, malformed(pageURL, "Link next %s repeats an earlier page", next)
 			}
 		}
 		elements = append(elements, items...)
