@@ -228,5 +228,6 @@ var _ = Describe("GetRepo", Label("blocked"), func() {
 		_, err := client.GetRepo(ctx)
 		var malformed *github.MalformedError
 		Expect(errors.As(err, &malformed)).To(BeTrue(), "%v", err)
+		Expect(err).To(MatchError(server.URL + `/repos/o/r: full_name "" is not owner/name`))
 	}, hopTimeout)
 })
