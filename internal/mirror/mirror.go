@@ -87,11 +87,13 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	return errors.Join(slices.Concat([]error{discarded}, artifactsFailed, attemptsFailed)...)
 }
 
-// listedRun is a listed run with its dir and this cycle's listing of its
-// artifacts, which is nil when the listing failed or was not found.
+// listedRun is a listed run with its dir, the attempts that Plan gives for
+// it, and this cycle's listing of its artifacts, which is nil when
+// ListArtifacts failed.
 type listedRun struct {
 	github.Run
 	dir       string
+	planned   []int
 	artifacts *artifactListing
 }
 
@@ -148,9 +150,7 @@ func ofRepo(run github.Run, repo github.Repo) bool {
 func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
 	var failed []error
 	for i := range runs {
-		var runFailed []error
-		var err error
-		runs[i].artifacts, runFailed, err = m.syncArtifacts(ctx, gh, runs[i], p)
+		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i], p)
 		if err != nil {
 			return nil, err
 		}
@@ -180,12 +180,8 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 // syncAttempts publishes the run's planned attempts. It returns the errors that
 // runScoped accepts, and stops at any other.
 func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run listedRun) ([]error, error) {
-	onDisk, err := m.attemptsOnDisk(run.dir)
-	if err != nil {
-		return nil, err
-	}
 	var failed []error
-	for _, n := range Plan(run.Run, onDisk) {
+	for _, n := range run.planned {
 		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(run.dir, n))
 		switch {
 		case errors.Is(err, errRunGone):

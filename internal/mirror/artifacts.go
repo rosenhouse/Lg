@@ -37,10 +37,15 @@ type candidate struct {
 	Origin   origin          `json:"origin"`
 }
 
-// syncArtifacts lists the run's artifacts and publishes its retry set. It
-// returns the listing, or nil when the run was not found or its listing
-// failed, and the errors that runScoped accepts. It stops at any other error.
-func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listedRun, p *pending) (*artifactListing, []error, error) {
+// syncArtifacts lists the run's artifacts into run.artifacts, which stays nil
+// when ListArtifacts fails, and publishes its retry set. It returns the
+// errors that runScoped accepts, and stops at any other.
+func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
+	onDisk, err := m.attemptsOnDisk(run.dir)
+	if err != nil {
+		return nil, err
+	}
+	run.planned = Plan(run.Run, onDisk)
 	listing, err := m.listArtifacts(ctx, gh, run)
 	var failed []error
 	switch {
@@ -49,12 +54,12 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 	case runScoped(err) && listing != nil:
 		failed = append(failed, fmt.Errorf("run %d: %w", run.ID, err))
 	case runScoped(err):
-		return nil, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	case err != nil:
-		return nil, nil, err
+		return nil, err
 	}
 	run.artifacts = listing
-	retry, unreadable, err := m.retrySet(run, p.runs[run.ID].Artifacts)
+	retry, unreadable, err := m.retrySet(run.dir, onDisk, listing, p.runs[run.ID].Artifacts)
 	if unreadable != nil {
 		failed = append(failed, fmt.Errorf("run %d artifacts: %w", run.ID, unreadable))
 	}
@@ -62,7 +67,7 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 		err = p.set(run.Run, retry)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var unpublished []candidate
 	for _, c := range retry {
@@ -72,17 +77,16 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, c.Artifact.ID, err))
 			unpublished = append(unpublished, c)
 		case err != nil:
-			return nil, nil, err
+			return nil, err
 		}
 	}
-	return listing, failed, p.set(run.Run, unpublished)
+	return failed, p.set(run.Run, unpublished)
 }
 
-// listArtifacts lists the run's artifacts. When a listed artifact has no dir
-// or an attempt of the run is planned, it then gets the run, since a re-run
-// may have started after ListRuns. When that fails, it returns the listing
-// with the error.
-func (m *Mirror) listArtifacts(ctx context.Context, gh github.Client, run listedRun) (*artifactListing, error) {
+// listArtifacts lists the run's artifacts, then gets the run when needsRun,
+// since a re-run may have started after ListRuns. When GetRun fails, it
+// returns the listing with the error.
+func (m *Mirror) listArtifacts(ctx context.Context, gh github.Client, run *listedRun) (*artifactListing, error) {
 	artifacts, source, err := gh.ListArtifacts(ctx, run.ID)
 	if err != nil {
 		return nil, err
@@ -101,14 +105,10 @@ func (m *Mirror) listArtifacts(ctx context.Context, gh github.Client, run listed
 	return listing, nil
 }
 
-// needsRun reports whether a listed artifact has no dir or an attempt of the
-// run is planned, since publishing either records the run's run_attempt.
-func (m *Mirror) needsRun(run listedRun, artifacts []github.Artifact) (bool, error) {
-	onDisk, err := m.attemptsOnDisk(run.dir)
-	if err != nil {
-		return false, err
-	}
-	if len(Plan(run.Run, onDisk)) > 0 {
+// needsRun reports whether an attempt of the run is planned or a listed
+// artifact has no dir, since publishing either records the run's run_attempt.
+func (m *Mirror) needsRun(run *listedRun, artifacts []github.Artifact) (bool, error) {
+	if len(run.planned) > 0 {
 		return true, nil
 	}
 	for _, a := range artifacts {
@@ -210,17 +210,18 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run, o origin) error {
 	})
 }
 
-// retrySet is the run's artifacts that have no dir on disk: those in this
-// cycle's listing, then in pending, then in each attempt's snapshot. It skips
-// the snapshots that do not parse and gives their errors as unreadable.
-func (m *Mirror) retrySet(run listedRun, pending []candidate) (retry []candidate, unreadable, err error) {
-	snapshots, unreadable, err := m.snapshots(run.dir)
+// retrySet is the artifacts of the run in runDir that have no dir on disk:
+// those in listing, then in pending, then in the snapshot of each attempt
+// in onDisk. It skips the snapshots that do not parse and gives their errors
+// as unreadable.
+func (m *Mirror) retrySet(runDir string, onDisk []int, listing *artifactListing, pending []candidate) (retry []candidate, unreadable, err error) {
+	snapshots, unreadable, err := snapshots(runDir, onDisk)
 	if err != nil {
 		return nil, nil, err
 	}
 	var listed []candidate
-	if run.artifacts != nil {
-		listed = run.artifacts.candidates()
+	if listing != nil {
+		listed = listing.candidates()
 	}
 	seen := map[int64]bool{}
 	for _, c := range slices.Concat(listed, pending, snapshots) {
@@ -228,7 +229,7 @@ func (m *Mirror) retrySet(run listedRun, pending []candidate) (retry []candidate
 			continue
 		}
 		seen[c.Artifact.ID] = true
-		done, err := m.Store.Has(layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
+		done, err := m.Store.Has(layout.ArtifactDir(runDir, c.Artifact.ID, c.Artifact.Name))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -239,16 +240,11 @@ func (m *Mirror) retrySet(run listedRun, pending []candidate) (retry []candidate
 	return retry, unreadable, nil
 }
 
-// snapshots gives the artifacts in each attempt's artifacts.json, oldest
-// attempt first. It skips the snapshots that do not parse and gives their
-// errors as unreadable.
-func (m *Mirror) snapshots(runDir string) (all []candidate, unreadable, err error) {
-	attempts, err := m.attemptsOnDisk(runDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	slices.Sort(attempts)
-	for _, n := range attempts {
+// snapshots gives the artifacts in the artifacts.json of each attempt, oldest
+// first. It skips the snapshots that do not parse and gives their errors as
+// unreadable.
+func snapshots(runDir string, attempts []int) (all []candidate, unreadable, err error) {
+	for _, n := range slices.Sorted(slices.Values(attempts)) {
 		snapshot, err := readSnapshot(layout.AttemptDir(runDir, n))
 		var corrupt *corruptFileError
 		switch {
