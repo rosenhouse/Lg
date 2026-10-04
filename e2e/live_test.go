@@ -149,7 +149,7 @@ func get(url string) []byte {
 	req.Header.Set("User-Agent", "lg/test")
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).NotTo(HaveOccurred())
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	Expect(resp.StatusCode).To(Equal(http.StatusOK), url)
 	body, err := io.ReadAll(resp.Body)
 	Expect(err).NotTo(HaveOccurred())
@@ -185,7 +185,7 @@ func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	GinkgoHelper()
 	status, err := os.Open(filepath.Join(recordings.Dir(runID, stage), "status.txt"))
 	Expect(err).NotTo(HaveOccurred())
-	defer status.Close()
+	defer func() { _ = status.Close() }()
 	lines, err := recordings.ParseStatus(status)
 	Expect(err).NotTo(HaveOccurred())
 	logs := map[int64][]byte{}
