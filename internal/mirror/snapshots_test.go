@@ -197,19 +197,34 @@ var _ = Describe("an artifact published from state/pending-artifacts.json", Labe
 	}, cycleTimeout)
 })
 
-var _ = Describe("mirror.Cycle when state/pending-artifacts.json is not JSON", Label("artifacts"), func() {
-	It("moves it aside, reports it, and syncs as if it were empty", func(ctx SpecContext) {
+var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse", Label("artifacts"), func() {
+	DescribeTable("moves it aside, reports it, and syncs as if it were empty",
+		func(ctx SpecContext, content string) {
+			env := harness.InProcess()
+			Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+			pending := filepath.Join(env.State(), "pending-artifacts.json")
+			Expect(os.WriteFile(pending, []byte(content), 0o644)).To(Succeed())
+
+			err := env.Sync(ctx)
+			Expect(err).To(MatchError(ContainSubstring(pending)))
+			Expect(mirror.RunScoped(err)).To(BeTrue())
+			Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+			Expect(os.ReadFile(pending + ".corrupt")).To(Equal([]byte(content)))
+
+			Expect(env.Sync(ctx)).To(Succeed())
+		},
+		Entry("empty", "", cycleTimeout),
+		Entry("an array", "[]", cycleTimeout),
+		Entry("a run id that is not a number", `{"abc":[]}`, cycleTimeout),
+		Entry("an artifact id that is not a number", `{"1":[{"id":"x"}]}`, cycleTimeout),
+	)
+
+	It("syncs a null file as an empty one", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		pending := filepath.Join(env.State(), "pending-artifacts.json")
-		Expect(os.WriteFile(pending, nil, 0o644)).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte("null"), 0o644)).To(Succeed())
 
-		err := env.Sync(ctx)
-		Expect(err).To(MatchError(ContainSubstring(pending)))
-		Expect(mirror.RunScoped(err)).To(BeTrue())
-		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
-		Expect(pending + ".corrupt").To(BeARegularFile())
-
-		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Sync(ctx)).To(BeTransient())
 	}, cycleTimeout)
 })
