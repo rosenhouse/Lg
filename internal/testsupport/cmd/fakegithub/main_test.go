@@ -122,7 +122,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Entry("no bytes", ""),
 	)
 
-	It("lists each -expire artifact as expired, in whichever -run lists it", Label("artifacts"), func() {
+	It("lists each -expire artifact as expired: true, which no recording shows, in whichever -run lists it", Label("artifacts"), func() {
 		session := start("-run", "37129390741=after-attempt-1", "-run", "37129738159=logs-deleted", "-addr", "127.0.0.1:0",
 			"-expire", "11275917910", "-expire", "11276401837", "-expire", "11276546973")
 		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))

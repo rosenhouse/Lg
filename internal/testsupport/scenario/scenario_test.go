@@ -235,7 +235,7 @@ var _ = Describe("mutations", Label("attempts"), func() {
 	})
 
 	Describe("Expire", Label("artifacts"), func() {
-		It("lists the artifact as expired, leaving the others and the original run unchanged", func() {
+		It("lists the artifact as expired: true, which no recording shows, leaving the others and the original run unchanged", func() {
 			expired := scenario.Expire(run, 7_011275917910)
 
 			var listing struct {
