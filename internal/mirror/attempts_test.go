@@ -37,7 +37,19 @@ func glob(pattern string) []string {
 	return matches
 }
 
-func jobDirOf(id string) string { return "/jobs/" + id + "_" }
+type fetchJSON struct {
+	RunCreatedAt       string  `json:"run_created_at"`
+	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+}
+
+func readFetch(attemptDir string) fetchJSON {
+	GinkgoHelper()
+	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
+	Expect(err).NotTo(HaveOccurred())
+	var fetch fetchJSON
+	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+	return fetch
+}
 
 var _ = Describe("syncing after-attempt-1, then after-attempt-2", Label("attempts"), func() {
 	var (
@@ -66,9 +78,9 @@ var _ = Describe("syncing after-attempt-1, then after-attempt-2", Label("attempt
 		Expect(glob(filepath.Join(attempt2, "jobs", "*", "job.json"))).To(HaveLen(12))
 		Expect(glob(filepath.Join(attempt2, "jobs", "*"))).To(HaveLen(12))
 		Expect(glob(filepath.Join(attempt2, "jobs", "*", "log.txt"))).To(ConsistOf(
-			ContainSubstring(jobDirOf("111221661475")),
-			ContainSubstring(jobDirOf("111221661684")),
-			ContainSubstring(jobDirOf("111221682214")),
+			HaveSuffix("_flaky/log.txt"),
+			HaveSuffix("_timeout/log.txt"),
+			HaveSuffix("_after-flaky/log.txt"),
 		))
 		Expect(glob(filepath.Join(attempt2, "jobs", "*", "*.tombstone"))).To(ConsistOf(tombstonePath(attempt2, "111221662421")))
 		Expect(readTombstone(attempt2, "111221662421")).To(HaveKeyWithValue("reason", "not_applicable"))
@@ -80,13 +92,7 @@ var _ = Describe("syncing after-attempt-1, then after-attempt-2", Label("attempt
 		for _, id := range carried {
 			Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", HaveSuffix("/jobs/"+strconv.FormatInt(id, 10)+"/logs"))))
 		}
-		raw, err := os.ReadFile(filepath.Join(attemptDir(env, runID, 2), "fetch.json"))
-		Expect(err).NotTo(HaveOccurred())
-		var fetch struct {
-			CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
-		}
-		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
-		Expect(fetch.CarriedForwardJobs).To(ConsistOf(carried))
+		Expect(readFetch(attemptDir(env, runID, 2)).CarriedForwardJobs).To(ConsistOf(carried))
 	})
 
 	Describe("then after-attempt-3", func() {
@@ -132,9 +138,7 @@ var _ = Describe("a first sync at after-attempt-3", Label("attempts"), func() {
 		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		raw, err := os.ReadFile(filepath.Join(attemptDir(env, runID, 3), "fetch.json"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(raw).To(ContainSubstring(`"carried_forward_jobs": []`))
+		Expect(readFetch(attemptDir(env, runID, 3)).CarriedForwardJobs).To(SatisfyAll(Not(BeNil()), BeEmpty()))
 	}, cycleTimeout)
 })
 
@@ -198,9 +202,7 @@ var _ = Describe("a run whose attempt 2 was created the next UTC day", Label("at
 			ContainSubstring("/runs/2026-10-03/1_lg-fixture_lg-fixture/attempt-1"),
 			ContainSubstring("/runs/2026-10-03/1_lg-fixture_lg-fixture/attempt-2"),
 		))
-		raw, err := os.ReadFile(filepath.Join(attemptDir(env, cloneID, 2), "fetch.json"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(raw).To(ContainSubstring(`"run_created_at": "2026-10-03T14:22:54Z"`))
+		Expect(readFetch(attemptDir(env, cloneID, 2)).RunCreatedAt).To(Equal("2026-10-03T14:22:54Z"))
 	}, cycleTimeout)
 })
 
