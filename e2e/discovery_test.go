@@ -62,6 +62,13 @@ var _ = Describe("lg init --repo rosenhouse/lg", Label("discovery"), func() {
 		Expect(os.ReadFile(env.ConfigFile())).To(BeEquivalentTo("host: github.com\nrepo: rosenhouse/lg\n"))
 		Expect(os.ReadFile(filepath.Join(env.Store(), "FORMAT"))).To(BeEquivalentTo("lg-store 1\n"))
 	})
+
+	It("lowercases --host, as config.Load does", func() {
+		env := harness.New(lgPath)
+
+		Eventually(env.Lg("init", "--repo", "rosenhouse/lg", "--host", "GitHub.com"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(os.ReadFile(env.ConfigFile())).To(BeEquivalentTo("host: github.com\nrepo: rosenhouse/lg\n"))
+	})
 })
 
 var _ = Describe("lg init", Label("discovery"), func() {
@@ -75,6 +82,7 @@ var _ = Describe("lg init", Label("discovery"), func() {
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(2))
 		Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(env.ConfigFile()) + " already exists"))
 		Expect(os.ReadFile(env.ConfigFile())).To(Equal(before))
+		Expect(filepath.Join(env.Store(), "FORMAT")).NotTo(BeAnExistingFile())
 	})
 })
 

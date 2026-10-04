@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
@@ -19,7 +20,7 @@ type initCmd struct {
 // Run writes config.yaml, holding only host and repo, and initializes the store.
 func (c initCmd) Run(deps *Deps) error {
 	cfg := config.Defaults()
-	cfg.Host, cfg.Repo = c.Host, c.Repo
+	cfg.Host, cfg.Repo = strings.ToLower(c.Host), c.Repo
 	if err := config.Validate(cfg); err != nil {
 		return err
 	}
