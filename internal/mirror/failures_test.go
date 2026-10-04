@@ -198,6 +198,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
 		env.Fake.SetPageCap(5)
 		env.Clock.Set(harness.DefaultNow().Add(500 * time.Millisecond))
+		env.Mirror.Host = "ghe.corp.example"
 
 		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
 		attempt1 := env.AttemptDirs(runID)[0]
@@ -229,7 +230,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		Expect(fetch.LgFormat).To(Equal(1))
 		Expect(fetch.LgVersion).To(Equal(version.Version))
 		Expect(fetch.FetchedAt).To(Equal("2026-10-03T18:00:00Z"))
-		Expect(fetch.Host).To(Equal("github.com"))
+		Expect(fetch.Host).To(Equal("ghe.corp.example"))
 		Expect(fetch.Repo).To(Equal("rosenhouse/Lg"))
 		Expect(fetch.RunID).To(BeEquivalentTo(runID))
 		Expect(fetch.Attempt).To(Equal(1))
