@@ -1,4 +1,5 @@
-// Command fakegithub serves recorded runs for trying lg by hand.
+// Command fakegithub serves recorded runs for trying lg by hand. lg sync
+// against it needs LG_GH to name a program that prints any token.
 package main
 
 import (
