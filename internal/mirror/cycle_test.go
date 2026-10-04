@@ -28,7 +28,10 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	)
 
 	BeforeEach(func() {
-		root = GinkgoT().TempDir()
+		root = filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		s, err := store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
 		recording = filepath.Join(GinkgoT().TempDir(), "recording")
 		Expect(os.CopyFS(recording, os.DirFS(fakegithub.Recording(runID, "after-attempt-1")))).To(Succeed())
 		fake = fakegithub.New()
@@ -36,8 +39,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.LoadDir(runID, recording)).To(Succeed())
 		m = mirror.Mirror{
 			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg"),
-			Store:  store.New(filepath.Join(root, "tmp")),
-			Data:   filepath.Join(root, "data"),
+			Store:  s,
 			Host:   "github.com",
 			Repo:   "rosenhouse/lg",
 		}
@@ -51,7 +53,8 @@ var _ = Describe("Cycle", Label("sync"), func() {
 
 			Expect(m.Cycle(context.Background())).To(MatchError(
 				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/lg"`))
-			Expect(os.ReadDir(root)).To(BeEmpty())
+			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+			Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 		},
 		Entry("another repo", "other/lg"),
 		Entry("a path out of the store", "../../../../escaped"),
@@ -68,6 +71,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
 
+	It("removes its staged unit when a log download fails", Label("store"), func() {
+		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError})
+
+		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+	})
+
 	It("publishes no attempt still in progress and requests none of its jobs", func() {
 		editJSON(filepath.Join(recording, "attempt-1", "attempt.json"), func(attempt map[string]any) {
 			attempt["status"] = "in_progress"
@@ -75,7 +86,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		})
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
-		Expect(filepath.Join(root, "data")).NotTo(BeAnExistingFile())
+		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("/jobs"))))
 	})
 })

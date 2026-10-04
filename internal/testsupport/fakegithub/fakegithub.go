@@ -38,7 +38,30 @@ type Server struct {
 	runID    string
 	runDir   string
 	requests []Request
+	faults   []*fault
+	holds    []*hold
 }
+
+// Fault answers a request with Status. Times limits how many requests it
+// answers; 0 means every one.
+type Fault struct {
+	Status int
+	Times  int
+}
+
+type fault struct {
+	Fault
+	host, match string
+	answered    int
+}
+
+type hold struct {
+	match    string
+	released chan struct{}
+	once     sync.Once
+}
+
+func (h *hold) release() { h.once.Do(func() { close(h.released) }) }
 
 // Start serves a run at a stage until the spec ends.
 func Start(runID int64, stage string) *Server {
@@ -104,7 +127,28 @@ func (s *Server) dir() string {
 
 func (s *Server) URL() string { return s.api.URL }
 
+// Fail answers requests to host ("api" or "blob") whose path ends in match with f.
+func (s *Server) Fail(host, match string, f Fault) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.faults = append(s.faults, &fault{Fault: f, host: host, match: match})
+}
+
+// Hold delays requests whose path ends in match until release is called.
+func (s *Server) Hold(match string) (release func()) {
+	h := &hold{match: match, released: make(chan struct{})}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.holds = append(s.holds, h)
+	return h.release
+}
+
 func (s *Server) Close() {
+	s.mu.Lock()
+	for _, h := range s.holds {
+		h.release()
+	}
+	s.mu.Unlock()
 	s.api.Close()
 	s.blob.Close()
 }
@@ -119,9 +163,46 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.requests = append(s.requests, Request{Host: host, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
+		holds := s.holdsOf(r.URL.Path)
+		status := s.takeFault(host, r.URL.Path)
 		s.mu.Unlock()
+		for _, held := range holds {
+			select {
+			case <-held.released:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if status != 0 {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(status)
+			_, _ = fmt.Fprintf(w, `{"message":%q}`, http.StatusText(status))
+			return
+		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) holdsOf(path string) []*hold {
+	var holds []*hold
+	for _, h := range s.holds {
+		if strings.HasSuffix(path, h.match) {
+			holds = append(holds, h)
+		}
+	}
+	return holds
+}
+
+// takeFault returns the status of the first matching fault with answers
+// left, or 0, and counts this answer.
+func (s *Server) takeFault(host, path string) int {
+	for _, f := range s.faults {
+		if f.host == host && strings.HasSuffix(path, f.match) && (f.Times == 0 || f.answered < f.Times) {
+			f.answered++
+			return f.Status
+		}
+	}
+	return 0
 }
 
 func (s *Server) apiRoutes() http.Handler {

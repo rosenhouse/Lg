@@ -13,6 +13,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 // ExitTimeout bounds how long a spec waits for a short-lived lg command.
@@ -62,8 +63,37 @@ func (e *Env) WriteConfig(apiURL string) {
 	gomega.Expect(os.WriteFile(path, []byte(yaml), 0o644)).To(gomega.Succeed())
 }
 
-func (e *Env) Data() string {
+// Sync runs lg sync to exit and asserts that it left every earlier file under data/ unchanged.
+func (e *Env) Sync(args ...string) *gexec.Session {
+	ginkgo.GinkgoHelper()
+	_, wait := e.StartSync(args...)
+	return wait()
+}
+
+// StartSync starts lg sync. Its wait func waits for it to exit and asserts as Sync does.
+func (e *Env) StartSync(args ...string) (*gexec.Session, func() *gexec.Session) {
+	ginkgo.GinkgoHelper()
+	before := treesnap.Snapshot(e.Data())
+	session := e.Lg(append([]string{"sync"}, args...)...)
+	return session, func() *gexec.Session {
+		ginkgo.GinkgoHelper()
+		gomega.Eventually(session, ExitTimeout).Should(gexec.Exit())
+		gomega.Expect(treesnap.Snapshot(e.Data())).To(treesnap.BeAppendOnlyFrom(before))
+		return session
+	}
+}
+
+func (e *Env) Store() string { return e.roots().Store }
+
+func (e *Env) Data() string { return e.roots().Data }
+
+func (e *Env) State() string { return e.roots().State }
+
+func (e *Env) Tmp() string { return e.roots().Tmp }
+
+func (e *Env) roots() config.Roots {
+	ginkgo.GinkgoHelper()
 	roots, err := config.Locations(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	return roots.Data
+	return roots
 }

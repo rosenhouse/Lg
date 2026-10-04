@@ -26,6 +26,11 @@ var _ = Describe("lg paths", Label("sync"), func() {
 		return cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": home}, Stdout: stdout, Stderr: stderr})
 	}
 
+	writeFormat := func() {
+		Expect(os.MkdirAll(home, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(home, "FORMAT"), []byte("lg-store 1\n"), 0o644)).To(Succeed())
+	}
+
 	mkfile := func(elem ...string) string {
 		path := filepath.Join(append([]string{home}, elem...)...)
 		Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
@@ -34,6 +39,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 	}
 
 	It("prints only regular log.txt files under data/", func() {
+		writeFormat()
 		log := mkfile("data", "a", "log.txt")
 		Expect(os.MkdirAll(filepath.Join(home, "data", "b"), 0o755)).To(Succeed())
 		Expect(os.Symlink(log, filepath.Join(home, "data", "b", "log.txt"))).To(Succeed())
@@ -64,7 +70,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 		elsewhere := GinkgoT().TempDir()
 		Expect(os.MkdirAll(filepath.Join(elsewhere, "a"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(elsewhere, "a", "log.txt"), []byte("log"), 0o644)).To(Succeed())
-		Expect(os.MkdirAll(home, 0o755)).To(Succeed())
+		writeFormat()
 		Expect(os.Symlink(elsewhere, filepath.Join(home, "data"))).To(Succeed())
 
 		Expect(paths()).To(Equal(0))

@@ -2,10 +2,17 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -25,12 +32,51 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	s, release, err := openForWriting(roots, deps.Clock, deps.Stderr)
+	if err != nil {
+		return err
+	}
+	defer release()
 	m := mirror.Mirror{
 		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo),
-		Store:  store.New(roots.Tmp),
-		Data:   roots.Data,
+		Store:  s,
 		Host:   cfg.Host,
 		Repo:   cfg.Repo,
 	}
 	return m.Cycle(context.Background())
+}
+
+// writeLockWait bounds how long a writer waits for another to finish.
+const writeLockWait = 5 * time.Minute
+
+// openForWriting takes state/write.lock, which every writer of data/ and tmp/
+// holds, then initializes the store and sweeps what dead writers left in tmp/.
+func openForWriting(roots config.Roots, clk clock.Clock, stderr io.Writer) (*store.Store, func(), error) {
+	if err := os.MkdirAll(roots.State, 0o755); err != nil {
+		return nil, nil, err
+	}
+	writeLock := filepath.Join(roots.State, "write.lock")
+	held, err := lock.Wait(writeLock, writeLockWait, clk, func(holder string) {
+		_, _ = fmt.Fprintf(stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := initAndSweep(roots.Store)
+	if err != nil {
+		_ = held.Release()
+		return nil, nil, err
+	}
+	return s, func() { _ = held.Release() }, nil
+}
+
+func initAndSweep(root string) (*store.Store, error) {
+	if err := store.Init(root); err != nil {
+		return nil, err
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	return s, s.Sweep()
 }

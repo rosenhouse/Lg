@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -22,7 +20,6 @@ import (
 type Mirror struct {
 	GitHub github.Client
 	Store  *store.Store
-	Data   string
 	Host   string
 	Repo   string
 }
@@ -38,13 +35,14 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
 			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, m.Repo)
 		}
-		runDir := layout.RunDir(layout.RepoDir(m.Data, m.Host, run.Repository.FullName), run.Run)
+		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, run.Repository.FullName), run.Run)
 		target := layout.AttemptDir(runDir, 1)
-		switch _, err := os.Lstat(target); {
-		case err == nil:
-			continue
-		case !errors.Is(err, fs.ErrNotExist):
+		published, err := m.Store.Has(target)
+		if err != nil {
 			return err
+		}
+		if published {
+			continue
 		}
 		if err := m.publishAttempt(ctx, run.ID, 1, target); err != nil {
 			return err
@@ -71,6 +69,17 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 	if err != nil {
 		return err
 	}
+	err = m.stageAttempt(ctx, unit, attempt, jobs)
+	if err == nil {
+		err = m.Store.Publish(unit, target)
+	}
+	if err != nil {
+		return errors.Join(err, unit.Abort())
+	}
+	return nil
+}
+
+func (m *Mirror) stageAttempt(ctx context.Context, unit *store.Unit, attempt github.Run, jobs []github.Job) error {
 	if err := unit.WriteJSON("attempt.json", attempt.Raw); err != nil {
 		return err
 	}
@@ -82,7 +91,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 			return err
 		}
 	}
-	return m.Store.Publish(unit, target)
+	return nil
 }
 
 func (m *Mirror) addJob(ctx context.Context, unit *store.Unit, job github.Job) error {
