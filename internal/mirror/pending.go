@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,15 +73,18 @@ func (p *pending) save() error {
 			runs[runID] = append(runs[runID], a.Raw)
 		}
 	}
-	raw, err := json.MarshalIndent(runs, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(runs); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(p.path), ".pending-artifacts-*")
 	if err != nil {
 		return err
 	}
-	_, err = tmp.Write(append(raw, '\n'))
+	_, err = tmp.Write(buf.Bytes())
 	if closeErr := tmp.Close(); err == nil {
 		err = closeErr
 	}
