@@ -3,6 +3,7 @@ package scenario_test
 import (
 	"encoding/json"
 	"strings"
+	"testing/fstest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,6 +69,28 @@ var _ = Describe("Clone", Label("attempts"), func() {
 				Expect(string(file.Data)).NotTo(MatchRegexp(`\b(37129390741|111221661475|11275917910)\b`), name)
 			}
 		}
+	})
+
+	It("gives each id its own new id when one id is a prefix of another", func() {
+		run := scenario.Run{ID: 1234, Files: fstest.MapFS{
+			"run.json":            {Data: []byte(`{"id":1234}`)},
+			"attempt-1/jobs.json": {Data: []byte(`{"total_count":2,"jobs":[{"id":12,"run_id":1234},{"id":123,"run_id":1234}]}`)},
+		}}
+
+		clone := scenario.Clone(run, 7)
+		Expect(field(clone, "run.json", "id")).To(BeEquivalentTo(7))
+		Expect(jobs(clone, "attempt-1")).To(ConsistOf(
+			SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_000000000012)), HaveKeyWithValue("run_id", BeEquivalentTo(7))),
+			SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_000000000123)), HaveKeyWithValue("run_id", BeEquivalentTo(7))),
+		))
+	})
+
+	It("refuses a clone id outside (0, 1_000_000), which could overflow a job's new id", func() {
+		run := scenario.Recorded(runID, "after-attempt-1")
+
+		Expect(func() { scenario.Clone(run, 0) }).To(Panic())
+		Expect(func() { scenario.Clone(run, 1_000_000) }).To(Panic())
+		Expect(func() { scenario.Clone(run, 999_999) }).NotTo(Panic())
 	})
 
 	It("keeps logs byte-identical", func() {

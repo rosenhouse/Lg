@@ -55,11 +55,15 @@ func Clone(src Run, id int64) Run {
 	if id <= 0 || id >= maxCloneID {
 		panic(fmt.Sprintf("clone id %d is not in (0, %d)", id, maxCloneID))
 	}
-	var pairs []string
+	newIDs := map[int64]int64{src.ID: id}
 	for _, old := range src.ids() {
-		pairs = append(pairs, strconv.FormatInt(old, 10), strconv.FormatInt(id*idSpace+old, 10))
+		newIDs[old] = id*idSpace + old
 	}
-	pairs = append(pairs, strconv.FormatInt(src.ID, 10), strconv.FormatInt(id, 10))
+	// Longest first, so that no id is replaced by a prefix of it.
+	var pairs []string
+	for _, old := range slices.Backward(slices.Sorted(maps.Keys(newIDs))) {
+		pairs = append(pairs, strconv.FormatInt(old, 10), strconv.FormatInt(newIDs[old], 10))
+	}
 	ids := strings.NewReplacer(pairs...)
 	files := fstest.MapFS{}
 	for name, file := range src.Files {
@@ -72,8 +76,7 @@ func Clone(src Run, id int64) Run {
 	return Run{ID: id, Files: files}
 }
 
-// ids lists the ids of every job and artifact of r, longest first, so that
-// a Replacer never replaces a prefix of one.
+// ids lists the ids of every job and artifact of r.
 func (r Run) ids() []int64 {
 	var ids []int64
 	for name, file := range r.Files {
@@ -85,9 +88,6 @@ func (r Run) ids() []int64 {
 			ids = append(ids, element.ID)
 		}
 	}
-	slices.Sort(ids)
-	ids = slices.Compact(ids)
-	slices.Reverse(ids)
 	return ids
 }
 
