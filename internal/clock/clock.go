@@ -77,7 +77,12 @@ func FromEnv(env map[string]string, base Clock) (Clock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("LG_TEST_NOW: %w", err)
 	}
-	return shifted{Clock: base, start: start, baseStart: base.Now()}, nil
+	return Starting(start, base), nil
+}
+
+// Starting gives a clock that starts at start and advances as base does.
+func Starting(start time.Time, base Clock) Clock {
+	return shifted{Clock: base, start: start, baseStart: base.Now()}
 }
 
 // shifted adds base's elapsed time to start. Storing start minus base as a

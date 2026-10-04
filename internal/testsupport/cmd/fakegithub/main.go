@@ -18,7 +18,6 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
-	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
 func main() {
@@ -103,7 +102,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
 	rateLimit := flags.String("rate-limit", "5000,5000", "start X-RateLimit-Limit at `LIMIT,REMAINING`")
-	now := flags.String("now", recordings.DefaultNow().Format(time.RFC3339), "the RFC 3339 `time` that Date and X-RateLimit-Reset come from")
+	now := flags.String("now", "", "start the clock that Date and X-RateLimit-Reset come from at the RFC 3339 `time`, not the real time")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -143,10 +142,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "fakegithub: -rate-limit %q: want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT\n", *rateLimit)
 		return 2
 	}
-	start, err := time.Parse(time.RFC3339, *now)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "fakegithub: -now %q: want an RFC 3339 time\n", *now)
-		return 2
+	var clk clock.Clock = clock.Real{}
+	if *now != "" {
+		start, err := time.Parse(time.RFC3339, *now)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "fakegithub: -now %q: want an RFC 3339 time\n", *now)
+			return 2
+		}
+		clk = clock.Starting(start, clock.Real{})
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -166,7 +169,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	server.SetPageCap(*pageCap)
 	server.SetRateLimit(limit, remaining)
-	server.SetClock(clock.NewFake(start))
+	server.SetClock(clk)
 	for _, f := range fails {
 		server.Fail(f.host, f.match, f.fault)
 	}
