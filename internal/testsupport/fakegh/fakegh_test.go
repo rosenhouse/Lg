@@ -33,4 +33,15 @@ var _ = Describe("fake gh", Label("transport"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(out)).To(Equal("gho_rewritten\n"))
 	})
+
+	It("logs the GH_CONFIG_DIR of each run", func() {
+		gh := fakegh.New(GinkgoT().TempDir())
+
+		for _, dir := range []string{"/gh/one", ""} {
+			cmd := exec.CommandContext(GinkgoT().Context(), gh.Path, "auth", "token")
+			cmd.Env = []string{"GH_CONFIG_DIR=" + dir}
+			Expect(cmd.Run()).To(Succeed())
+		}
+		Expect(gh.ConfigDirs()).To(Equal([]string{"/gh/one", ""}))
+	})
 })
