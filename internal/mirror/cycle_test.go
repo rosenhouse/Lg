@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
@@ -92,7 +93,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			})
 
 			Expect(m.Cycle(context.Background())).To(MatchError(
-				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/lg"`))
+				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/Lg"`))
 			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 			Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 		},
@@ -101,12 +102,13 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the run listing and leaves tmp/ empty when the attempt is already on disk", func() {
+	It("requests only the repo and the run listing and leaves tmp/ empty when the attempt is already on disk", func() {
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		before := len(fake.Requests())
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
-		Expect(fake.Requests()[before:]).To(ConsistOf(
+		Expect(fake.Requests()[before:]).To(HaveExactElements(
+			HaveField("Path", "/repos/rosenhouse/lg"),
 			HaveField("Path", "/repos/rosenhouse/lg/actions/runs")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
@@ -134,6 +136,39 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		for i := range served {
 			Expect(stored[i]).To(MatchJSON(served[i]))
 		}
+	})
+
+	It("names the repo dir as GET /repos spells the repo's full name", Label("blocked"), func() {
+		fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusOK, Body: `{"full_name":"RosenHouse/LG"}`})
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(os.ReadDir(filepath.Join(root, "data/github.com"))).To(ConsistOf(HaveField("Name()", "RosenHouse")))
+		Expect(os.ReadDir(filepath.Join(root, "data/github.com/RosenHouse"))).To(ConsistOf(HaveField("Name()", "LG")))
+	})
+
+	DescribeTable("refuses a full name from GET /repos that is not owner/name and writes nothing", Label("blocked"),
+		func(fullName string) {
+			fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusOK, Body: `{"full_name":"` + fullName + `"}`})
+			editJSON(filepath.Join(recording, "run.json"), func(run map[string]any) {
+				run["repository"].(map[string]any)["full_name"] = fullName
+			})
+
+			Expect(m.Cycle(context.Background())).To(MatchError(MatchRegexp(`/repos/rosenhouse/lg: full_name %q is not owner/name$`, fullName)))
+			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+		},
+		Entry("a path out of the store", "../../escaped"),
+		Entry("a dot", "rosenhouse/."),
+		Entry("one part", "rosenhouse"),
+	)
+
+	It("blocks as auth when GET /repos returns 404, naming the host and repo", Label("blocked"), func() {
+		fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusNotFound})
+
+		Expect(m.Cycle(context.Background())).To(Equal(failure.Blocked{
+			Kind:   failure.Auth,
+			Detail: "github.com/rosenhouse/lg was not found, or the token lacks access to it",
+		}))
+		Expect(fake.Requests()).To(HaveLen(1))
 	})
 
 	It("publishes no attempt still in progress and requests none of its jobs", func() {
