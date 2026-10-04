@@ -383,7 +383,7 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
 	h.mu.Lock()
-	blocked, reserved := failure.Reserve(h.rateLimit, h.clock.Now())
+	blocked, reserved := failure.Reserve(h.rateLimit, h.clock.Now(), h.clock.Now())
 	h.mu.Unlock()
 	if reserved {
 		return blocked

@@ -78,7 +78,7 @@ func resetOf(header http.Header) (time.Time, bool) {
 
 // Reserve blocks until the reset once fewer than 10% of the rate limit's
 // requests remain, keeping the rest for the user's own use of the token.
-func Reserve(header http.Header, now time.Time) (Blocked, bool) {
+func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 	limit, errLimit := strconv.Atoi(header.Get("X-RateLimit-Limit"))
 	remaining, errRemaining := strconv.Atoi(header.Get("X-RateLimit-Remaining"))
 	reset, ok := resetOf(header)

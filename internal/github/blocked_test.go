@@ -124,17 +124,19 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		reset = start.Add(17 * time.Minute)
 	})
 
-	withRemaining := func(remaining string) http.HandlerFunc {
+	// withRemaining answers as a server whose clock reads start minus behind.
+	withRemaining := func(remaining string, behind time.Duration) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Date", start.Add(-behind).Format(http.TimeFormat))
 			w.Header().Set("X-RateLimit-Limit", "100")
 			w.Header().Set("X-RateLimit-Remaining", remaining)
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Add(-behind).Unix(), 10))
 			_, _ = w.Write([]byte(attemptBody))
 		}
 	}
 
 	It("sends no request after a response says fewer than 10% of the limit remain, until the reset", func(ctx SpecContext) {
-		server, served := counting(withRemaining("9"))
+		server, served := counting(withRemaining("9", 0))
 		clk := clock.NewFake(start)
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clk)
 
@@ -151,8 +153,23 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		Expect(served.Load()).To(BeEquivalentTo(2))
 	}, hopTimeout)
 
+	It("measures the reset from the response's Date", func(ctx SpecContext) {
+		server, served := counting(withRemaining("9", 2*time.Hour))
+		clk := clock.NewFake(start)
+		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clk)
+
+		Expect(getAttempt(ctx, client)).To(Succeed())
+		clk.Set(start.Add(time.Minute))
+		Expect(blockedOf(getAttempt(ctx, client))).To(HaveField("RetryAt", reset))
+		Expect(served.Load()).To(BeEquivalentTo(1))
+
+		clk.Set(reset)
+		Expect(getAttempt(ctx, client)).To(Succeed())
+		Expect(served.Load()).To(BeEquivalentTo(2))
+	}, hopTimeout)
+
 	It("keeps sending while 10% remain", func(ctx SpecContext) {
-		server, served := counting(withRemaining("10"))
+		server, served := counting(withRemaining("10", 0))
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.NewFake(start))
 
 		for range 3 {
