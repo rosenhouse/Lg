@@ -60,16 +60,17 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 
 // FromZipError tombstones artifact.zip when err shows GitHub has lost it for
 // good: a 410, or a 404, which is expired once expires_at has passed and
-// deleted before.
+// deleted before it or with no expires_at.
 func FromZipError(err error, expiresAt, now time.Time) (Tombstone, bool) {
 	statusErr, ok := permanent(err)
 	if !ok {
 		return Tombstone{}, false
 	}
 	notFound := errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrBlobMissing)
+	expired := !expiresAt.IsZero() && !expiresAt.After(now)
 	var reason Reason
 	switch {
-	case errors.Is(err, github.ErrGone), notFound && !expiresAt.After(now):
+	case errors.Is(err, github.ErrGone), notFound && expired:
 		reason = Expired
 	case notFound:
 		reason = Deleted

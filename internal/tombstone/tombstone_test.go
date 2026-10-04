@@ -138,6 +138,12 @@ var _ = Describe("FromZipError", Label("artifacts"), func() {
 		Entry("blob 404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, expiresAt.Add(-time.Second), tombstone.Deleted),
 	)
 
+	It("calls a 404 deleted when the artifact has no expires_at", func() {
+		t, ok := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, time.Time{}, expiresAt)
+		Expect(ok).To(BeTrue())
+		Expect(t.Reason).To(Equal(tombstone.Deleted))
+	})
+
 	DescribeTable("gives nothing for any other error",
 		func(other error) {
 			_, ok := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
