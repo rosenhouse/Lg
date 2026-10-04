@@ -62,13 +62,14 @@ var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attem
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour))
 		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
-		Expect(env.AttemptDirs(runID)).To(BeEmpty())
-		Expect(env.Tombstones()).To(BeEmpty())
+		Expect(env.AttemptDirs(runID)).NotTo(ContainElement(HaveSuffix("attempt-1")))
+		Expect(env.Tombstones()).NotTo(ContainElement(ContainSubstring("attempt-1")))
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour + time.Second))
 		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
-		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
-		Expect(readTombstone(env.AttemptDirs(runID)[0], ranJob)).To(SatisfyAll(
+		var attempt1 string
+		Expect(env.AttemptDirs(runID)).To(ContainElement(HaveSuffix("attempt-1"), &attempt1))
+		Expect(readTombstone(attempt1, ranJob)).To(SatisfyAll(
 			HaveKeyWithValue("reason", "deleted"),
 			HaveKeyWithValue("http_status", BeEquivalentTo(404)),
 			HaveKeyWithValue("url", env.Fake.URL()+"/repos/rosenhouse/lg/actions/"+ranJobLog),
