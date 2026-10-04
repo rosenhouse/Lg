@@ -1,12 +1,10 @@
 package mirror
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
+	"maps"
 	"path/filepath"
 	"slices"
 
@@ -21,8 +19,7 @@ import (
 // jobs deletes a run's artifacts, so the next listing may not name one that
 // failed.
 type pending struct {
-	store *store.Store
-	path  string
+	file  stateFile
 	hosts map[string]map[int64]pendingRun
 	// runs are the host's runs.
 	runs map[int64]pendingRun
@@ -39,39 +36,28 @@ type pendingRun struct {
 // the file has none for the host. One that does not parse is moved aside,
 // and loadPending gives the parse error as discarded.
 func loadPending(s *store.Store, host string) (p *pending, discarded, err error) {
-	path := filepath.Join(s.State(), "pending-artifacts.json")
-	hosts, discarded, err := readPending(s, path)
+	file := newStateFile(s, "pending-artifacts.json")
+	hosts := map[string]map[int64]pendingRun{}
+	discarded, err = file.read(func(raw []byte) error {
+		var decoded map[string]map[int64]pendingRun
+		if err := decodePending(raw, &decoded); err != nil {
+			return err
+		}
+		if decoded != nil {
+			hosts = decoded
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	if hosts == nil {
-		hosts = map[string]map[int64]pendingRun{}
-	}
-	return &pending{store: s, path: path, hosts: hosts, runs: hosts[host]}, discarded, nil
+	return &pending{file: file, hosts: hosts, runs: hosts[host]}, discarded, nil
 }
 
 // restore records runs as the host's, and saves the file.
 func (p *pending) restore(host string, runs map[int64]pendingRun) error {
 	p.hosts[host], p.runs = runs, runs
 	return p.save()
-}
-
-func readPending(s *store.Store, path string) (hosts map[string]map[int64]pendingRun, discarded, err error) {
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := decodePending(raw, &hosts); err != nil {
-		aside := path + ".corrupt"
-		if err := s.Rename(path, aside); err != nil {
-			return nil, nil, err
-		}
-		return nil, &corruptFileError{Path: path, Err: fmt.Errorf("moved to %s: %w", aside, err)}, nil
-	}
-	return hosts, nil, nil
 }
 
 func decodePending(raw []byte, hosts *map[string]map[int64]pendingRun) error {
@@ -112,14 +98,20 @@ func ids(candidates []candidate) []int64 {
 	return ids
 }
 
-func (p *pending) save() error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(p.hosts); err != nil {
-		return err
+func (p *pending) save() error { return p.file.write(p.hosts) }
+
+// unlisted gives the repo's runs with pending artifacts that listed does not
+// name, newest first, as last listed. They may be deleted.
+func (p *pending) unlisted(listed []github.Run, repo github.Repo) []github.Run {
+	var runs []github.Run
+	for _, id := range slices.Backward(slices.Sorted(maps.Keys(p.runs))) {
+		run := github.Run{Run: p.runs[id].Run}
+		named := slices.ContainsFunc(listed, func(listed github.Run) bool { return listed.ID == id })
+		if !named && ofRepo(run, repo) {
+			runs = append(runs, run)
+		}
 	}
-	return p.store.ReplaceFile(p.path, buf.Bytes())
+	return runs
 }
 
 // loadPending loads the host's pending runs. When the file has none for the

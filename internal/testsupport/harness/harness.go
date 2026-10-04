@@ -115,3 +115,11 @@ func (e *Env) SetNow(now time.Time, fake *fakegithub.Server) {
 	e.Setenv("LG_TEST_NOW", now.Format(time.RFC3339))
 	fake.SetClock(clock.NewFake(now))
 }
+
+// ConfigFile is the path lg reads config.yaml from.
+func (e *Env) ConfigFile() string {
+	ginkgo.GinkgoHelper()
+	path, err := config.File(e.vars)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	return path
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing/fstest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -291,5 +292,46 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			))
 			Expect(field(run, "run.json", "pull_requests")).To(BeEmpty())
 		})
+	})
+})
+
+var _ = Describe("CreatedAt", Label("discovery"), func() {
+	It("moves every time in the run's JSON files by the same amount, so that the run was created then", func() {
+		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), 7)
+		at := time.Date(2026, 9, 3, 14, 22, 54, 0, time.UTC)
+
+		moved := scenario.CreatedAt(run, at)
+
+		Expect(field(moved, "run.json", "created_at")).To(Equal("2026-09-03T14:22:54Z"))
+		Expect(field(moved, "run.json", "run_started_at")).To(Equal("2026-09-03T14:25:08Z"))
+		Expect(field(moved, "attempt-1/attempt.json", "updated_at")).To(Equal("2026-09-03T14:24:12Z"))
+		Expect(jobs(moved, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "pass"), HaveKeyWithValue("started_at", "2026-09-03T14:22:57Z"))))
+		Expect(field(run, "run.json", "created_at")).To(Equal("2026-10-03T14:22:54Z"))
+	})
+})
+
+var _ = Describe("ListedRun", Label("discovery"), func() {
+	It("is a completed run of rosenhouse/Lg with the id and created_at given", func() {
+		var run map[string]any
+		Expect(json.Unmarshal(scenario.ListedRun(42, time.Date(2026, 9, 3, 14, 22, 54, 0, time.UTC)), &run)).To(Succeed())
+		Expect(run).To(SatisfyAll(
+			HaveKeyWithValue("id", BeEquivalentTo(42)),
+			HaveKeyWithValue("created_at", "2026-09-03T14:22:54Z"),
+			HaveKeyWithValue("status", "completed"),
+			HaveKeyWithValue("repository", HaveKeyWithValue("full_name", "rosenhouse/Lg")),
+		))
+	})
+})
+
+var _ = Describe("QueuedRun", Label("discovery"), func() {
+	It("is a queued run with no conclusion", func() {
+		var run map[string]any
+		Expect(json.Unmarshal(scenario.QueuedRun(42, time.Date(2026, 9, 3, 14, 22, 54, 0, time.UTC)), &run)).To(Succeed())
+		Expect(run).To(SatisfyAll(
+			HaveKeyWithValue("id", BeEquivalentTo(42)),
+			HaveKeyWithValue("created_at", "2026-09-03T14:22:54Z"),
+			HaveKeyWithValue("status", "queued"),
+			HaveKeyWithValue("conclusion", BeNil()),
+		))
 	})
 })

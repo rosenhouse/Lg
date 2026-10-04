@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net"
 	"net/url"
@@ -24,6 +25,10 @@ type Config struct {
 	Repo   string `yaml:"repo"`
 	APIURL string `yaml:"api_url"`
 
+	SyncInterval     Duration `yaml:"sync_interval"`
+	Backfill         Duration `yaml:"backfill"`
+	Retention        Duration `yaml:"retention"`
+	DiskCap          Bytes    `yaml:"disk_cap"`
 	LogGrace         Duration `yaml:"log_grace"`
 	ArtifactMaxBytes Bytes    `yaml:"artifact_max_bytes"`
 }
@@ -58,12 +63,25 @@ func (b *Bytes) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// Duration is a Go duration such as 1h or 0s, or a bare 0.
+// Duration is a Go duration such as 1h or 0s, a whole number of days such
+// as 7d, or a bare 0.
 type Duration time.Duration
+
+const day = 24 * time.Hour
+
+var days = regexp.MustCompile(`^[0-9]+d$`)
 
 func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode {
 		return fmt.Errorf("line %d: want a duration such as 1h, not %s", node.Line, node.ShortTag())
+	}
+	if strings.HasSuffix(node.Value, "d") {
+		n, err := strconv.ParseInt(strings.TrimSuffix(node.Value, "d"), 10, 64)
+		if !days.MatchString(node.Value) || err != nil || n > int64(math.MaxInt64/day) {
+			return fmt.Errorf("line %d: want a duration such as 7d or 36h, not %q", node.Line, node.Value)
+		}
+		*d = Duration(time.Duration(n) * day)
+		return nil
 	}
 	parsed, err := time.ParseDuration(node.Value)
 	if err != nil {
@@ -73,14 +91,40 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+// String prints whole days as days, and otherwise as Go does without zero parts.
+func (d Duration) String() string {
+	if d != 0 && time.Duration(d)%day == 0 {
+		return strconv.FormatInt(int64(time.Duration(d)/day), 10) + "d"
+	}
+	s := time.Duration(d).String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
 var hostName = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func Defaults() Config {
-	return Config{Host: "github.com", LogGrace: Duration(time.Hour), ArtifactMaxBytes: 500_000_000}
+	return Config{
+		Host:             "github.com",
+		SyncInterval:     Duration(10 * time.Minute),
+		Backfill:         Duration(7 * day),
+		Retention:        Duration(90 * day),
+		DiskCap:          50_000_000_000,
+		ArtifactMaxBytes: 500_000_000,
+		LogGrace:         Duration(time.Hour),
+	}
 }
 
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Config{}, Error(path + " does not exist; run `lg init --repo owner/name`")
+	}
 	if err != nil {
 		return Config{}, Error(err.Error())
 	}
@@ -88,27 +132,58 @@ func Load(path string) (Config, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-		return Config{}, Error(fmt.Sprintf("%s: %s", path, err))
+		return Config{}, Error(fmt.Sprintf("%s: %s", path, describe(err)))
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return Config{}, Error(path + ": more than one YAML document")
 	}
 	cfg.Host = strings.ToLower(cfg.Host)
-	if !hostName.MatchString(cfg.Host) {
-		return Config{}, Error(fmt.Sprintf("host must be a host name: %q", cfg.Host))
-	}
-	if !layout.IsRepo(cfg.Repo) {
-		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
-	}
-	if cfg.LogGrace < 0 {
-		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", time.Duration(cfg.LogGrace)))
-	}
-	if cfg.ArtifactMaxBytes < 1 {
-		return Config{}, Error("artifact_max_bytes must be at least 1B")
-	}
-	if cfg.APIURL != "" {
-		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {
-			return Config{}, err
-		}
+	if err := Validate(cfg); err != nil {
+		return Config{}, Error(fmt.Sprintf("%s: %s", path, err))
 	}
 	return cfg, nil
+}
+
+var unknownField = regexp.MustCompile(`^line (\d+): field (.+) not found in type \S+$`)
+
+// describe names each unknown key in a yaml.TypeError, and gives any other error as is.
+func describe(err error) string {
+	var typeErr *yaml.TypeError
+	if !errors.As(err, &typeErr) {
+		return err.Error()
+	}
+	messages := make([]string, len(typeErr.Errors))
+	for i, message := range typeErr.Errors {
+		messages[i] = unknownField.ReplaceAllString(message, `line $1: unknown key "$2"`)
+	}
+	return strings.Join(messages, "; ")
+}
+
+// Validate returns an Error naming the first key whose value lg cannot use.
+func Validate(cfg Config) error {
+	switch {
+	case !hostName.MatchString(cfg.Host):
+		return Error(fmt.Sprintf("host must be a host name: %q", cfg.Host))
+	case !layout.IsRepo(cfg.Repo):
+		return Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
+	case cfg.SyncInterval < Duration(time.Minute):
+		return Error(fmt.Sprintf("sync_interval must be at least 1m: %s", cfg.SyncInterval))
+	case cfg.Backfill <= 0:
+		return Error(fmt.Sprintf("backfill must be positive: %s", cfg.Backfill))
+	case cfg.Retention <= 0:
+		return Error(fmt.Sprintf("retention must be positive: %s", cfg.Retention))
+	case cfg.Backfill > cfg.Retention:
+		return Error(fmt.Sprintf("backfill must not exceed retention: %s > %s", cfg.Backfill, cfg.Retention))
+	case cfg.LogGrace < 0:
+		return Error(fmt.Sprintf("log_grace must not be negative: %s", cfg.LogGrace))
+	case cfg.DiskCap < 1:
+		return Error("disk_cap must be at least 1B")
+	case cfg.ArtifactMaxBytes < 1:
+		return Error("artifact_max_bytes must be at least 1B")
+	case cfg.APIURL != "":
+		return checkAPIURL(cfg.APIURL, cfg.Host)
+	}
+	return nil
 }
 
 // checkAPIURL accepts only an api_url that can be given host's token.

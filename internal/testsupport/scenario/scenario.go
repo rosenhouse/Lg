@@ -101,21 +101,7 @@ func NextDayRerun(r Run, attempt int) Run {
 		RunStartedAt time.Time `json:"run_started_at"`
 	}
 	mustUnmarshal(r.Files[attemptFile(attempt, "attempt.json")].Data, &started)
-	out := r.copy()
-	for name, file := range out.Files {
-		if path.Ext(name) != ".json" {
-			continue
-		}
-		file.Data = timestamp.ReplaceAllFunc(file.Data, func(quoted []byte) []byte {
-			var t time.Time
-			mustUnmarshal(quoted, &t)
-			if t.Before(started.RunStartedAt) {
-				return quoted
-			}
-			return []byte(t.Add(24 * time.Hour).Format(`"2006-01-02T15:04:05Z"`))
-		})
-	}
-	return out
+	return r.shiftTimes(func(t time.Time) bool { return !t.Before(started.RunStartedAt) }, 24*time.Hour)
 }
 
 // RenameWorkflow renames the workflow to name in run.json, in attempt and
@@ -280,4 +266,59 @@ func mustMarshal(v any) []byte {
 		panic(err)
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+}
+
+// Day is 24 hours, for times relative to recordings.DefaultNow.
+const Day = 24 * time.Hour
+
+// fixtureRun is the recorded run that specs clone.
+const fixtureRun = 37129390741
+
+// CloneAt is fixtureRun at stage, as run id created at the given time.
+func CloneAt(id int64, stage string, at time.Time) Run {
+	return CreatedAt(Clone(Recorded(fixtureRun, stage), id), at)
+}
+
+// CreatedAt moves every time in r's JSON files by the same amount, so that
+// the run was created at the given time.
+func CreatedAt(r Run, at time.Time) Run {
+	var created struct {
+		CreatedAt time.Time `json:"created_at"`
+	}
+	mustUnmarshal(r.Files["run.json"].Data, &created)
+	return r.shiftTimes(func(time.Time) bool { return true }, at.Sub(created.CreatedAt))
+}
+
+// shiftTimes moves every time in r's JSON files that moved accepts by delta.
+func (r Run) shiftTimes(moved func(time.Time) bool, delta time.Duration) Run {
+	out := r.copy()
+	for name, file := range out.Files {
+		if path.Ext(name) != ".json" {
+			continue
+		}
+		file.Data = timestamp.ReplaceAllFunc(file.Data, func(quoted []byte) []byte {
+			var t time.Time
+			mustUnmarshal(quoted, &t)
+			if !moved(t) {
+				return quoted
+			}
+			return []byte(t.Add(delta).Format(`"2006-01-02T15:04:05Z"`))
+		})
+	}
+	return out
+}
+
+// ListedRun is the body of a completed run with only the fields a listing needs.
+func ListedRun(id int64, createdAt time.Time) json.RawMessage {
+	return listedRun(id, createdAt, "completed", `"success"`)
+}
+
+// QueuedRun is the body of a queued run with only the fields a listing needs.
+func QueuedRun(id int64, createdAt time.Time) json.RawMessage {
+	return listedRun(id, createdAt, "queued", "null")
+}
+
+func listedRun(id int64, createdAt time.Time, status, conclusion string) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":%q,"status":%q,"conclusion":%s,"run_attempt":1,"repository":{"full_name":"rosenhouse/Lg"}}`,
+		id, createdAt.UTC().Format(time.RFC3339), status, conclusion))
 }

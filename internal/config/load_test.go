@@ -8,9 +8,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/config"
 )
+
+// invalid matches the config.Error Load gives, naming the file, for a value it cannot use.
+func invalid(message string) types.GomegaMatcher {
+	return And(BeAssignableToTypeOf(config.Error("")), MatchError(HaveSuffix("config.yaml: "+message)))
+}
 
 var _ = Describe("Load", Label("sync"), func() {
 	write := func(yaml string) string {
@@ -22,7 +28,9 @@ var _ = Describe("Load", Label("sync"), func() {
 	It("reads host, repo and api_url", func() {
 		cfg, err := config.Load(write("host: ghe.corp.example\nrepo: platform/infra\napi_url: http://127.0.0.1:1/api/v3\n"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour), ArtifactMaxBytes: 500_000_000}))
+		want := config.Defaults()
+		want.Host, want.Repo, want.APIURL = "ghe.corp.example", "platform/infra", "http://127.0.0.1:1/api/v3"
+		Expect(cfg).To(Equal(want))
 	})
 
 	It("defaults host to github.com", func() {
@@ -59,7 +67,7 @@ var _ = Describe("Load", Label("sync"), func() {
 
 	It("rejects a negative log_grace", Label("failures"), func() {
 		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: -1m\n"))
-		Expect(err).To(MatchError(config.Error(`log_grace must not be negative: "-1m0s"`)))
+		Expect(err).To(invalid("log_grace must not be negative: -1m"))
 	})
 
 	It("defaults artifact_max_bytes to 500MB", Label("artifacts"), func() {
@@ -101,16 +109,21 @@ var _ = Describe("Load", Label("sync"), func() {
 	DescribeTable("rejects an artifact_max_bytes of 0", Label("artifacts"),
 		func(zero string) {
 			_, err := config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + zero + "\n"))
-			Expect(err).To(MatchError(config.Error("artifact_max_bytes must be at least 1B")))
+			Expect(err).To(invalid("artifact_max_bytes must be at least 1B"))
 		},
 		Entry("bare", "0"),
 		Entry("with a unit", "0GB"),
 	)
 
+	It("rejects a disk_cap of 0", Label("discovery"), func() {
+		_, err := config.Load(write("repo: rosenhouse/lg\ndisk_cap: 0\n"))
+		Expect(err).To(invalid("disk_cap must be at least 1B"))
+	})
+
 	DescribeTable("rejects a repo that is not owner/name",
 		func(repo string) {
 			_, err := config.Load(write("repo: '" + repo + "'\n"))
-			Expect(err).To(MatchError(config.Error(`repo must be owner/name: "` + repo + `"`)))
+			Expect(err).To(invalid(`repo must be owner/name: "` + repo + `"`))
 		},
 		Entry("empty", ""),
 		Entry("no owner", "lg"),
@@ -127,7 +140,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	DescribeTable("treats a file with no YAML document as having no repo",
 		func(yaml string) {
 			_, err := config.Load(write(yaml))
-			Expect(err).To(MatchError(config.Error(`repo must be owner/name: ""`)))
+			Expect(err).To(invalid(`repo must be owner/name: ""`))
 		},
 		Entry("empty", ""),
 		Entry("only a comment", "# repo: rosenhouse/lg\n"),
@@ -142,7 +155,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	DescribeTable("rejects a host that is not a host name",
 		func(host string) {
 			_, err := config.Load(write("host: '" + host + "'\nrepo: rosenhouse/lg\n"))
-			Expect(err).To(MatchError(config.Error(`host must be a host name: "` + host + `"`)))
+			Expect(err).To(invalid(`host must be a host name: "` + host + `"`))
 		},
 		Entry("empty", ""),
 		Entry("a scheme", "https://github.com"),
@@ -153,7 +166,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	DescribeTable("rejects an api_url that is not an absolute http or https URL without user info, query or fragment, hiding any password",
 		func(apiURL, shown string) {
 			_, err := config.Load(write("repo: rosenhouse/lg\napi_url: '" + apiURL + "'\n"))
-			Expect(err).To(MatchError(config.Error(`api_url must be an http or https URL with no user info, query or fragment: "` + shown + `"`)))
+			Expect(err).To(invalid(`api_url must be an http or https URL with no user info, query or fragment: "` + shown + `"`))
 		},
 		Entry("no scheme", "127.0.0.1:18301", "127.0.0.1:18301"),
 		Entry("another scheme", "ftp://127.0.0.1", "ftp://127.0.0.1"),
@@ -181,7 +194,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	DescribeTable("rejects an api_url that could send host's token elsewhere", Label("transport"),
 		func(host, apiURL, reason string) {
 			_, err := config.Load(write("host: " + host + "\nrepo: rosenhouse/lg\napi_url: '" + apiURL + "'\n"))
-			Expect(err).To(MatchError(config.Error(reason + `: "` + apiURL + `"`)))
+			Expect(err).To(invalid(reason + `: "` + apiURL + `"`))
 		},
 		Entry("another host", "github.com", "https://ghe.corp.example/api/v3", "api_url must be on host, api.<host> or a loopback address"),
 		Entry("a subdomain of api.<host>", "github.com", "https://x.api.github.com", "api_url must be on host, api.<host> or a loopback address"),
@@ -192,18 +205,22 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("http to host", "ghe.corp.example", "http://ghe.corp.example/api/v3", "api_url must use https unless it is on a loopback address"),
 	)
 
-	It("rejects an unknown key", func() {
+	It("rejects an unknown key, naming it and its line", func() {
 		path := write("repo: rosenhouse/lg\napi-url: http://127.0.0.1:1\n")
 		_, err := config.Load(path)
-		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
-		Expect(err).To(MatchError(And(HavePrefix(path+": "), ContainSubstring("api-url"))))
+		Expect(err).To(MatchError(config.Error(path + `: line 2: unknown key "api-url"`)))
 	})
 
-	It("returns a config.Error for a missing file", func() {
+	It("names every unknown key", func() {
+		path := write("repo: rosenhouse/lg\nfoo: 1\nHost: github.com\n")
+		_, err := config.Load(path)
+		Expect(err).To(MatchError(config.Error(path + `: line 2: unknown key "foo"; line 3: unknown key "Host"`)))
+	})
+
+	It("tells how to create a missing file", func() {
 		path := filepath.Join(GinkgoT().TempDir(), "missing.yaml")
 		_, err := config.Load(path)
-		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
-		Expect(err).To(MatchError(ContainSubstring(path)))
+		Expect(err).To(MatchError(config.Error(path + " does not exist; run `lg init --repo owner/name`")))
 	})
 
 	It("returns a config.Error naming the file for invalid YAML", func() {

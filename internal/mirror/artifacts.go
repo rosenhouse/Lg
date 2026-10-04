@@ -38,14 +38,24 @@ type candidate struct {
 }
 
 // syncArtifacts lists the run's artifacts into run.artifacts, which stays nil
-// when ListArtifacts fails, and publishes its retry set. It returns the
-// errors that runScoped accepts, and stops at any other.
+// when ListArtifacts fails, and publishes its retry set. A run complete on
+// disk with nothing to retry needs no listing. It returns the errors that
+// runScoped accepts, and stops at any other.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
 	onDisk, err := m.attemptsOnDisk(run.dir)
 	if err != nil {
 		return nil, err
 	}
 	run.planned = Plan(run.Run, onDisk)
+	if run.Status == "completed" && len(run.planned) == 0 {
+		retry, unreadable, err := m.retrySet(run.dir, onDisk, nil, p.runs[run.ID].Artifacts)
+		if err != nil {
+			return nil, err
+		}
+		if len(retry) == 0 && unreadable == nil {
+			return nil, nil
+		}
+	}
 	listing, err := m.listArtifacts(ctx, gh, run)
 	var failed []error
 	switch {

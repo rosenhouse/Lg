@@ -71,6 +71,8 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			Clock:            clock.NewFake(harness.DefaultNow()),
 			LogGrace:         time.Hour,
 			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
+			Backfill:         time.Duration(config.Defaults().Backfill),
+			Retention:        time.Duration(config.Defaults().Retention),
 		}
 	})
 
@@ -137,7 +139,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the repo, the run listing and the run's artifacts listing, and writes nothing, when the attempt and artifacts are already on disk", func() {
+	It("requests only the repo and the run listings, and writes nothing, when the attempt and artifacts are already on disk", func() {
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		before := len(fake.Requests())
 		fsys := faultfs.New()
@@ -147,10 +149,8 @@ var _ = Describe("Cycle", Label("sync"), func() {
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		Expect(fsys.Journal()).To(BeEmpty())
-		Expect(fake.Requests()[before:]).To(HaveExactElements(
-			HaveField("Path", "/repos/rosenhouse/lg"),
-			HaveField("Path", "/repos/rosenhouse/lg/actions/runs"),
-			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts")))
+		Expect(fake.Requests()[before:]).To(HaveLen(2+len(mirror.NonTerminal)), "the repo, the backfill window and one listing per non-terminal status")
+		Expect(fake.Requests()[before:]).To(HaveEach(HaveField("Path", BeElementOf("/repos/rosenhouse/lg", "/repos/rosenhouse/lg/actions/runs"))))
 	})
 
 	It("removes its staged unit when a log download fails", Label("store"), func() {

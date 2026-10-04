@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -59,7 +60,7 @@ type Job struct {
 
 type Client interface {
 	GetRepo(ctx context.Context) (Repo, error)
-	ListRuns(ctx context.Context) ([]Run, error)
+	ListRuns(ctx context.Context, q RunQuery) (RunListing, error)
 	GetRun(ctx context.Context, runID int64) (Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
@@ -261,18 +262,79 @@ func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	return repo, nil
 }
 
-func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
-	raws, _, _, err := h.list(ctx, h.repoURL+"/actions/runs?per_page=100", "workflow_runs")
-	if err != nil {
-		return nil, err
+// RunQuery filters a run listing: the runs created in [From, To], when
+// set, with Status, when set.
+type RunQuery struct {
+	From, To time.Time
+	Status   string
+	PerPage  int
+	Page     int
+}
+
+// Values encodes the query as GitHub reads it, leaving out what is unset.
+func (q RunQuery) Values() url.Values {
+	v := url.Values{}
+	if !q.From.IsZero() || !q.To.IsZero() {
+		v.Set("created", q.From.UTC().Format(time.RFC3339)+".."+q.To.UTC().Format(time.RFC3339))
 	}
-	runs := make([]Run, len(raws))
-	for i, raw := range raws {
+	if q.Status != "" {
+		v.Set("status", q.Status)
+	}
+	if q.PerPage > 0 {
+		v.Set("per_page", strconv.Itoa(q.PerPage))
+	}
+	if q.Page > 0 {
+		v.Set("page", strconv.Itoa(q.Page))
+	}
+	return v
+}
+
+// Narrowable reports whether a capped listing of q can be narrowed: by a
+// created range when it has none, and by halving one whose bounds are
+// different seconds, since GitHub filters created at whole seconds.
+func (q RunQuery) Narrowable() bool {
+	return q.From.IsZero() && q.To.IsZero() || q.To.After(q.From)
+}
+
+// ListingCap is the most results GitHub serves for a filtered run listing.
+const ListingCap = 1000
+
+// RunListing is a run listing: its runs newest first, GitHub's total_count,
+// and whether GitHub serves fewer runs than Total. Total reaches ListingCap
+// on a capped listing and the pages read were cut short: by ListRuns at the
+// first page when the query is Narrowable, or by GitHub at ListingCap runs.
+// A listing whose last page has no Link next is complete whatever its
+// total_count says.
+type RunListing struct {
+	Runs   []Run
+	Total  int
+	Capped bool
+}
+
+// ListRuns lists the runs q selects. PerPage defaults to 100. A listing
+// whose total_count reaches ListingCap stops after its first page when q is
+// Narrowable, since GitHub serves no more of it and the caller narrows q;
+// otherwise it pages through what GitHub serves.
+func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
+	if q.PerPage == 0 {
+		q.PerPage = 100
+	}
+	limit := 0
+	if q.Narrowable() {
+		limit = ListingCap
+	}
+	l, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", limit)
+	if err != nil {
+		return RunListing{}, err
+	}
+	runs := make([]Run, len(l.elements))
+	for i, raw := range l.elements {
 		if err := json.Unmarshal(raw, &runs[i]); err != nil {
-			return nil, err
+			return RunListing{}, err
 		}
 	}
-	return runs, nil
+	capped := l.total >= ListingCap && (l.more || len(runs) >= ListingCap)
+	return RunListing{Runs: runs, Total: l.total, Capped: capped}, nil
 }
 
 func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
@@ -349,16 +411,16 @@ func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Sour
 // listByID lists the elements of field, which decode reads with their ids.
 // It refuses a listing short of its total_count or one that repeats an id.
 func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, decode func(json.RawMessage) (T, int64, error)) ([]T, Source, error) {
-	raws, total, pages, err := h.list(ctx, listURL, field)
+	l, err := h.list(ctx, listURL, field, 0)
 	if err != nil {
 		return nil, Source{}, err
 	}
-	if total > len(raws) {
-		return nil, Source{}, malformed(listURL, "listed %d of %d %s", len(raws), total, field)
+	if l.total > len(l.elements) {
+		return nil, Source{}, malformed(listURL, "listed %d of %d %s", len(l.elements), l.total, field)
 	}
-	elements := make([]T, len(raws))
+	elements := make([]T, len(l.elements))
 	listed := map[int64]bool{}
-	for i, raw := range raws {
+	for i, raw := range l.elements {
 		element, id, err := decode(raw)
 		if err != nil {
 			return nil, Source{}, malformed(listURL, "%w", err)
@@ -372,7 +434,7 @@ func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, 
 		listed[id] = true
 		elements[i] = element
 	}
-	return elements, Source{URL: listURL, Pages: pages}, nil
+	return elements, Source{URL: listURL, Pages: l.pages}, nil
 }
 
 // DownloadArtifact copies the artifact's zip to w, following GitHub's redirect to blob storage.
@@ -384,11 +446,18 @@ func (h *HTTP) ArtifactZipURL(artifactID int64) string {
 	return h.repoURL + fmt.Sprintf("/actions/artifacts/%d/zip", artifactID)
 }
 
-// list GETs a listing and every page its Link next URLs lead to, returning
-// the elements of field, the total_count and the number of pages.
-func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMessage, int, int, error) {
-	var elements []json.RawMessage
-	var total int
+// listing is what list read: the elements of its field over pages pages,
+// the total_count, and whether it left a Link next unread.
+type listing struct {
+	elements     []json.RawMessage
+	total, pages int
+	more         bool
+}
+
+// list GETs a listing and every page its Link next URLs lead to. It stops
+// after a page whose total_count reaches limit, when limit is set.
+func (h *HTTP) list(ctx context.Context, firstURL, field string, limit int) (listing, error) {
+	var l listing
 	followed := map[string]bool{}
 	for pageURL := firstURL; pageURL != ""; {
 		followed[pageURL] = true
@@ -400,26 +469,31 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMess
 			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 				return &MalformedError{Err: err}
 			}
-			if err := unmarshalField(page, "total_count", &total); err != nil {
+			if err := unmarshalField(page, "total_count", &l.total); err != nil {
 				return err
 			}
 			return unmarshalField(page, field, &items)
 		})
 		if err != nil {
-			return nil, 0, 0, err
+			return listing{}, err
 		}
 		if next != "" {
 			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
-				return nil, 0, 0, malformed(pageURL, "Link next %s is not on the API host", next)
+				return listing{}, malformed(pageURL, "Link next %s is not on the API host", next)
 			}
 			if followed[next] {
-				return nil, 0, 0, malformed(pageURL, "Link next %s repeats an earlier page", next)
+				return listing{}, malformed(pageURL, "Link next %s repeats an earlier page", next)
 			}
 		}
-		elements = append(elements, items...)
+		l.elements = append(l.elements, items...)
 		pageURL = next
+		if limit > 0 && l.total >= limit {
+			l.more = next != ""
+			break
+		}
 	}
-	return elements, total, len(followed), nil
+	l.pages = len(followed)
+	return l, nil
 }
 
 func unmarshalField(object map[string]json.RawMessage, field string, v any) error {
