@@ -9,12 +9,14 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -300,3 +302,11 @@ func recordingsDir() string {
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "recordings")
 }
+
+type createdRange struct{}
+
+func (createdRange) Contains(time.Time) bool { return false }
+
+func parseCreated(string) (createdRange, error) { return createdRange{}, nil }
+
+func linkHeader(*url.URL, int, int) string { return "" }

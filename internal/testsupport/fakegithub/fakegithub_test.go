@@ -231,8 +231,8 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		routes := map[string]int{
-			"/repos/rosenhouse/lg":                           http.StatusOK,
-			"/repos/rosenhouse/lg/actions/runs?per_page=100": http.StatusOK,
+			"/repos/rosenhouse/lg":                               http.StatusOK,
+			"/repos/rosenhouse/lg/actions/runs?per_page=100":     http.StatusOK,
 			"/repos/rosenhouse/lg/actions/artifacts/11276401837": http.StatusOK,
 		}
 		for _, line := range strings.Split(strings.TrimSuffix(string(status), "\n"), "\n") {
@@ -282,13 +282,13 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		for id := range before {
 			Expect(after).NotTo(HaveKey(id))
 			Expect(fetch(artifact(json.RawMessage(id))).status).To(Equal(http.StatusNotFound), id)
-			Expect(fetch(artifact(json.RawMessage(id)) + "/zip").status).To(Equal(http.StatusNotFound), id)
+			Expect(fetch(artifact(json.RawMessage(id))+"/zip").status).To(Equal(http.StatusNotFound), id)
 		}
 		for id, meta := range after {
 			resp := fetch(artifact(json.RawMessage(id)))
 			Expect(resp.status).To(Equal(http.StatusOK), id)
 			Expect(resp.body).To(MatchJSON(meta))
-			Expect(fetch(artifact(json.RawMessage(id)) + "/zip").status).To(Equal(http.StatusFound), id)
+			Expect(fetch(artifact(json.RawMessage(id))+"/zip").status).To(Equal(http.StatusFound), id)
 		}
 	})
 
