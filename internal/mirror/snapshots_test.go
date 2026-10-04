@@ -196,3 +196,20 @@ var _ = Describe("an artifact published from state/pending-artifacts.json", Labe
 		Expect(string(raw)).To(ContainSubstring(`"head_branch": "fix&<feat>"`))
 	}, cycleTimeout)
 })
+
+var _ = Describe("mirror.Cycle when state/pending-artifacts.json is not JSON", Label("artifacts"), func() {
+	It("moves it aside, reports it, and syncs as if it were empty", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		pending := filepath.Join(env.State(), "pending-artifacts.json")
+		Expect(os.WriteFile(pending, nil, 0o644)).To(Succeed())
+
+		err := env.Sync(ctx)
+		Expect(err).To(MatchError(ContainSubstring(pending)))
+		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(pending + ".corrupt").To(BeARegularFile())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+	}, cycleTimeout)
+})

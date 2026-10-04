@@ -21,6 +21,7 @@ import (
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
@@ -96,6 +97,17 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(m.Cycle(context.Background())).To(MatchError("ArtifactMaxBytes must be at least 1, not 0"))
 		Expect(tokens.hosts).To(BeEmpty())
 		Expect(fake.Requests()).To(BeEmpty())
+	})
+
+	It("replaces state/pending-artifacts.json through the store's FS", Label("artifacts"), func() {
+		fsys := faultfs.New()
+		var err error
+		m.Store, err = store.OpenFS(fsys, root)
+		Expect(err).NotTo(HaveOccurred())
+		pending := filepath.Join(root, "state", "pending-artifacts.json")
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending + ".tmp", To: pending}))
 	})
 
 	It("returns an error and sends no request when State is not set", Label("artifacts"), func() {
