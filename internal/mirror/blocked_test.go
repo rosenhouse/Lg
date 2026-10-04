@@ -54,7 +54,9 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		inject(env)
 
-		Expect(blockedOf(env.Mirror.Cycle(ctx))).To(want)
+		err := env.Mirror.Cycle(ctx)
+		Expect(err).To(BeAssignableToTypeOf(failure.Blocked{}))
+		Expect(err).To(want)
 		Expect(requestsEndingIn(env, "/attempts/1")).To(Or(BeEmpty(), HaveLen(1)))
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
@@ -81,6 +83,11 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 	Entry("secondary-limit 403 with X-RateLimit-Remaining above 0, no Retry-After and 'secondary rate limit' in its message: rate_limit 60s later",
 		failAttempts(fakegithub.Fault{Status: http.StatusForbidden, Headers: map[string]string{"X-RateLimit-Remaining": "4321"}, Body: secondaryLimit}),
 		blockedAs(failure.RateLimit, harness.DefaultNow().Add(time.Minute)), cycleTimeout),
+	Entry("429 on a log, once its unit is staged: rate_limit",
+		func(env *harness.InProcessEnv) {
+			env.Fake.Fail("api", "/logs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "30"}})
+		},
+		blockedAs(failure.RateLimit, harness.DefaultNow().Add(30*time.Second)), cycleTimeout),
 	Entry("refused connection: unreachable, naming the host",
 		func(env *harness.InProcessEnv) { env.Fake.Close() },
 		SatisfyAll(blockedAs(failure.Unreachable, time.Time{}), HaveField("Detail", MatchRegexp(`127\.0\.0\.1:\d+`))), cycleTimeout),
