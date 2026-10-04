@@ -19,27 +19,6 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
-const day = 24 * time.Hour
-
-// cloneAt is the fixture run at after-attempt-1, as run id created at the given time.
-func cloneAt(id int64, at time.Time) scenario.Run {
-	return scenario.CreatedAt(scenario.Clone(scenario.Recorded(fixtureRun, "after-attempt-1"), id), at)
-}
-
-// runListings gives the query of each request that listed runs.
-func runListings(fake *fakegithub.Server) []url.Values {
-	GinkgoHelper()
-	var queries []url.Values
-	for _, r := range fake.Requests() {
-		if strings.HasSuffix(r.Path, "/actions/runs") {
-			q, err := url.ParseQuery(r.Query)
-			Expect(err).NotTo(HaveOccurred())
-			queries = append(queries, q)
-		}
-	}
-	return queries
-}
-
 // closedRange parses created=<from>..<to>.
 func closedRange(q url.Values) (from, to time.Time) {
 	GinkgoHelper()
@@ -154,13 +133,13 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 	)
 
 	It("lists the backfill window as one closed created range from LG_TEST_NOW minus 7d to LG_TEST_NOW with per_page=100, and from minus 30d with backfill 30d", func() {
-		for backfill, lines := range map[time.Duration][]string{7 * day: nil, 30 * day: {"backfill: 30d"}} {
+		for backfill, lines := range map[time.Duration][]string{7 * scenario.Day: nil, 30 * scenario.Day: {"backfill: 30d"}} {
 			env.WriteConfig(fake.URL(), lines...)
-			before := len(runListings(fake))
+			before := len(fakegithub.RunListings(fake.Requests()))
 
 			Expect(env.Sync()).To(gexec.Exit(0))
 			var windows []url.Values
-			for _, q := range runListings(fake)[before:] {
+			for _, q := range fakegithub.RunListings(fake.Requests())[before:] {
 				if q.Has("created") {
 					windows = append(windows, q)
 				}
@@ -174,7 +153,7 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 	})
 
 	It("skips a run created before the window", func() {
-		Expect(fake.AddRun(cloneAt(1, harness.DefaultNow().Add(-10*day)))).To(Succeed())
+		Expect(fake.AddRun(scenario.CloneAt(1, "after-attempt-1", harness.DefaultNow().Add(-10*scenario.Day)))).To(Succeed())
 
 		Expect(env.Sync()).To(gexec.Exit(0))
 		Expect(filepath.Glob(filepath.Join(env.Data(), "*/*/*/runs/*/1_*"))).To(BeEmpty())
@@ -183,9 +162,9 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 
 	It("fetches older runs' attempts before newer ones", func() {
 		now := harness.DefaultNow()
-		Expect(fake.AddRun(cloneAt(1, now.Add(-3*day)))).To(Succeed())
-		Expect(fake.AddRun(cloneAt(2, now.Add(-day)))).To(Succeed())
-		Expect(fake.AddRun(cloneAt(3, now.Add(-2*day)))).To(Succeed())
+		Expect(fake.AddRun(scenario.CloneAt(1, "after-attempt-1", now.Add(-3*scenario.Day)))).To(Succeed())
+		Expect(fake.AddRun(scenario.CloneAt(2, "after-attempt-1", now.Add(-scenario.Day)))).To(Succeed())
+		Expect(fake.AddRun(scenario.CloneAt(3, "after-attempt-1", now.Add(-2*scenario.Day)))).To(Succeed())
 
 		Expect(env.Sync()).To(gexec.Exit(0))
 		attempt := regexp.MustCompile(`/runs/(\d+)/attempts/1$`)
@@ -220,7 +199,7 @@ var _ = Describe("lg sync with runs served 2 per page", Label("discovery"), func
 		env.WriteConfig(fake.URL())
 		fake.SetPageCap(2)
 		for id := range int64(5) {
-			Expect(fake.AddRun(cloneAt(id+1, harness.DefaultNow().Add(-time.Duration(id+1)*day)))).To(Succeed())
+			Expect(fake.AddRun(scenario.CloneAt(id+1, "after-attempt-1", harness.DefaultNow().Add(-time.Duration(id+1)*scenario.Day)))).To(Succeed())
 		}
 
 		Expect(env.Sync()).To(gexec.Exit(0))

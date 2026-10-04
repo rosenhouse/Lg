@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -317,6 +318,20 @@ func (s *Server) Requests() []Request {
 }
 
 // statusWriter remembers the status a handler wrote.
+// RunListings gives the query of each request that listed runs.
+func RunListings(requests []Request) []url.Values {
+	ginkgo.GinkgoHelper()
+	var queries []url.Values
+	for _, r := range requests {
+		if strings.HasSuffix(r.Path, "/actions/runs") {
+			q, err := url.ParseQuery(r.Query)
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			queries = append(queries, q)
+		}
+	}
+	return queries
+}
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int

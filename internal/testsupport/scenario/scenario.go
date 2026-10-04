@@ -268,6 +268,17 @@ func mustMarshal(v any) []byte {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
+// Day is 24 hours, for times relative to recordings.DefaultNow.
+const Day = 24 * time.Hour
+
+// fixtureRun is the recorded run that specs clone.
+const fixtureRun = 37129390741
+
+// CloneAt is fixtureRun at stage, as run id created at the given time.
+func CloneAt(id int64, stage string, at time.Time) Run {
+	return CreatedAt(Clone(Recorded(fixtureRun, stage), id), at)
+}
+
 // CreatedAt moves every time in r's JSON files by the same amount, so that
 // the run was created at the given time.
 func CreatedAt(r Run, at time.Time) Run {

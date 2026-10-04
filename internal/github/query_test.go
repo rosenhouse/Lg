@@ -16,8 +16,6 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
-const day = 24 * time.Hour
-
 var _ = Describe("RunQuery", Label("discovery"), func() {
 	It("encodes created=<from>..<to> in RFC3339 UTC, status, per_page and page", func() {
 		q := github.RunQuery{
@@ -45,7 +43,7 @@ var _ = Describe("RunQuery", Label("discovery"), func() {
 			Expect(q.Narrowable()).To(Equal(narrowable))
 		},
 		Entry("a status alone", github.RunQuery{Status: "queued"}, true),
-		Entry("a day", github.RunQuery{From: at, To: at.Add(day)}, true),
+		Entry("a day", github.RunQuery{From: at, To: at.Add(scenario.Day)}, true),
 		Entry("two seconds", github.RunQuery{From: at, To: at.Add(2 * time.Second)}, true),
 		Entry("one second", github.RunQuery{From: at, To: at.Add(time.Second)}, true),
 		Entry("an instant", github.RunQuery{From: at, To: at}, false),
@@ -66,7 +64,7 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 			fake.AddListed(scenario.ListedRun(i+1, at.Add(time.Duration(i)*time.Minute)))
 		}
 
-		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(scenario.Day)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(listing).To(HaveField("Total", github.ListingCap))
 		Expect(listing).To(HaveField("Capped", true))
@@ -96,7 +94,7 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 			fake.AddListed(scenario.ListedRun(i+1, at.Add(time.Duration(i)*time.Minute)))
 		}
 
-		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(scenario.Day)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(listing).To(HaveField("Total", github.ListingCap-1))
 		Expect(listing).To(HaveField("Capped", false))
@@ -110,7 +108,7 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 		body := fmt.Sprintf(`{"total_count":%d,"workflow_runs":[%s]}`, github.ListingCap, scenario.ListedRun(1, at))
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusOK, Body: body})
 
-		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(scenario.Day)})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(listing).To(HaveField("Capped", false))
 		Expect(listing.Runs).To(HaveLen(1))

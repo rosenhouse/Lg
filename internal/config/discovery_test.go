@@ -9,9 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
-
-const day = 24 * time.Hour
 
 var _ = Describe("Load", Label("discovery"), func() {
 	write := func(yaml string) string {
@@ -26,11 +25,11 @@ var _ = Describe("Load", Label("discovery"), func() {
 		},
 		Entry("minutes", "10m", 10*time.Minute),
 		Entry("hours", "36h", 36*time.Hour),
-		Entry("days", "7d", 7*day),
+		Entry("days", "7d", 7*scenario.Day),
 	)
 
 	It("accepts the most days a duration holds and rejects one more", func() {
-		Expect(config.Load(write("repo: rosenhouse/lg\nretention: 106751d\n"))).To(HaveField("Retention", config.Duration(106751*day)))
+		Expect(config.Load(write("repo: rosenhouse/lg\nretention: 106751d\n"))).To(HaveField("Retention", config.Duration(106751*scenario.Day)))
 		_, err := config.Load(write("repo: rosenhouse/lg\nretention: 106752d\n"))
 		Expect(err).To(MatchError(HaveSuffix(`config.yaml: line 2: want a duration such as 7d or 36h, not "106752d"`)))
 	})
@@ -83,8 +82,8 @@ var _ = Describe("Defaults", Label("discovery"), func() {
 		Expect(config.Defaults()).To(Equal(config.Config{
 			Host:             "github.com",
 			SyncInterval:     config.Duration(10 * time.Minute),
-			Backfill:         config.Duration(7 * day),
-			Retention:        config.Duration(90 * day),
+			Backfill:         config.Duration(7 * scenario.Day),
+			Retention:        config.Duration(90 * scenario.Day),
 			DiskCap:          50_000_000_000,
 			ArtifactMaxBytes: 500_000_000,
 			LogGrace:         config.Duration(time.Hour),
@@ -97,7 +96,7 @@ var _ = Describe("Duration", Label("discovery"), func() {
 		func(d time.Duration, s string) {
 			Expect(config.Duration(d).String()).To(Equal(s))
 		},
-		Entry("days", 90*day, "90d"),
+		Entry("days", 90*scenario.Day, "90d"),
 		Entry("hours", 36*time.Hour, "36h"),
 		Entry("minutes", 10*time.Minute, "10m"),
 		Entry("seconds", 59*time.Second, "59s"),
