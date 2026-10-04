@@ -169,6 +169,34 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Expect(err.Error()).NotTo(ContainSubstring(blobSignature))
 	})
 
+	DescribeTable("follows a redirect of any kind to the log",
+		func(ctx SpecContext, status int) {
+			var blobURL string
+			client := hops(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, blobURL, status)
+			}, nil)
+			blob := httptest.NewServer(answer(http.StatusOK, "log"))
+			DeferCleanup(blob.Close)
+			blobURL = blob.URL + "/log"
+
+			var log bytes.Buffer
+			Expect(client.DownloadJobLog(ctx, 1, &log)).Error().NotTo(HaveOccurred())
+			Expect(log.String()).To(Equal("log"))
+		},
+		Entry("301", http.StatusMovedPermanently, hopTimeout),
+		Entry("302", http.StatusFound, hopTimeout),
+		Entry("303", http.StatusSeeOther, hopTimeout),
+		Entry("307", http.StatusTemporaryRedirect, hopTimeout),
+		Entry("308", http.StatusPermanentRedirect, hopTimeout),
+	)
+
+	It("gives a StatusError for a redirect with no Location", func(ctx SpecContext) {
+		_, err := hops(answer(http.StatusFound, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		var statusErr *github.StatusError
+		Expect(errors.As(err, &statusErr)).To(BeTrue())
+		Expect(statusErr.Status).To(Equal(http.StatusFound))
+	}, hopTimeout)
+
 	DescribeTable("never names a redirect Location it cannot parse",
 		func(ctx SpecContext, location string) {
 			client := hops(func(w http.ResponseWriter, _ *http.Request) {
