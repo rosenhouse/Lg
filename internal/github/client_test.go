@@ -75,7 +75,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
-		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error { _, err := c.DownloadJobLog(ctx, 1, &bytes.Buffer{}); return err }),
+		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error {
+			_, err := c.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			return err
+		}),
 	)
 
 	It("lists runs with their fields and the body served for each", func() {
