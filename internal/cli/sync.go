@@ -38,18 +38,16 @@ func (syncCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer release()
-	ctx := context.Background()
-	token, err := auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env}.Token(ctx, cfg.Host)
-	if err != nil {
-		return err
-	}
 	m := mirror.Mirror{
-		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, token),
-		Store:  s,
-		Host:   cfg.Host,
-		Repo:   cfg.Repo,
+		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
+		NewGitHub: func(token string) github.Client {
+			return github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, token)
+		},
+		Store: s,
+		Host:  cfg.Host,
+		Repo:  cfg.Repo,
 	}
-	return m.Cycle(ctx)
+	return m.Cycle(context.Background())
 }
 
 // writeLockWait bounds how long a writer waits for another to finish.
