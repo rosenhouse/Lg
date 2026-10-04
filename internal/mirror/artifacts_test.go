@@ -211,6 +211,18 @@ var _ = Describe("mirror.Cycle when the listing gives an artifact no digest", La
 	}, cycleTimeout)
 })
 
+var _ = Describe("mirror.Cycle when the listing gives an artifact a digest lg does not recognize", Label("artifacts"), func() {
+	It("publishes no artifact dir, requests no zip for it, and returns the failure, naming the artifact", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.WithDigest(scenario.Recorded(runID, "after-attempt-1"), 11276401837, "sha512:abcd"))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(MatchError(`run 37129390741 artifact 11276401837: unrecognized digest "sha512:abcd"`))
+		Expect(env.ArtifactDirs(runID)).To(HaveLen(3))
+		Expect(env.ArtifactDirs(runID)).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
+		Expect(requestedZip(env, flakyReport)).To(BeFalse())
+	}, cycleTimeout)
+})
+
 func recordedZip(artifactID string) []byte {
 	GinkgoHelper()
 	recorded, err := os.ReadFile(filepath.Join(recordings.Dir(runID, "after-attempt-1"), "artifacts", artifactID+".zip"))

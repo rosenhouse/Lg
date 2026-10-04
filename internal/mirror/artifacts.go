@@ -77,6 +77,10 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 		message := fmt.Sprintf("size_in_bytes %d exceeds artifact_max_bytes %d", artifact.SizeInBytes, m.ArtifactMaxBytes)
 		return writeTombstone(s.unit, ".", tombstone.New("artifact.zip", url, tombstone.TooLarge, message, m.Clock.Now()))
 	}
+	want, err := artifact.SHA256()
+	if err != nil {
+		return &github.MalformedError{Err: err}
+	}
 	w, err := s.unit.Create("artifact.zip", m.ArtifactMaxBytes)
 	if err != nil {
 		return err
@@ -86,7 +90,7 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 		return errors.Join(err, closeErr)
 	}
 	if err == nil {
-		return m.verifyZip(s, artifact, url)
+		return verifyZip(s, want, url)
 	}
 	ts, ok := m.zipTombstone(err, artifact, url)
 	if !ok {
@@ -108,14 +112,15 @@ func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (
 	return tombstone.FromZipError(err, artifact.ExpiresAt, m.Clock.Now())
 }
 
-// verifyZip records artifact.zip's source once its bytes match the digest
-// GitHub lists, if any. A mismatch is Transient, so the next cycle downloads it again.
-func (m *Mirror) verifyZip(s *staged, artifact github.Artifact, url string) error {
+// verifyZip records artifact.zip's source once its bytes match want, the
+// SHA-256 GitHub lists, if any. A mismatch is Transient, so the next cycle
+// downloads it again.
+func verifyZip(s *staged, want, url string) error {
 	sum, err := s.unit.Sum("artifact.zip")
 	if err != nil {
 		return err
 	}
-	if want, ok := artifact.SHA256(); ok && sum.SHA256 != want {
+	if want != "" && sum.SHA256 != want {
 		return failure.Transient{Err: fmt.Errorf("%s: sha256 %s does not match digest sha256:%s", url, sum.SHA256, want)}
 	}
 	return s.record("artifact.zip", github.Source{URL: url})

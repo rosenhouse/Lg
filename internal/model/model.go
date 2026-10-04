@@ -2,6 +2,7 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -101,14 +102,17 @@ func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
 	return ArtifactDownload
 }
 
-var sha256Digest = regexp.MustCompile(`^sha256:([0-9a-fA-F]{64})$`)
+var sha256Digest = regexp.MustCompile(`^(?i:sha256):([0-9a-fA-F]{64})$`)
 
-// SHA256 gives the hex SHA-256 that the artifact's digest names, and false
-// for a digest that is missing or names another hash.
-func (a Artifact) SHA256() (string, bool) {
+// SHA256 gives the hex SHA-256 that the artifact's digest names, "" for a
+// missing digest, and an error for any other.
+func (a Artifact) SHA256() (string, error) {
+	if a.Digest == "" {
+		return "", nil
+	}
 	m := sha256Digest.FindStringSubmatch(a.Digest)
 	if m == nil {
-		return "", false
+		return "", fmt.Errorf("unrecognized digest %q", a.Digest)
 	}
-	return strings.ToLower(m[1]), true
+	return strings.ToLower(m[1]), nil
 }
