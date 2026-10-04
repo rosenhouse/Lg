@@ -56,11 +56,14 @@ func FromStatus(status int, header http.Header, message string, now time.Time) (
 	return Blocked{}, false
 }
 
+// maxRetryAfter caps a Retry-After that GitHub would never send.
+const maxRetryAfter = 24 * time.Hour
+
 // retryAt follows GitHub's advice: wait Retry-After seconds, else until the
 // reset when none remain, else a minute.
 func retryAt(header http.Header, now time.Time) time.Time {
-	if seconds, err := strconv.Atoi(header.Get("Retry-After")); err == nil {
-		return now.Add(time.Duration(seconds) * time.Second)
+	if seconds, err := strconv.ParseUint(header.Get("Retry-After"), 10, 64); err == nil {
+		return now.Add(time.Duration(min(seconds, uint64(maxRetryAfter.Seconds()))) * time.Second)
 	}
 	if reset, ok := resetOf(header); ok && header.Get("X-RateLimit-Remaining") == "0" {
 		return reset
