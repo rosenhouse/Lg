@@ -74,6 +74,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(headers.Get("Accept")).To(Equal("application/vnd.github+json"))
 			Expect(headers.Get("X-GitHub-Api-Version")).To(Equal("2022-11-28"))
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
+			Expect(github.UserAgent()).To(Equal("lg/" + version.Version))
 			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
 		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
