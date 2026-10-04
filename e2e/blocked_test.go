@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,24 @@ var _ = Describe("lg sync when gh fails", Label("blocked"), func() {
 		Expect(session.Err).To(gbytes.Say("no oauth token found for github.com"))
 		Expect(session.Err).To(gbytes.Say("gh auth login --hostname github.com"))
 		Expect(fake.Requests()).To(BeEmpty())
+	})
+})
+
+var _ = Describe("lg sync interrupted while gh hangs", Label("blocked"), func() {
+	It("leaves no gh running", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		env.GH().Hang()
+
+		session, wait := env.StartSync()
+		Eventually(env.GH().HungPIDs, harness.ExitTimeout).Should(HaveLen(1))
+		gh := env.GH().HungPIDs()[0]
+		DeferCleanup(syscall.Kill, gh, syscall.SIGKILL)
+		session.Interrupt()
+
+		Expect(wait()).NotTo(gexec.Exit(0))
+		Eventually(func() error { return syscall.Kill(gh, 0) }, harness.ExitTimeout).Should(MatchError(syscall.ESRCH))
 	})
 })
 
