@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +28,35 @@ type Config struct {
 	ArtifactMaxBytes Bytes    `yaml:"artifact_max_bytes"`
 }
 
-// Bytes is a size in bytes.
+// Bytes is a size in bytes: a whole number with an optional unit. KB, MB,
+// GB and TB are decimal; KiB, MiB, GiB and TiB are binary.
 type Bytes int64
+
+var (
+	size      = regexp.MustCompile(`^([0-9]+)([KMGT]i?B|B)?$`)
+	sizeUnits = map[string]int64{
+		"": 1, "B": 1,
+		"KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
+		"KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40,
+	}
+)
+
+func (b *Bytes) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: want a size such as 500MB, not %s", node.Line, node.ShortTag())
+	}
+	m := size.FindStringSubmatch(node.Value)
+	if m == nil {
+		return fmt.Errorf("line %d: want a size such as 500MB, not %q", node.Line, node.Value)
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	unit := sizeUnits[m[2]]
+	if err != nil || n > math.MaxInt64/unit {
+		return fmt.Errorf("line %d: size %q is too large", node.Line, node.Value)
+	}
+	*b = Bytes(n * unit)
+	return nil
+}
 
 // Duration is a Go duration such as 1h or 0s, or a bare 0.
 type Duration time.Duration
@@ -47,7 +76,7 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 var hostName = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func Defaults() Config {
-	return Config{Host: "github.com", LogGrace: Duration(time.Hour)}
+	return Config{Host: "github.com", LogGrace: Duration(time.Hour), ArtifactMaxBytes: 500_000_000}
 }
 
 func Load(path string) (Config, error) {
