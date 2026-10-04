@@ -193,6 +193,17 @@ var _ = Describe("mirror.Cycle when a zip does not match its digest", Label("art
 	}, cycleTimeout)
 })
 
+var _ = Describe("mirror.Cycle when the listing gives an artifact no digest", Label("artifacts"), func() {
+	It("publishes its zip without verifying it", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.WithoutDigest(scenario.Recorded(runID, "after-attempt-1"), 11276401837))).To(Succeed())
+		env.Fake.Fail("blob", flakyReportBlob, fakegithub.Fault{Status: http.StatusOK, Body: "not the recorded zip"})
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip"))).To(BeEquivalentTo("not the recorded zip"))
+	}, cycleTimeout)
+})
+
 func recordedZip(artifactID string) []byte {
 	GinkgoHelper()
 	recorded, err := os.ReadFile(filepath.Join(recordings.Dir(runID, "after-attempt-1"), "artifacts", artifactID+".zip"))
