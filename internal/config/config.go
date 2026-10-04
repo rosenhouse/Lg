@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -19,6 +20,8 @@ type Config struct {
 	Host   string `yaml:"host"`
 	Repo   string `yaml:"repo"`
 	APIURL string `yaml:"api_url"`
+
+	LogGrace time.Duration `yaml:"log_grace"`
 }
 
 var (
