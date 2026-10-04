@@ -73,7 +73,8 @@ var _ = Describe("Server controls", Label("store"), func() {
 	})
 
 	It("Close releases held requests", func() {
-		fake.Hold("/logs")
+		// Runs before Start's Close, so a failing spec does not hang there.
+		DeferCleanup(fake.Hold("/logs"))
 		done := make(chan struct{})
 		go func() {
 			defer GinkgoRecover()
@@ -86,7 +87,12 @@ var _ = Describe("Server controls", Label("store"), func() {
 		}()
 		Eventually(fake.Requests, time.Second).ShouldNot(BeEmpty())
 
-		fake.Close()
+		closed := make(chan struct{})
+		go func() {
+			fake.Close()
+			close(closed)
+		}()
+		Eventually(closed, time.Second).Should(BeClosed())
 		Eventually(done, time.Second).Should(BeClosed())
 	})
 })
