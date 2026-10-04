@@ -1,14 +1,17 @@
 package e2e_test
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/clock"
@@ -120,10 +123,13 @@ var _ = Describe("lg sync", Label("store"), func() {
 		leftover := filepath.Join(env.Tmp(), "unit-leftover", "log.txt")
 		Expect(os.MkdirAll(filepath.Dir(leftover), 0o755)).To(Succeed())
 		Expect(os.WriteFile(leftover, []byte("partial"), 0o644)).To(Succeed())
-		held, err := lock.Wait(filepath.Join(env.State(), "write.lock"), time.Second, clock.Real{})
+		writeLock := filepath.Join(env.State(), "write.lock")
+		held, err := lock.Wait(writeLock, time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
 
 		session := env.Lg("sync")
+		Eventually(session.Err, harness.ExitTimeout).Should(gbytes.Say(regexp.QuoteMeta(
+			fmt.Sprintf("lg: waiting for %s (held by pid %d)\n", writeLock, os.Getpid()))))
 		Consistently(func() string { return leftover }, time.Second).Should(BeAnExistingFile())
 		Expect(session.ExitCode()).To(Equal(-1), "sync ran while the lock was held")
 

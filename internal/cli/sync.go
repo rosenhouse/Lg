@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,7 +32,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots)
+	s, release, err := openForWriting(roots, deps.Stderr)
 	if err != nil {
 		return err
 	}
@@ -49,11 +51,14 @@ const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
 // holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots) (s *store.Store, release func(), err error) {
+func openForWriting(roots config.Roots, stderr io.Writer) (s *store.Store, release func(), err error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, nil, err
 	}
-	held, err := lock.Wait(filepath.Join(roots.State, "write.lock"), writeLockWait, clock.Real{})
+	writeLock := filepath.Join(roots.State, "write.lock")
+	held, err := lock.Wait(writeLock, writeLockWait, clock.Real{}, func(holder string) {
+		_, _ = fmt.Fprintf(stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
+	})
 	if err != nil {
 		return nil, nil, err
 	}

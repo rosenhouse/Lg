@@ -20,14 +20,15 @@ type Lock struct {
 	file *os.File
 }
 
-// Wait takes the lock on path, polling until timeout, and then records this process's pid in it.
-func Wait(path string, timeout time.Duration, clk clock.Clock) (*Lock, error) {
+// Wait takes the lock on path, polling until timeout, and then records this
+// process's pid in it. If the lock is busy, it first calls waiting with the holder.
+func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(holder string)) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return nil, err
 	}
 	deadline := clk.After(timeout)
-	for {
+	for tries := 0; ; tries++ {
 		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
 			break
@@ -36,10 +37,13 @@ func Wait(path string, timeout time.Duration, clk clock.Clock) (*Lock, error) {
 			_ = file.Close()
 			return nil, &os.PathError{Op: "flock", Path: path, Err: err}
 		}
+		if tries == 0 {
+			waiting(holder(path))
+		}
 		select {
 		case <-deadline:
 			_ = file.Close()
-			return nil, fmt.Errorf("%s is held by pid %s; gave up after %s", path, holder(path), timeout)
+			return nil, fmt.Errorf("%s is held by %s; gave up after %s", path, holder(path), timeout)
 		case <-clk.After(pollInterval):
 		}
 	}
@@ -59,8 +63,12 @@ func writePID(file *os.File) error {
 }
 
 func holder(path string) string {
-	pid, _ := os.ReadFile(path)
-	return string(bytes.TrimSpace(pid))
+	content, _ := os.ReadFile(path)
+	pid := string(bytes.TrimSpace(content))
+	if _, err := strconv.Atoi(pid); err != nil {
+		return "another process (pid unknown)"
+	}
+	return "pid " + pid
 }
 
 func (l *Lock) Release() error { return l.file.Close() }

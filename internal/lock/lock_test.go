@@ -13,6 +13,8 @@ import (
 	"github.com/rosenhouse/lg/internal/lock"
 )
 
+var ignore = func(string) {}
+
 var _ = Describe("Wait", Label("store"), func() {
 	var path string
 
@@ -23,7 +25,7 @@ var _ = Describe("Wait", Label("store"), func() {
 	It("takes a free lock and records the holder's pid over a stale longer one", func() {
 		Expect(os.WriteFile(path, []byte("9999999999\n"), 0o644)).To(Succeed())
 
-		held, err := lock.Wait(path, time.Second, clock.Real{})
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(held.Release)
 
@@ -31,21 +33,47 @@ var _ = Describe("Wait", Label("store"), func() {
 	})
 
 	It("gives up after its timeout with an error naming the holder's pid", func() {
-		held, err := lock.Wait(path, time.Second, clock.Real{})
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(held.Release)
 		Expect(os.WriteFile(path, []byte("424242\n"), 0o644)).To(Succeed())
 
-		_, err = lock.Wait(path, 50*time.Millisecond, clock.Real{})
+		_, err = lock.Wait(path, 50*time.Millisecond, clock.Real{}, ignore)
 		Expect(err).To(MatchError(path + " is held by pid 424242; gave up after 50ms"))
 	})
 
+	DescribeTable("names an unknown holder when the lock file holds no pid",
+		func(content string) {
+			held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(held.Release)
+			Expect(os.WriteFile(path, []byte(content), 0o644)).To(Succeed())
+
+			_, err = lock.Wait(path, 50*time.Millisecond, clock.Real{}, ignore)
+			Expect(err).To(MatchError(path + " is held by another process (pid unknown); gave up after 50ms"))
+		},
+		Entry("empty", ""),
+		Entry("not a number", "flock\n"),
+	)
+
+	It("tells waiting, once, who holds a busy lock", func() {
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+		Expect(os.WriteFile(path, []byte("424242\n"), 0o644)).To(Succeed())
+
+		var told []string
+		_, err = lock.Wait(path, 200*time.Millisecond, clock.Real{}, func(holder string) { told = append(told, holder) })
+		Expect(err).To(HaveOccurred())
+		Expect(told).To(Equal([]string{"pid 424242"}))
+	})
+
 	It("takes the lock once its holder releases it", func() {
-		held, err := lock.Wait(path, time.Second, clock.Real{})
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
 		Expect(err).NotTo(HaveOccurred())
 		got := make(chan error)
 		go func() {
-			l, err := lock.Wait(path, 5*time.Second, clock.Real{})
+			l, err := lock.Wait(path, 5*time.Second, clock.Real{}, ignore)
 			if err == nil {
 				err = l.Release()
 			}
