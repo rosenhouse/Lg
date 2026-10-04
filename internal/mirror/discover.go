@@ -117,7 +117,7 @@ type discovery struct {
 // window, those in a non-terminal status, hourly the runs on disk that a
 // rerun could still change, and the watched runs and the runs with pending
 // artifacts that no listing named. It leaves out the runs that retention
-// would evict.
+// would evict, and reports a listed run without created_at as malformed.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
 	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
@@ -133,7 +133,14 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		listed = append(listed, runs...)
 		d.failed = errors.Join(d.failed, capped)
 	}
-	listed = slices.DeleteFunc(listed, func(run github.Run) bool { return pastRetention(run.CreatedAt, now, m.Retention) })
+	for _, run := range listed {
+		if run.CreatedAt.IsZero() {
+			d.failed = errors.Join(d.failed, fmt.Errorf("run %d: %w", run.ID, &github.MalformedError{Err: errors.New("no created_at")}))
+		}
+	}
+	listed = slices.DeleteFunc(listed, func(run github.Run) bool {
+		return run.CreatedAt.IsZero() || pastRetention(run.CreatedAt, now, m.Retention)
+	})
 	rescanned, rescannedAt, reported, err := m.rescan(ctx, gh, repo, now)
 	if err != nil {
 		return discovery{}, err

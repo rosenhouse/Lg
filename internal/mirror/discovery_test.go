@@ -446,6 +446,19 @@ var _ = Describe("the watch list", Label("discovery"), func() {
 	}, cycleTimeout)
 })
 
+var _ = Describe("a listed run without created_at", Label("discovery"), func() {
+	It("is reported as malformed, and neither fetched nor watched", func(ctx SpecContext) {
+		env := harness.InProcess()
+		env.Fake.AddListed(json.RawMessage(`{"id":7,"status":"in_progress","conclusion":null,"run_attempt":1,"repository":{"full_name":"rosenhouse/Lg"}}`))
+
+		err := env.Sync(ctx)
+		Expect(err).To(MatchError(ContainSubstring("run 7: no created_at")))
+		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/runs/7(/|$)`))))
+		Expect(readWatch(env)["github.com"]).NotTo(ContainElement("7"))
+	}, cycleTimeout)
+})
+
 var _ = Describe("an in_progress run created before retention", Label("discovery"), func() {
 	It("is neither fetched nor watched", func(ctx SpecContext) {
 		env := harness.InProcess()
