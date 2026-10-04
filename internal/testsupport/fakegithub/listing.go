@@ -60,7 +60,7 @@ func (s *Server) listedRuns() ([]listedRun, error) {
 	bodies := slices.Clone(s.added)
 	s.mu.Unlock()
 	for _, run := range s.loaded() {
-		body, err := served(run.dir + "/run.json")
+		body, err := served(run.files, "run.json")
 		if err != nil {
 			return nil, err
 		}

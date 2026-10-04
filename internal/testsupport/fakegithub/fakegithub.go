@@ -5,12 +5,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"runtime"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,7 +56,7 @@ type Server struct {
 
 // run is a recorded run at one stage.
 type run struct {
-	dir string
+	files fs.FS
 	// downloads holds each download in status.txt by its path, and blobs
 	// by the file record.sh wrote its body to.
 	downloads map[string]download
@@ -136,18 +136,22 @@ func (s *Server) Load(runID int64, stage string) error {
 
 // LoadDir serves the recording in dir as run runID.
 func (s *Server) LoadDir(runID int64, dir string) error {
-	status, err := os.Open(filepath.Join(dir, "status.txt"))
+	return s.loadFS(runID, os.DirFS(dir))
+}
+
+func (s *Server) loadFS(runID int64, files fs.FS) error {
+	status, err := files.Open("status.txt")
 	if err != nil {
 		return fmt.Errorf("no recording of run %d: %w", runID, err)
 	}
 	defer func() { _ = status.Close() }()
 	lines, err := recordings.ParseStatus(status)
 	if err != nil {
-		return fmt.Errorf("%s: %w", status.Name(), err)
+		return fmt.Errorf("run %d status.txt: %w", runID, err)
 	}
-	r := &run{dir: dir, downloads: map[string]download{}, blobs: map[string]download{}}
+	r := &run{files: files, downloads: map[string]download{}, blobs: map[string]download{}}
 	for _, line := range lines {
-		if file := downloadFile(dir, line.Path); file != "" {
+		if file := downloadFile(files, line.Path); file != "" {
 			r.downloads[line.Path] = download{Line: line, file: file}
 			r.blobs[file] = r.downloads[line.Path]
 		}
@@ -173,44 +177,41 @@ func (s *Server) Advance(runID int64, stage string) error {
 	return s.Load(runID, stage)
 }
 
-// downloadFile is the file, relative to dir, that record.sh wrote a
-// download's body to, or "" for a JSON GET.
-func downloadFile(dir, path string) string {
-	parts := strings.Split(path, "/")
+// downloadFile is the file of files that record.sh wrote a download's body
+// to, or "" for a JSON GET.
+func downloadFile(files fs.FS, urlPath string) string {
+	parts := strings.Split(urlPath, "/")
 	switch {
 	case len(parts) == 3 && parts[0] == "jobs" && parts[2] == "logs":
-		matches, _ := filepath.Glob(filepath.Join(dir, "attempt-*", "logs", parts[1]+".txt"))
+		matches, _ := fs.Glob(files, path.Join("attempt-*", "logs", parts[1]+".txt"))
 		if len(matches) == 1 {
-			rel, _ := filepath.Rel(dir, matches[0])
-			return rel
+			return matches[0]
 		}
 	case len(parts) == 5 && parts[0] == "runs" && parts[2] == "attempts" && parts[4] == "logs":
-		return filepath.Join("attempt-"+parts[3], "logs.zip")
+		return path.Join("attempt-"+parts[3], "logs.zip")
 	case len(parts) == 3 && parts[0] == "artifacts" && parts[2] == "zip":
-		return filepath.Join("artifacts", parts[1]+".zip")
+		return path.Join("artifacts", parts[1]+".zip")
 	}
 	return ""
 }
 
 // Recording is the dir under testdata/recordings holding a run at a stage.
-func Recording(runID int64, stage string) string {
-	return filepath.Join(recordingsDir(), fmt.Sprintf("run-%d", runID), stage)
-}
+func Recording(runID int64, stage string) string { return recordings.Dir(runID, stage) }
 
 // Served is a file of the first run loaded, as the server serves it: JSON
 // compacted, anything else as recorded.
 func (s *Server) Served(elem ...string) []byte {
 	ginkgo.GinkgoHelper()
 	s.mu.Lock()
-	dir := s.runs[s.first].dir
+	files := s.runs[s.first].files
 	s.mu.Unlock()
-	body, err := served(filepath.Join(dir, filepath.Join(elem...)))
+	body, err := served(files, path.Join(elem...))
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	return body
 }
 
-func served(file string) ([]byte, error) {
-	recorded, err := os.ReadFile(file)
+func served(files fs.FS, name string) ([]byte, error) {
+	recorded, err := fs.ReadFile(files, name)
 	if err != nil || !json.Valid(recorded) {
 		return recorded, err
 	}
@@ -447,11 +448,4 @@ func (s *Server) takeFault(host, path string) Fault {
 		}
 	}
 	return Fault{}
-}
-
-// recordingsDir finds testdata/recordings from this source file, so it works
-// from any package's test binary.
-func recordingsDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "recordings")
 }
