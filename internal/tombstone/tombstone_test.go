@@ -103,10 +103,11 @@ var _ = Describe("FromError", Label("failures"), func() {
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: logURL, Status: 500}}),
 		Entry("a Transient ErrNotFound", failure.Transient{Err: apiError(404, "")}),
-		Entry("an API 401", apiError(401, "")),
-		Entry("an API 403", apiError(403, "")),
 		Entry("an API 422", apiError(422, "")),
-		Entry("an API 429", apiError(429, "")),
+		Entry("a Blocked auth", failure.Blocked{Kind: failure.Auth, Detail: "401 Unauthorized"}),
+		Entry("a Blocked rate_limit", failure.Blocked{Kind: failure.RateLimit, Detail: "429 Too Many Requests", RetryAt: updated.Add(time.Hour)}),
+		Entry("a Blocked unreachable", failure.Blocked{Kind: failure.Unreachable, Detail: "connection refused"}),
+		Entry("a Blocked local_io", failure.Blocked{Kind: failure.LocalIO, Detail: "no space left on device"}),
 		Entry("any other error", errors.New("disk full")),
 	)
 })
