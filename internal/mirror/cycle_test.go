@@ -98,6 +98,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 
+	It("returns an error and sends no request when State is not set", Label("artifacts"), func() {
+		m.State = ""
+
+		Expect(m.Cycle(context.Background())).To(MatchError("State is not set"))
+		Expect(tokens.hosts).To(BeEmpty())
+		Expect(fake.Requests()).To(BeEmpty())
+	})
+
 	DescribeTable("refuses a run of another repository and writes nothing",
 		func(fullName string) {
 			editJSON(filepath.Join(recording, "run.json"), func(run map[string]any) {
