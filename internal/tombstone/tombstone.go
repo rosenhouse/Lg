@@ -61,19 +61,21 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 
 // FromZipError tombstones artifact.zip when err shows GitHub has lost it for
 // good: a 410, or a 404, which is expired once expires_at has passed and
-// deleted before it or with no expires_at. It gives back any other err.
+// deleted before it or with no expires_at. A 404 at the blob hop within
+// log_grace of created_at is Transient, as for logs. It gives back any other err.
 func FromZipError(err error, artifact model.Artifact, logGrace time.Duration, now time.Time) (Tombstone, error) {
-	expiresAt := artifact.ExpiresAt
 	statusErr, ok := permanent(err)
 	if !ok {
 		return Tombstone{}, err
 	}
 	notFound := errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrBlobMissing)
-	expired := !expiresAt.IsZero() && !expiresAt.After(now)
+	expired := !artifact.ExpiresAt.IsZero() && !artifact.ExpiresAt.After(now)
 	var reason Reason
 	switch {
 	case errors.Is(err, github.ErrGone), notFound && expired:
 		reason = Expired
+	case errors.Is(err, github.ErrBlobMissing) && !now.After(artifact.CreatedAt.Add(logGrace)):
+		return Tombstone{}, failure.Transient{Err: fmt.Errorf("within log_grace: %w", err)}
 	case notFound:
 		reason = Deleted
 	default:
