@@ -177,7 +177,7 @@ var _ = DescribeTable("mirror.Cycle when a zip fails permanently writes artifact
 		))
 	},
 	Entry("410: expired", http.StatusGone, harness.DefaultNow(), "expired", cycleTimeout),
-	Entry("404 with expires_at in the past: expired", http.StatusNotFound, expiresIn1DayAt.Add(time.Hour), "expired", cycleTimeout),
+	Entry("404 with expires_at in the past: deleted, as recorded for 11275917910 at after-expiry", http.StatusNotFound, expiresIn1DayAt.Add(time.Hour), "deleted", cycleTimeout),
 	Entry("404 with expires_at in the future: deleted", http.StatusNotFound, harness.DefaultNow(), "deleted", cycleTimeout),
 )
 
