@@ -65,7 +65,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				headers = r.Header
-				_, _ = w.Write([]byte(`{"total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`))
+				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`))
 			}))
 			DeferCleanup(server.Close)
 
@@ -75,6 +75,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
 			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
+		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),

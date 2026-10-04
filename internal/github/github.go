@@ -193,6 +193,13 @@ func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
 	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk)
 }
 
+// Repo is a repository as GET /repos/{owner}/{repo} describes it.
+type Repo struct {
+	FullName string `json:"full_name"`
+}
+
+func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) { return Repo{}, nil }
+
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 	raws, _, _, err := h.list(ctx, h.repoURL+"/actions/runs?per_page=100", "workflow_runs")
 	if err != nil {
