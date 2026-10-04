@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
@@ -12,7 +11,6 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
-	"github.com/rosenhouse/lg/internal/version"
 )
 
 // syncArtifacts publishes the run's listed artifacts that are not on disk.
@@ -90,7 +88,7 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 	if err == nil {
 		return m.verifyZip(s, artifact, url)
 	}
-	ts, ok := m.lostZip(err, artifact, url)
+	ts, ok := m.zipTombstone(err, artifact, url)
 	if !ok {
 		return err
 	}
@@ -100,8 +98,9 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 	return writeTombstone(s.unit, ".", ts)
 }
 
-// lostZip tombstones a zip whose download failed for good.
-func (m *Mirror) lostZip(err error, artifact github.Artifact, url string) (tombstone.Tombstone, bool) {
+// zipTombstone tombstones a zip whose download failed for good: GitHub lost
+// it, or its stream exceeded ArtifactMaxBytes.
+func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (tombstone.Tombstone, bool) {
 	if errors.Is(err, store.ErrTooLarge) {
 		message := fmt.Sprintf("the zip exceeded artifact_max_bytes %d although size_in_bytes is %d", m.ArtifactMaxBytes, artifact.SizeInBytes)
 		return tombstone.New("artifact.zip", url, tombstone.TooLarge, message, m.Clock.Now()), true
@@ -150,29 +149,4 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run) error {
 		DisplayTitle:     run.DisplayTitle,
 		Sources:          s.sources,
 	})
-}
-
-// unitFetch is what every fetch.json records.
-type unitFetch struct {
-	LgFormat          int       `json:"lg_format"`
-	LgVersion         string    `json:"lg_version"`
-	FetchedAt         time.Time `json:"fetched_at"`
-	Host              string    `json:"host"`
-	Repo              string    `json:"repo"`
-	RunID             int64     `json:"run_id"`
-	RunCreatedAt      time.Time `json:"run_created_at"`
-	RunAttemptAtFetch int       `json:"run_attempt_at_fetch"`
-}
-
-func (m *Mirror) unitFetch(run github.Run) unitFetch {
-	return unitFetch{
-		LgFormat:          1,
-		LgVersion:         version.Version,
-		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
-		Host:              m.Host,
-		Repo:              run.Repository.FullName,
-		RunID:             run.ID,
-		RunCreatedAt:      run.CreatedAt,
-		RunAttemptAtFetch: run.RunAttempt,
-	}
 }

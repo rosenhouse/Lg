@@ -21,6 +21,7 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
+	"github.com/rosenhouse/lg/internal/version"
 )
 
 type Mirror struct {
@@ -287,6 +288,31 @@ type fetch struct {
 	Sources map[string]source `json:"sources"`
 	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
 	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+}
+
+// unitFetch is what every fetch.json records.
+type unitFetch struct {
+	LgFormat          int       `json:"lg_format"`
+	LgVersion         string    `json:"lg_version"`
+	FetchedAt         time.Time `json:"fetched_at"`
+	Host              string    `json:"host"`
+	Repo              string    `json:"repo"`
+	RunID             int64     `json:"run_id"`
+	RunCreatedAt      time.Time `json:"run_created_at"`
+	RunAttemptAtFetch int       `json:"run_attempt_at_fetch"`
+}
+
+func (m *Mirror) unitFetch(run github.Run) unitFetch {
+	return unitFetch{
+		LgFormat:          1,
+		LgVersion:         version.Version,
+		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
+		Host:              m.Host,
+		Repo:              run.Repository.FullName,
+		RunID:             run.ID,
+		RunCreatedAt:      run.CreatedAt,
+		RunAttemptAtFetch: run.RunAttempt,
+	}
 }
 
 type source struct {
