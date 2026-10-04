@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -135,41 +136,88 @@ func expectJSONElements(actual, expected []json.RawMessage) {
 	}
 }
 
+type recording struct {
+	run   int64
+	stage string
+}
+
+// expectReplay checks that a fresh fake serves every line of the
+// recording's status.txt as recorded.
+func expectReplay(r recording) {
+	GinkgoHelper()
+	dir := recordings.Dir(r.run, r.stage)
+	fake := fakegithub.Start(r.run, r.stage)
+
+	lines := recordedStatus(dir)
+	Expect(len(lines)).To(BeNumerically(">", 10))
+	for _, line := range lines {
+		where := fmt.Sprintf("%d/%s %s", r.run, r.stage, line.Path)
+		resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
+		Expect(resp.status).To(Equal(line.First), where)
+		if line.First != line.Final {
+			resp = fetch(resp.header.Get("Location"))
+			Expect(resp.status).To(Equal(line.Final), where)
+		}
+
+		recorded, err := os.ReadFile(recordedFile(dir, line.Path))
+		Expect(err).NotTo(HaveOccurred())
+		if json.Valid(recorded) {
+			var compact bytes.Buffer
+			Expect(json.Compact(&compact, resp.body)).To(Succeed(), where)
+			Expect(resp.body).To(Equal(compact.Bytes()), where)
+			Expect(resp.body).To(MatchJSON(recorded), where)
+		} else {
+			Expect(resp.body).To(Equal(recorded), where)
+		}
+		expectBodyMatchesStatus(recorded, line, where)
+	}
+}
+
+// expectBodyMatchesStatus ties a status.txt line to its recorded body, so
+// status.txt cannot drift from what GitHub answered.
+func expectBodyMatchesStatus(recorded []byte, line recordings.Line, where string) {
+	GinkgoHelper()
+	if !json.Valid(recorded) {
+		Expect(line.First).To(Equal(http.StatusFound), where)
+		if bytes.Contains(recorded, []byte("<Code>BlobNotFound</Code>")) {
+			Expect(line.Final).To(Equal(http.StatusNotFound), where)
+		} else {
+			Expect(line.Final).To(Equal(http.StatusOK), where)
+		}
+		return
+	}
+	var body struct {
+		Status           string
+		DocumentationURL string `json:"documentation_url"`
+	}
+	Expect(json.Unmarshal(recorded, &body)).To(Succeed(), where)
+	Expect(line.First).To(Equal(line.Final), where)
+	if body.DocumentationURL == "" {
+		Expect(line.Final).To(Equal(http.StatusOK), where)
+		return
+	}
+	Expect(line.Final).To(BeNumerically(">=", http.StatusBadRequest), where)
+	Expect(body.Status).To(Equal(strconv.Itoa(line.Final)), where)
+}
+
 var _ = Describe("fakegithub replay", Label("transport"), func() {
-	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
-		for _, r := range []struct {
-			run   int64
-			stage string
-		}{
+	It("serves every line of the after-attempt and logs-deleted recordings' status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
+		for _, r := range []recording{
 			{runID, "after-attempt-1"},
 			{runID, "after-attempt-2"},
 			{runID, "after-attempt-3"},
 			{logsDeletedRun, "logs-deleted"},
 		} {
-			dir := recordings.Dir(r.run, r.stage)
-			fake := fakegithub.Start(r.run, r.stage)
+			expectReplay(r)
+		}
+	})
 
-			lines := recordedStatus(dir)
-			Expect(len(lines)).To(BeNumerically(">", 10))
-			for _, line := range lines {
-				resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
-				Expect(resp.status).To(Equal(line.First), line.Path)
-				if line.First != line.Final {
-					resp = fetch(resp.header.Get("Location"))
-					Expect(resp.status).To(Equal(line.Final), line.Path)
-				}
-
-				recorded, err := os.ReadFile(recordedFile(dir, line.Path))
-				Expect(err).NotTo(HaveOccurred())
-				if json.Valid(recorded) {
-					var compact bytes.Buffer
-					Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
-					Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
-					Expect(resp.body).To(MatchJSON(recorded), line.Path)
-				} else {
-					Expect(resp.body).To(Equal(recorded), line.Path)
-				}
-			}
+	It("serves every line of the after-expiry recordings with its first-hop and final status", func() {
+		for _, r := range []recording{
+			{runID, "after-expiry"},
+			{logsDeletedRun, "after-expiry"},
+		} {
+			expectReplay(r)
 		}
 	})
 })
@@ -207,7 +255,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		api, err := url.Parse(fake.URL())
 		Expect(err).NotTo(HaveOccurred())
 		actions := fake.URL() + "/repos/rosenhouse/lg/actions/"
-		recording := recordings.Dir(runID, "after-attempt-1")
+		dir := recordings.Dir(runID, "after-attempt-1")
 
 		for _, l := range []struct {
 			path, field string
@@ -215,11 +263,11 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		}{
 			{"runs?per_page=100", "workflow_runs", []json.RawMessage{
 				recordedRun(recordings.Dir(logsDeletedRun, "logs-deleted")),
-				recordedRun(recording),
+				recordedRun(dir),
 			}},
-			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(recording, "jobs-all.json"), "jobs")},
-			{"runs/37129390741/attempts/1/jobs?per_page=100", "jobs", recordedElements(filepath.Join(recording, "attempt-1", "jobs.json"), "jobs")},
-			{"runs/37129390741/artifacts?per_page=100", "artifacts", recordedElements(filepath.Join(recording, "artifacts.json"), "artifacts")},
+			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(dir, "jobs-all.json"), "jobs")},
+			{"runs/37129390741/attempts/1/jobs?per_page=100", "jobs", recordedElements(filepath.Join(dir, "attempt-1", "jobs.json"), "jobs")},
+			{"runs/37129390741/artifacts?per_page=100", "artifacts", recordedElements(filepath.Join(dir, "artifacts.json"), "artifacts")},
 		} {
 			elements, followed := listing(actions+l.path, l.field)
 			expectJSONElements(elements, l.want)
@@ -235,14 +283,14 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 
 	It("serves every route under /api/v3 as well", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
-		recording := recordings.Dir(runID, "after-attempt-1")
+		dir := recordings.Dir(runID, "after-attempt-1")
 
 		routes := map[string]int{
 			"/repos/rosenhouse/lg":                               http.StatusOK,
 			"/repos/rosenhouse/lg/actions/runs?per_page=100":     http.StatusOK,
 			"/repos/rosenhouse/lg/actions/artifacts/11276401837": http.StatusOK,
 		}
-		for _, line := range recordedStatus(recording) {
+		for _, line := range recordedStatus(dir) {
 			routes["/repos/rosenhouse/lg/actions/"+line.Path] = line.First
 		}
 		for path, code := range routes {
@@ -255,7 +303,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 
 		fake.SetPageCap(5)
 		elements, followed := listing(fake.URL()+"/api/v3/repos/rosenhouse/lg/actions/runs/37129390741/attempts/1/jobs?per_page=100", "jobs")
-		expectJSONElements(elements, recordedElements(filepath.Join(recording, "attempt-1", "jobs.json"), "jobs"))
+		expectJSONElements(elements, recordedElements(filepath.Join(dir, "attempt-1", "jobs.json"), "jobs"))
 		Expect(followed).To(HaveLen(2))
 		for _, next := range followed {
 			Expect(next).To(HavePrefix(fake.URL() + "/api/v3/repositories/" + repoID + "/actions/"))
@@ -293,6 +341,27 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 			Expect(resp.status).To(Equal(http.StatusOK), id)
 			Expect(resp.body).To(MatchJSON(meta))
 			Expect(fetch(artifact(json.RawMessage(id))+"/zip").status).To(Equal(http.StatusFound), id)
+		}
+	})
+
+	It("answers 410 for the expired artifacts' zips at after-expiry and omits them from the run's listing", func() {
+		for _, expired := range []struct {
+			run int64
+			id  string
+		}{
+			{runID, "11276327411"},
+			{logsDeletedRun, "11276237903"},
+		} {
+			fake := fakegithub.Start(expired.run, "after-expiry")
+			actions := fake.URL() + "/repos/rosenhouse/lg/actions/"
+			Expect(fetch(actions+"artifacts/"+expired.id+"/zip").status).To(Equal(http.StatusGone), expired.id)
+			listed, _ := listing(fmt.Sprintf("%sruns/%d/artifacts?per_page=100", actions, expired.run), "artifacts")
+			Expect(listed).NotTo(BeEmpty())
+			for _, a := range listed {
+				var meta struct{ ID json.Number }
+				Expect(json.Unmarshal(a, &meta)).To(Succeed())
+				Expect(meta.ID.String()).NotTo(Equal(expired.id))
+			}
 		}
 	})
 
@@ -357,9 +426,9 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 	})
 })
 
-func recordedRun(recording string) json.RawMessage {
+func recordedRun(dir string) json.RawMessage {
 	GinkgoHelper()
-	raw, err := os.ReadFile(filepath.Join(recording, "run.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "run.json"))
 	Expect(err).NotTo(HaveOccurred())
 	return raw
 }
