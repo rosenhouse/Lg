@@ -56,9 +56,15 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		Entry("without stderr", " \n", "gh auth token --hostname github.com: exit status 1"),
 	)
 
-	It("fails when gh prints no token", func() {
-		_, err := auth.GhTokenSource{Runner: &fakeRunner{stdout: "\n"}}.Token(context.Background(), "github.com")
+	DescribeTable("fails, without showing the output, when gh prints no token or more than a token",
+		func(stdout, message string) {
+			_, err := auth.GhTokenSource{Runner: &fakeRunner{stdout: stdout}}.Token(context.Background(), "github.com")
 
-		Expect(err).To(MatchError("gh auth token --hostname github.com printed no token"))
-	})
+			Expect(err).To(MatchError("gh auth token --hostname github.com " + message))
+		},
+		Entry("nothing", "\n", "printed no token"),
+		Entry("two lines", "notice\ngho_secret\n", "printed more than a token"),
+		Entry("a space", "gho_secret extra\n", "printed more than a token"),
+		Entry("a control character", "gho_\x1bsecret\n", "printed more than a token"),
+	)
 })

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/rosenhouse/lg/internal/execx"
 )
@@ -35,6 +36,9 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 	token := string(bytes.TrimSpace(stdout))
 	if token == "" {
 		return "", fmt.Errorf("%s printed no token", command)
+	}
+	if strings.ContainsFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return "", fmt.Errorf("%s printed more than a token", command)
 	}
 	return token, nil
 }
