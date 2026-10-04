@@ -28,10 +28,10 @@ type FS struct {
 	failFrom int
 	err      error
 	journal  []Op
-	devices  map[string]uint64
+	mounts   map[string]store.Mount
 }
 
-func New() *FS { return &FS{devices: map[string]uint64{}} }
+func New() *FS { return &FS{mounts: map[string]store.Mount{}} }
 
 // FailFrom makes the k-th journaled op, counting from 1, and every op after it return err.
 func (f *FS) FailFrom(k int, err error) {
@@ -47,10 +47,10 @@ func (f *FS) Journal() []Op {
 	return append([]Op(nil), f.journal...)
 }
 
-func (f *FS) SetDevice(path string, dev uint64) {
+func (f *FS) SetMount(path string, m store.Mount) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.devices[path] = dev
+	f.mounts[path] = m
 }
 
 // do journals op and runs it, unless it is op k or later.
@@ -97,14 +97,14 @@ func (f *FS) ReadDir(path string) ([]fs.DirEntry, error) { return f.inner.ReadDi
 
 func (f *FS) Lstat(path string) (fs.FileInfo, error) { return f.inner.Lstat(path) }
 
-func (f *FS) Device(path string) (uint64, error) {
+func (f *FS) Mount(path string) (store.Mount, error) {
 	f.mu.Lock()
-	dev, ok := f.devices[path]
+	m, ok := f.mounts[path]
 	f.mu.Unlock()
 	if ok {
-		return dev, nil
+		return m, nil
 	}
-	return f.inner.Device(path)
+	return f.inner.Mount(path)
 }
 
 type faultFile struct {

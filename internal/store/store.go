@@ -37,8 +37,13 @@ type fsOps interface {
 	RemoveAll(path string) error
 	ReadDir(path string) ([]fs.DirEntry, error)
 	Lstat(path string) (fs.FileInfo, error)
-	Device(path string) (uint64, error)
+	Mount(path string) (Mount, error)
 }
+
+// Mount identifies the mount holding a path, since rename works only within
+// one. ID is the Linux mount id, which tells bind mounts of one device apart,
+// and 0 elsewhere.
+type Mount struct{ Dev, ID uint64 }
 
 type File interface {
 	io.Writer
@@ -152,16 +157,16 @@ func openFS(fsys fsOps, root string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
-	dataDev, err := fsys.Device(s.data)
+	dataMount, err := fsys.Mount(s.data)
 	if err != nil {
 		return nil, err
 	}
-	tmpDev, err := fsys.Device(s.tmp)
+	tmpMount, err := fsys.Mount(s.tmp)
 	if err != nil {
 		return nil, err
 	}
-	if dataDev != tmpDev {
-		return nil, fmt.Errorf("%s and %s are on different devices, so units cannot be renamed into place", s.tmp, s.data)
+	if dataMount != tmpMount {
+		return nil, fmt.Errorf("%s and %s are on different devices or mounts, so units cannot be renamed into place", s.tmp, s.data)
 	}
 	return s, nil
 }

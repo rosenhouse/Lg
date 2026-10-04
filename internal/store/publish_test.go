@@ -109,12 +109,23 @@ var _ = Describe("store.Open", Label("store"), func() {
 		Expect(store.OpenFS(faultfs.New(), root)).Error().NotTo(HaveOccurred())
 
 		otherDevice := faultfs.New()
-		otherDevice.SetDevice(filepath.Join(root, "tmp"), 1<<40)
+		otherDevice.SetMount(filepath.Join(root, "tmp"), store.Mount{Dev: 1 << 40})
 		_, err := store.OpenFS(otherDevice, root)
 		Expect(err).To(MatchError(And(
 			ContainSubstring(filepath.Join(root, "tmp")),
 			ContainSubstring(filepath.Join(root, "data")),
 			ContainSubstring("different devices"))))
+	})
+
+	It("refuses a store whose tmp/ is another mount of data/'s device, as a bind mount is", func() {
+		root := newStore()
+		data, err := store.OSFS{}.Mount(filepath.Join(root, "data"))
+		Expect(err).NotTo(HaveOccurred())
+
+		bound := faultfs.New()
+		bound.SetMount(filepath.Join(root, "tmp"), store.Mount{Dev: data.Dev, ID: data.ID + 1})
+		_, err = store.OpenFS(bound, root)
+		Expect(err).To(MatchError(ContainSubstring("different devices or mounts")))
 	})
 })
 

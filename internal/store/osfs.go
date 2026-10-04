@@ -36,10 +36,10 @@ func (OSFS) ReadDir(path string) ([]fs.DirEntry, error) { return os.ReadDir(path
 
 func (OSFS) Lstat(path string) (fs.FileInfo, error) { return os.Lstat(path) }
 
-func (OSFS) Device(path string) (uint64, error) {
+func (OSFS) Mount(path string) (Mount, error) {
 	var st syscall.Stat_t
 	if err := syscall.Stat(path, &st); err != nil {
-		return 0, &fs.PathError{Op: "stat", Path: path, Err: err}
+		return Mount{}, &fs.PathError{Op: "stat", Path: path, Err: err}
 	}
-	return device(&st), nil
+	return Mount{Dev: device(&st)}, nil
 }

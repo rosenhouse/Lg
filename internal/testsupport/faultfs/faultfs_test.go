@@ -88,13 +88,14 @@ var _ = Describe("FS", Label("store"), func() {
 		Entry("fsync", 4, []string{"d", "d/a"}),
 	)
 
-	It("reports the device it was told for a path, and the inner FS's otherwise", func() {
+	It("reports the mount it was told for a path, and the inner FS's otherwise", func() {
 		Expect(os.Mkdir(filepath.Join(dir, "a"), 0o755)).To(Succeed())
-		real, err := store.OSFS{}.Device(dir)
+		real, err := store.OSFS{}.Mount(dir)
 		Expect(err).NotTo(HaveOccurred())
+		told := store.Mount{Dev: real.Dev + 1, ID: real.ID + 1}
 
-		f.SetDevice(filepath.Join(dir, "a"), real+1)
-		Expect(f.Device(filepath.Join(dir, "a"))).To(Equal(real + 1))
-		Expect(f.Device(dir)).To(Equal(real))
+		f.SetMount(filepath.Join(dir, "a"), told)
+		Expect(f.Mount(filepath.Join(dir, "a"))).To(Equal(told))
+		Expect(f.Mount(dir)).To(Equal(real))
 	})
 })
