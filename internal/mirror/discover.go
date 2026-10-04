@@ -18,23 +18,34 @@ import (
 // Discover lists the runs created in [from, to], newest first, halving the
 // range while GitHub caps its listing.
 func Discover(ctx context.Context, gh github.Client, from, to time.Time) ([]github.Run, error) {
-	runs, total, err := gh.ListRuns(ctx, github.RunQuery{From: from, To: to, PerPage: 100})
+	return listRange(ctx, gh, github.RunQuery{From: from, To: to, PerPage: 100})
+}
+
+// listRange lists the runs q selects, halving its created range while GitHub
+// caps the listing.
+func listRange(ctx context.Context, gh github.Client, q github.RunQuery) ([]github.Run, error) {
+	runs, total, err := gh.ListRuns(ctx, q)
 	if err != nil || total < github.ListingCap {
 		return runs, err
 	}
-	if to.Sub(from) < 2*time.Second {
-		return nil, fmt.Errorf("%d runs were created in [%s, %s], and GitHub lists at most %d", total, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), github.ListingCap)
+	if q.To.Sub(q.From) < 2*time.Second {
+		return nil, fmt.Errorf("%d runs were created in [%s, %s], and GitHub lists at most %d", total, q.From.UTC().Format(time.RFC3339), q.To.UTC().Format(time.RFC3339), github.ListingCap)
 	}
-	mid := from.Add(to.Sub(from) / 2).Truncate(time.Second)
-	newer, err := Discover(ctx, gh, mid.Add(time.Second), to)
+	mid := q.From.Add(q.To.Sub(q.From) / 2).Truncate(time.Second)
+	newer, err := listRange(ctx, gh, created(q, mid.Add(time.Second), q.To))
 	if err != nil {
 		return nil, err
 	}
-	older, err := Discover(ctx, gh, from, mid)
+	older, err := listRange(ctx, gh, created(q, q.From, mid))
 	if err != nil {
 		return nil, err
 	}
 	return append(newer, older...), nil
+}
+
+func created(q github.RunQuery, from, to time.Time) github.RunQuery {
+	q.From, q.To = from, to
+	return q
 }
 
 // merge joins listings into one, oldest first by created_at then id, keeping
@@ -103,7 +114,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		return discovery{}, err
 	}
 	for _, status := range nonTerminal {
-		runs, _, err := gh.ListRuns(ctx, github.RunQuery{Status: status})
+		runs, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {
 			return discovery{}, err
 		}
@@ -133,6 +144,17 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		d.runs = append(d.runs, listedRun{Run: run, dir: dir})
 	}
 	return d, nil
+}
+
+// listStatus lists the runs in status. When GitHub caps the listing, it
+// lists them over retention by created range instead, since the cycle
+// leaves out older runs anyway.
+func (m *Mirror) listStatus(ctx context.Context, gh github.Client, status string, now time.Time) ([]github.Run, error) {
+	runs, total, err := gh.ListRuns(ctx, github.RunQuery{Status: status})
+	if err != nil || total < github.ListingCap {
+		return runs, err
+	}
+	return listRange(ctx, gh, github.RunQuery{Status: status, From: now.Add(-m.Retention), To: now, PerPage: 100})
 }
 
 func (m *Mirror) runDir(repo github.Repo, run github.Run) string {

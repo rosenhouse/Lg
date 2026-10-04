@@ -100,6 +100,28 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 	}, cycleTimeout)
 })
 
+var _ = Describe("a non-terminal status listing whose total_count reaches 1,000", Label("discovery"), func() {
+	It("is listed again by created range over retention, halved the same way, so every run is watched", func(ctx SpecContext) {
+		env := harness.InProcess()
+		now := harness.DefaultNow()
+		from := now.Add(-20 * day)
+		for i := range int64(1001) {
+			env.Fake.AddListed(scenario.QueuedRun(i+1, from.Add(time.Duration(i)*time.Minute)))
+		}
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readWatch(env)["github.com"]).To(HaveLen(1001))
+		var queuedRanges []string
+		for _, q := range runListings(env.Fake.Requests()) {
+			if q.Get("status") == "queued" && q.Has("created") {
+				queuedRanges = append(queuedRanges, q.Get("created"))
+			}
+		}
+		retention := createdRange(now.Add(-90*day), now)
+		Expect(queuedRanges).To(ContainElements(retention, createdRange(now.Add(-90*day), now.Add(-45*day)), createdRange(now.Add(-45*day).Add(time.Second), now)))
+	}, cycleTimeout)
+})
+
 var _ = Describe("a rerun of a run created before the window", Label("discovery"), func() {
 	It("is watched once listed with any non-terminal status, published by the first sync after it completes, and then no longer watched", func(ctx SpecContext) {
 		env := harness.InProcess()

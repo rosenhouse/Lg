@@ -322,3 +322,16 @@ var _ = Describe("ListedRun", Label("discovery"), func() {
 		))
 	})
 })
+
+var _ = Describe("QueuedRun", Label("discovery"), func() {
+	It("is a queued run with no conclusion", func() {
+		var run map[string]any
+		Expect(json.Unmarshal(scenario.QueuedRun(42, time.Date(2026, 9, 3, 14, 22, 54, 0, time.UTC)), &run)).To(Succeed())
+		Expect(run).To(SatisfyAll(
+			HaveKeyWithValue("id", BeEquivalentTo(42)),
+			HaveKeyWithValue("created_at", "2026-09-03T14:22:54Z"),
+			HaveKeyWithValue("status", "queued"),
+			HaveKeyWithValue("conclusion", BeNil()),
+		))
+	})
+})

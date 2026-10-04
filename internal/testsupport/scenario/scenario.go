@@ -299,6 +299,15 @@ func (r Run) shiftTimes(moved func(time.Time) bool, delta time.Duration) Run {
 
 // ListedRun is the body of a completed run with only the fields a listing needs.
 func ListedRun(id int64, createdAt time.Time) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":%q,"status":"completed","conclusion":"success","run_attempt":1,"repository":{"full_name":"rosenhouse/Lg"}}`,
-		id, createdAt.UTC().Format(time.RFC3339)))
+	return listedRun(id, createdAt, "completed", `"success"`)
+}
+
+// QueuedRun is the body of a queued run with only the fields a listing needs.
+func QueuedRun(id int64, createdAt time.Time) json.RawMessage {
+	return listedRun(id, createdAt, "queued", "null")
+}
+
+func listedRun(id int64, createdAt time.Time, status, conclusion string) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":%q,"status":%q,"conclusion":%s,"run_attempt":1,"repository":{"full_name":"rosenhouse/Lg"}}`,
+		id, createdAt.UTC().Format(time.RFC3339), status, conclusion))
 }
