@@ -156,7 +156,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	if err != nil {
 		return err
 	}
-	s := &staged{unit: unit, sources: map[string]source{}}
+	s := &staged{unit: unit, sources: map[string]source{}, carriedForward: []int64{}}
 	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
 	if err == nil {
 		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
@@ -190,7 +190,11 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 	if err := s.unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
 		return err
 	}
-	if model.Classify(job.Job, attempt.RunStartedAt) == model.NotApplicable {
+	switch model.Classify(job.Job, attempt.RunStartedAt) {
+	case model.CarriedForward:
+		s.carriedForward = append(s.carriedForward, job.ID)
+		return nil
+	case model.NotApplicable:
 		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
@@ -243,6 +247,8 @@ type fetch struct {
 	RunCreatedAt      time.Time         `json:"run_created_at"`
 	RunAttemptAtFetch int               `json:"run_attempt_at_fetch"`
 	Sources           map[string]source `json:"sources"`
+	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
+	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
 }
 
 type source struct {
@@ -255,23 +261,25 @@ type source struct {
 
 func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		LgFormat:          1,
-		LgVersion:         version.Version,
-		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
-		Host:              m.Host,
-		Repo:              run.Repository.FullName,
-		RunID:             run.ID,
-		Attempt:           attempt.RunAttempt,
-		RunCreatedAt:      run.CreatedAt,
-		RunAttemptAtFetch: run.RunAttempt,
-		Sources:           s.sources,
+		LgFormat:           1,
+		LgVersion:          version.Version,
+		FetchedAt:          m.Clock.Now().UTC().Truncate(time.Second),
+		Host:               m.Host,
+		Repo:               run.Repository.FullName,
+		RunID:              run.ID,
+		Attempt:            attempt.RunAttempt,
+		RunCreatedAt:       run.CreatedAt,
+		RunAttemptAtFetch:  run.RunAttempt,
+		Sources:            s.sources,
+		CarriedForwardJobs: s.carriedForward,
 	})
 }
 
 // staged is a unit being staged with the sources of its files.
 type staged struct {
-	unit    *store.Unit
-	sources map[string]source
+	unit           *store.Unit
+	sources        map[string]source
+	carriedForward []int64
 }
 
 func (s *staged) writeJSON(name string, raw []byte, from github.Source) error {
