@@ -44,7 +44,7 @@ var _ = Describe("Real", Label("transport"), func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("kills the program's children too when ctx ends", func() {
+	It("kills the program's children too when ctx ends", Label("blocked"), func() {
 		alive := filepath.Join(GinkgoT().TempDir(), "alive")
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		DeferCleanup(cancel)

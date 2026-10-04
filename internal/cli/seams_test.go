@@ -53,7 +53,7 @@ var _ = Describe("RealDeps", Label("failures"), func() {
 		Expect(reflect.ValueOf(cli.RealDeps().NewGitHub).Pointer()).To(Equal(reflect.ValueOf(github.NewDefault).Pointer()))
 	})
 
-	It("opens the store on the OS filesystem", func() {
+	It("opens the store on the OS filesystem", Label("blocked"), func() {
 		Expect(cli.RealDeps().StoreFS).To(Equal(store.OSFS{}))
 	})
 })
