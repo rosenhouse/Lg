@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -53,6 +55,15 @@ var _ = Describe("lg sync at after-attempt-1", Label("artifacts"), func() {
 				HaveKeyWithValue("event", "push"),
 				HaveKeyWithValue("pr_numbers", BeEmpty()),
 				HaveKeyWithValue("display_title", "Add lg-fixture workflow for recording Actions API shapes"),
+				HaveKeyWithValue("sources", SatisfyAll(
+					HaveKeyWithValue("artifact.json", HaveKeyWithValue("url", fake.URL()+"/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100")),
+					HaveKeyWithValue("artifact.zip", SatisfyAll(
+						HaveKeyWithValue("url", fmt.Sprintf("%s/repos/rosenhouse/lg/actions/artifacts/%d/zip", fake.URL(), artifact.ID)),
+						HaveKeyWithValue("status", BeEquivalentTo(http.StatusOK)),
+						HaveKeyWithValue("bytes", BeEquivalentTo(len(recorded))),
+						HaveKeyWithValue("sha256", fmt.Sprintf("%x", sha256.Sum256(recorded))),
+					)),
+				)),
 			), "artifact %d", artifact.ID)
 		}
 	})
