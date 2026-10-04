@@ -24,8 +24,8 @@ var (
 	ErrFormat = errors.New("unsupported store format")
 )
 
-// FS is the filesystem seam that faultfs wraps.
-type FS interface {
+// fsOps is the filesystem seam that faultfs wraps.
+type fsOps interface {
 	Mkdir(path string) error
 	Create(path string) (File, error)
 	Rename(oldpath, newpath string) error
@@ -43,7 +43,7 @@ type File interface {
 }
 
 type Store struct {
-	fs        FS
+	fs        fsOps
 	data, tmp string
 }
 
@@ -81,11 +81,11 @@ func writeNew(path, content string) error {
 	return f.Close()
 }
 
-func Open(root string) (*Store, error) { return OpenFS(OSFS{}, root) }
+func Open(root string) (*Store, error) { return openFS(OSFS{}, root) }
 
-// OpenFS opens the store at root through fsys. It refuses a FORMAT other than
+// openFS opens the store at root through fsys. It refuses a FORMAT other than
 // lg-store 1, and a tmp/ that cannot be renamed into data/.
-func OpenFS(fsys FS, root string) (*Store, error) {
+func openFS(fsys fsOps, root string) (*Store, error) {
 	if err := CheckFormat(root); err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *Store) Sweep() error {
 
 // Unit is a directory staged under tmp/ until Publish renames it into data/.
 type Unit struct {
-	fs   FS
+	fs   fsOps
 	dir  string
 	dirs []string // created under dir, parents first
 }
@@ -181,7 +181,7 @@ func (s *Store) Publish(u *Unit, target string) error {
 
 // mkdirAll makes path and any missing parents, returning those it made,
 // parents first. With syncParents, it fsyncs each new dir's parent.
-func mkdirAll(fsys FS, path string, syncParents bool) ([]string, error) {
+func mkdirAll(fsys fsOps, path string, syncParents bool) ([]string, error) {
 	var missing []string
 	for dir := path; ; dir = filepath.Dir(dir) {
 		_, err := fsys.Lstat(dir)
