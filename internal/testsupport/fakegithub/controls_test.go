@@ -46,7 +46,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 	})
 
 	It("Fail on the blob host leaves the API's redirect alone", func() {
-		fake.Fail("blob", "/logs/111221289888", fakegithub.Fault{Status: http.StatusServiceUnavailable, Times: 1})
+		fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: http.StatusServiceUnavailable, Times: 1})
 
 		Expect(get(logPath)).To(Equal(http.StatusServiceUnavailable))
 		Expect(fake.Requests()).To(HaveExactElements(
@@ -94,5 +94,46 @@ var _ = Describe("Server controls", Label("store"), func() {
 		}()
 		Eventually(closed, time.Second).Should(BeClosed())
 		Eventually(done, time.Second).Should(BeClosed())
+	})
+})
+
+var _ = Describe("Server controls", Label("transport"), func() {
+	var fake *fakegithub.Server
+
+	BeforeEach(func() {
+		fake = fakegithub.Start(runID, "after-attempt-1")
+	})
+
+	get := func(path, authorization string) int {
+		GinkgoHelper()
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fake.URL()+path, http.NoBody)
+		Expect(err).NotTo(HaveOccurred())
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		resp, err := client.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.Body.Close()).To(Succeed())
+		return resp.StatusCode
+	}
+
+	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", func() {
+		fake.RequireToken("lg-test-token")
+
+		Expect(get(logPath, "")).To(Equal(http.StatusUnauthorized))
+		Expect(get(logPath, "Bearer other")).To(Equal(http.StatusUnauthorized))
+		Expect(get(logPath, "token lg-test-token")).To(Equal(http.StatusUnauthorized))
+		Expect(get(logPath, "Bearer lg-test-token")).To(Equal(http.StatusFound))
+	})
+
+	It("Requests reports each request's status and whether it carried Authorization", func() {
+		get("/repos/rosenhouse/lg", "")
+		get(logPath, "Bearer lg-test-token")
+
+		Expect(fake.Requests()).To(HaveExactElements(
+			SatisfyAll(HaveField("Status", http.StatusOK), HaveField("Authorization", false)),
+			SatisfyAll(HaveField("Status", http.StatusFound), HaveField("Authorization", true)),
+		))
 	})
 })
