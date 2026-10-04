@@ -179,6 +179,11 @@ func WithoutDigest(r Run, artifactID int64) Run {
 	return r.editArtifact(artifactID, func(artifact map[string]any) { delete(artifact, "digest") })
 }
 
+// WithDigest lists the artifact with the digest.
+func WithDigest(r Run, artifactID int64, digest string) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["digest"] = digest })
+}
+
 func (r Run) editArtifact(artifactID int64, edit func(map[string]any)) Run {
 	out := r.copy()
 	out.edit("artifacts.json", func(listing map[string]any) {
