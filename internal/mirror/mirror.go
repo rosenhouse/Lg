@@ -121,7 +121,7 @@ func addJob(ctx context.Context, gh github.Client, unit *store.Unit, job github.
 	if err != nil {
 		return err
 	}
-	if err := gh.DownloadJobLog(ctx, job.ID, w); err != nil {
+	if _, err := gh.DownloadJobLog(ctx, job.ID, w); err != nil {
 		_ = w.Close()
 		return err
 	}

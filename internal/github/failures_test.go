@@ -1,0 +1,194 @@
+package github_test
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
+
+	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/github"
+)
+
+var hopTimeout = SpecTimeout(5 * time.Second)
+
+var shortTimeouts = github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: 200 * time.Millisecond, BodyIdle: 200 * time.Millisecond}
+
+func beTransient() types.GomegaMatcher {
+	return MatchError(func(err error) bool {
+		var transient failure.Transient
+		return errors.As(err, &transient)
+	}, "wraps a failure.Transient")
+}
+
+// hops serves the log of job 1 as GitHub does: the API redirects to a blob
+// host, which answers blob.
+func hops(api, blob http.HandlerFunc) *github.HTTP {
+	GinkgoHelper()
+	blobHost := httptest.NewServer(blob)
+	DeferCleanup(blobHost.Close)
+	if api == nil {
+		api = func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, blobHost.URL+"/log", http.StatusFound)
+		}
+	}
+	apiHost := httptest.NewServer(api)
+	DeferCleanup(apiHost.Close)
+	return github.NewHTTP(github.NewHTTPClient(shortTimeouts), mustParse(apiHost.URL), "o/r", "lg-test-token")
+}
+
+func answer(status int, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+// stall writes body, then waits until the client gives up.
+func stall(body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if body != "" {
+			w.Header().Set("Content-Length", "1000")
+			_, _ = w.Write([]byte(body))
+			_ = http.NewResponseController(w).Flush()
+		}
+		<-r.Context().Done()
+	}
+}
+
+const (
+	gitHubNotFound = `{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}`
+	blobNotFound   = "\uFEFF<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.\nRequestId:b712d84b\nTime:2026-10-03T14:24:46.3969794Z</Message></Error>"
+)
+
+var _ = Describe("HTTP errors", Label("failures"), func() {
+	DescribeTable("classifies a failed download by hop",
+		func(ctx SpecContext, api, blob http.HandlerFunc, kind types.GomegaMatcher) {
+			Expect(hops(api, blob).DownloadJobLog(ctx, 1, &bytes.Buffer{})).Error().To(kind)
+		},
+		Entry("an API 404 is ErrNotFound", answer(http.StatusNotFound, gitHubNotFound), nil, MatchError(github.ErrNotFound), hopTimeout),
+		Entry("a blob 404 is ErrBlobMissing", nil, answer(http.StatusNotFound, blobNotFound), MatchError(github.ErrBlobMissing), hopTimeout),
+		Entry("an API 410 is ErrGone", answer(http.StatusGone, `{"message":"Gone"}`), nil, MatchError(github.ErrGone), hopTimeout),
+		Entry("a blob 410 is ErrGone", nil, answer(http.StatusGone, ""), MatchError(github.ErrGone), hopTimeout),
+		Entry("an API 500 is Transient", answer(http.StatusInternalServerError, ""), nil, beTransient(), hopTimeout),
+		Entry("an API 502 is Transient", answer(http.StatusBadGateway, ""), nil, beTransient(), hopTimeout),
+		Entry("a blob 403 is Transient", nil, answer(http.StatusForbidden, ""), beTransient(), hopTimeout),
+		Entry("a blob 503 is Transient", nil, answer(http.StatusServiceUnavailable, ""), beTransient(), hopTimeout),
+		Entry("a short body is Transient", nil, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte("partial"))
+		}, beTransient(), hopTimeout),
+		Entry("stalled headers are Transient", stall(""), nil, beTransient(), hopTimeout),
+		Entry("a stalled body is Transient", nil, stall("partial"), beTransient(), hopTimeout),
+	)
+
+	It("keeps an API 404 apart from ErrBlobMissing", func(ctx SpecContext) {
+		_, err := hops(answer(http.StatusNotFound, gitHubNotFound), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).NotTo(MatchError(github.ErrBlobMissing))
+	})
+
+	It("keeps a blob 404 apart from ErrNotFound", func(ctx SpecContext) {
+		_, err := hops(nil, answer(http.StatusNotFound, blobNotFound)).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).NotTo(MatchError(github.ErrNotFound))
+	})
+
+	It("keeps a blob 403 apart from ErrNotFound and ErrBlobMissing", func(ctx SpecContext) {
+		_, err := hops(nil, answer(http.StatusForbidden, "")).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).NotTo(MatchError(github.ErrNotFound))
+		Expect(err).NotTo(MatchError(github.ErrBlobMissing))
+	})
+
+	It("leaves an API 422 neither Transient nor a gap", func(ctx SpecContext) {
+		_, err := hops(answer(http.StatusUnprocessableEntity, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).To(MatchError(ContainSubstring("422")))
+		Expect(err).NotTo(beTransient())
+		Expect(err).NotTo(MatchError(github.ErrNotFound))
+		Expect(err).NotTo(MatchError(github.ErrGone))
+	})
+
+	DescribeTable("gives the API URL, the status and the message of a failed hop",
+		func(ctx SpecContext, api, blob http.HandlerFunc, status int, message string) {
+			client := hops(api, blob)
+			_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			var statusErr *github.StatusError
+			Expect(errors.As(err, &statusErr)).To(BeTrue())
+			Expect(statusErr.URL).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs$`))
+			Expect(statusErr.Status).To(Equal(status))
+			Expect(statusErr.Message).To(Equal(message))
+		},
+		Entry("GitHub's JSON message", answer(http.StatusNotFound, gitHubNotFound), nil, 404, "Not Found"),
+		Entry("blob storage's XML message, first line", nil, answer(http.StatusNotFound, blobNotFound), 404, "The specified blob does not exist."),
+		Entry("the status text of a body with no message", answer(http.StatusGone, "gone"), nil, 410, "Gone"),
+	)
+
+	It("does not call a parent's cancellation Transient", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		client := hops(func(_ http.ResponseWriter, r *http.Request) {
+			cancel()
+			<-r.Context().Done()
+		}, nil)
+
+		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(err).NotTo(beTransient())
+	})
+})
+
+var _ = Describe("NewHTTPClient", Label("failures"), func() {
+	It("sets the dial, TLS-handshake and response-header timeouts and no total deadline", func() {
+		client := github.NewHTTPClient(github.DefaultTimeouts)
+		Expect(client.Timeout).To(BeZero())
+		transport, dialer, bodyIdle := github.TransportOf(client)
+		Expect(dialer.Timeout).To(Equal(10 * time.Second))
+		Expect(transport.TLSHandshakeTimeout).To(Equal(10 * time.Second))
+		Expect(transport.ResponseHeaderTimeout).To(Equal(30 * time.Second))
+		Expect(bodyIdle).To(Equal(60 * time.Second))
+		Expect(transport.Proxy).NotTo(BeNil())
+	})
+
+	It("gives up on a body idle for BodyIdle", func(ctx SpecContext) {
+		client := hops(nil, stall("partial"))
+
+		start := clock.Real{}.Now()
+		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		Expect(err).To(MatchError(ContainSubstring("idle for 200ms")))
+		Expect(clock.Real{}.Now()).To(BeTemporally("<", start.Add(2*time.Second)))
+	}, SpecTimeout(5*time.Second))
+
+	It("reads a body that trickles in for longer than BodyIdle", func(ctx SpecContext) {
+		client := hops(nil, func(w http.ResponseWriter, _ *http.Request) {
+			for range 6 {
+				_, _ = w.Write([]byte("x"))
+				_ = http.NewResponseController(w).Flush()
+				<-clock.Real{}.After(100 * time.Millisecond)
+			}
+		})
+
+		var log bytes.Buffer
+		_, err := client.DownloadJobLog(ctx, 1, &log)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(log.String()).To(Equal("xxxxxx"))
+	}, SpecTimeout(5*time.Second))
+
+	It("gives up on a TLS handshake after TLSHandshake", func(ctx SpecContext) {
+		// The kernel completes the TCP handshake; nothing answers the TLS one.
+		silent, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(silent.Close)
+		timeouts := shortTimeouts
+		timeouts.TLSHandshake = 200 * time.Millisecond
+		client := github.NewHTTP(github.NewHTTPClient(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token")
+
+		_, err = client.GetAttempt(ctx, 1, 1)
+		Expect(err).To(MatchError(ContainSubstring("TLS handshake timeout")))
+		Expect(err).To(beTransient())
+	}, SpecTimeout(5*time.Second))
+})

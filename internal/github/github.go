@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -33,7 +34,7 @@ type Client interface {
 	ListRuns(ctx context.Context) ([]Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, error)
-	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
+	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error)
 }
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
@@ -54,7 +55,40 @@ type Timeouts struct {
 	Dial, TLSHandshake, ResponseHeader, BodyIdle time.Duration
 }
 
-func NewHTTPClient(Timeouts) *http.Client { return &http.Client{} }
+var DefaultTimeouts = Timeouts{}
+
+var (
+	ErrNotFound    = errors.New("not found")
+	ErrBlobMissing = errors.New("blob missing")
+	ErrGone        = errors.New("gone")
+)
+
+type StatusError struct {
+	URL     string
+	Status  int
+	Message string
+}
+
+func (e *StatusError) Error() string { return "" }
+
+// Source is the API URL a file came from.
+type Source struct {
+	URL    string
+	Status int
+	Pages  int
+}
+
+type idleTransport struct {
+	base     *http.Transport
+	dialer   *net.Dialer
+	bodyIdle time.Duration
+}
+
+func (t *idleTransport) RoundTrip(r *http.Request) (*http.Response, error) { return t.base.RoundTrip(r) }
+
+func NewHTTPClient(Timeouts) *http.Client {
+	return &http.Client{Transport: &idleTransport{base: &http.Transport{}, dialer: &net.Dialer{}}}
+}
 
 type HTTP struct {
 	client  *http.Client
@@ -127,8 +161,8 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 }
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
-func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error {
-	return h.get(ctx, h.repoURL+fmt.Sprintf("/actions/jobs/%d/logs", jobID), func(resp *http.Response) error {
+func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) (Source, error) {
+	return Source{}, h.get(ctx, h.repoURL+fmt.Sprintf("/actions/jobs/%d/logs", jobID), func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err
 	})
