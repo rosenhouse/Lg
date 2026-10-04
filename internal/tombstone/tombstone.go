@@ -8,6 +8,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/model"
 )
 
 type Reason string
@@ -61,7 +62,8 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 // FromZipError tombstones artifact.zip when err shows GitHub has lost it for
 // good: a 410, or a 404, which is expired once expires_at has passed and
 // deleted before it or with no expires_at. It gives back any other err.
-func FromZipError(err error, expiresAt, now time.Time) (Tombstone, error) {
+func FromZipError(err error, artifact model.Artifact, logGrace time.Duration, now time.Time) (Tombstone, error) {
+	expiresAt := artifact.ExpiresAt
 	statusErr, ok := permanent(err)
 	if !ok {
 		return Tombstone{}, err
