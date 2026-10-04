@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/rosenhouse/lg/internal/execx"
@@ -18,8 +19,9 @@ type TokenSource interface {
 
 // GhTokenSource asks gh, or the program LG_GH names, for host's token.
 type GhTokenSource struct {
-	Runner execx.Runner
-	Env    map[string]string
+	Runner  execx.Runner
+	Env     map[string]string
+	Timeout time.Duration
 }
 
 func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
