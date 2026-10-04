@@ -81,10 +81,25 @@ var _ = Describe("record.sh", Label("transport"), func() {
 	It("exits 1 naming GitHub's answer and writes no stage when the run GET fails", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		dir := recordingsCopy()
+		tmpDir := GinkgoT().TempDir()
 
-		output, err := record(fake, dir, GinkgoT().TempDir(), 1, "bogus")
+		output, err := record(fake, dir, tmpDir, 1, "bogus")
 		Expect(err).To(MatchError("exit status 1"), output)
 		Expect(output).To(ContainSubstring("record.sh: 404 runs/1: Not Found"))
 		Expect(filepath.Join(dir, "run-1")).NotTo(BeADirectory())
+		Expect(os.ReadDir(tmpDir)).To(BeEmpty())
+	})
+
+	It("exits 1 naming the status and writes no stage when a later GET fails", func() {
+		fake := fakegithub.Start(runID, "after-expiry")
+		fake.Fail("api", "attempts/2/jobs", fakegithub.Fault{Status: http.StatusInternalServerError})
+		dir := recordingsCopy(recording{runID, "after-attempt-3"})
+		tmpDir := GinkgoT().TempDir()
+
+		output, err := record(fake, dir, tmpDir, runID, "after-expiry")
+		Expect(err).To(MatchError("exit status 1"), output)
+		Expect(output).To(ContainSubstring("record.sh: 500 runs/37129390741/attempts/2/jobs"))
+		Expect(filepath.Join(dir, "run-37129390741", "after-expiry")).NotTo(BeADirectory())
+		Expect(os.ReadDir(tmpDir)).To(BeEmpty())
 	})
 })
