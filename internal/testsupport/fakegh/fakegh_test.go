@@ -3,7 +3,9 @@ package fakegh_test
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -79,4 +81,12 @@ var _ = Describe("fake gh told to Hang", Label("blocked"), func() {
 		Expect(gh.Calls()).To(Equal([]string{"auth token"}))
 		Expect(gh.HungPIDs()).To(Equal([]int{cmd.Process.Pid}))
 	}, SpecTimeout(5*time.Second))
+
+	It("has no pids while the file it records them in is still empty", func() {
+		dir := GinkgoT().TempDir()
+		gh := fakegh.New(dir)
+		Expect(os.WriteFile(filepath.Join(dir, "hung-pids"), nil, 0o644)).To(Succeed())
+
+		Expect(gh.HungPIDs()).To(BeEmpty())
+	})
 })

@@ -66,6 +66,9 @@ func (g *GH) lines(name string) []string {
 		return nil
 	}
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	if len(data) == 0 {
+		return nil
+	}
 	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 }
 
