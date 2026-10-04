@@ -73,7 +73,21 @@ func NewTransport(t Timeouts) http.RoundTripper {
 	base.DialContext = dialer.DialContext
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
+	base.OnProxyConnectResponse = func(_ context.Context, proxy *url.URL, req *http.Request, resp *http.Response) error {
+		switch resp.StatusCode {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return &proxyGatewayError{proxy: proxy.Host, target: req.Host, status: resp.Status}
+		}
+		return nil
+	}
 	return &idleTransport{base: base, timeouts: t}
+}
+
+// proxyGatewayError is a proxy's answer that it cannot reach the API host.
+type proxyGatewayError struct{ proxy, target, status string }
+
+func (e *proxyGatewayError) Error() string {
+	return fmt.Sprintf("proxy %s answered CONNECT %s with %s", e.proxy, e.target, e.status)
 }
 
 // idleTransport cancels a request once its body has sent nothing for BodyIdle.
@@ -375,10 +389,11 @@ func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", rawURL, err)
 		var opErr *net.OpError
+		var gatewayErr *proxyGatewayError
 		switch {
 		case ctx.Err() != nil:
 			return err
-		case errors.As(err, &opErr) && opErr.Op == "dial":
+		case errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect"), errors.As(err, &gatewayErr):
 			return failure.Blocked{Kind: failure.Unreachable, Detail: err.Error()}
 		}
 		return failure.Transient{Err: err}
