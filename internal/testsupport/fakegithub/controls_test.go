@@ -17,7 +17,7 @@ const (
 	logPath = "/repos/rosenhouse/lg/actions/jobs/111221289888/logs"
 )
 
-var _ = Describe("Server controls", Label("store"), func() {
+var _ = Describe("Server controls", func() {
 	var fake *fakegithub.Server
 
 	BeforeEach(func() {
@@ -36,7 +36,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		return resp.StatusCode
 	}
 
-	It("Fail answers requests whose path ends in match with the fault's status, Times times", func() {
+	It("Fail answers requests whose path ends in match with the fault's status, Times times", Label("store"), func() {
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 2})
 
 		Expect(get(logPath)).To(Equal(http.StatusInternalServerError))
@@ -45,7 +45,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		Expect(get(logPath)).To(Equal(http.StatusOK))
 	})
 
-	It("Fail on the blob host leaves the API's redirect alone", func() {
+	It("Fail on the blob host leaves the API's redirect alone", Label("store"), func() {
 		fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: http.StatusServiceUnavailable, Times: 1})
 
 		Expect(get(logPath)).To(Equal(http.StatusServiceUnavailable))
@@ -55,7 +55,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		))
 	})
 
-	It("Hold delays matching requests until released, recording them on arrival", func() {
+	It("Hold delays matching requests until released, recording them on arrival", Label("store"), func() {
 		release := fake.Hold("/logs")
 		done := make(chan int)
 		go func() {
@@ -72,7 +72,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		Expect(get(logPath)).To(Equal(http.StatusOK))
 	})
 
-	It("Close releases held requests", func() {
+	It("Close releases held requests", Label("store"), func() {
 		// Runs before Start's Close, so a failing spec does not hang there.
 		DeferCleanup(fake.Hold("/logs"))
 		done := make(chan struct{})
@@ -95,41 +95,19 @@ var _ = Describe("Server controls", Label("store"), func() {
 		Eventually(closed, time.Second).Should(BeClosed())
 		Eventually(done, time.Second).Should(BeClosed())
 	})
-})
 
-var _ = Describe("Server controls", Label("transport"), func() {
-	var fake *fakegithub.Server
-
-	BeforeEach(func() {
-		fake = fakegithub.Start(runID, "after-attempt-1")
-	})
-
-	get := func(path, authorization string) int {
-		GinkgoHelper()
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fake.URL()+path, http.NoBody)
-		Expect(err).NotTo(HaveOccurred())
-		if authorization != "" {
-			req.Header.Set("Authorization", authorization)
-		}
-		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		resp, err := client.Do(req)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(resp.Body.Close()).To(Succeed())
-		return resp.StatusCode
-	}
-
-	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", func() {
+	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", Label("transport"), func() {
 		fake.RequireToken("lg-test-token")
 
-		Expect(get(logPath, "")).To(Equal(http.StatusUnauthorized))
-		Expect(get(logPath, "Bearer other")).To(Equal(http.StatusUnauthorized))
-		Expect(get(logPath, "token lg-test-token")).To(Equal(http.StatusUnauthorized))
-		Expect(get(logPath, "Bearer lg-test-token")).To(Equal(http.StatusFound))
+		Expect(fetch(fake.URL() + logPath).status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer other").status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "token lg-test-token").status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token").status).To(Equal(http.StatusFound))
 	})
 
-	It("Requests reports each request's status and whether it carried Authorization", func() {
-		get("/repos/rosenhouse/lg", "")
-		get(logPath, "Bearer lg-test-token")
+	It("Requests reports each request's status and whether it carried Authorization", Label("transport"), func() {
+		fetch(fake.URL() + "/repos/rosenhouse/lg")
+		fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token")
 
 		Expect(fake.Requests()).To(HaveExactElements(
 			SatisfyAll(HaveField("Status", http.StatusOK), HaveField("Authorization", false)),

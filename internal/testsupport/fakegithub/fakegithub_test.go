@@ -11,13 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
 const (
@@ -107,6 +106,16 @@ func nextLink(header string) string {
 	return ""
 }
 
+func recordedStatus(dir string) []recordings.Line {
+	GinkgoHelper()
+	status, err := os.Open(filepath.Join(dir, "status.txt"))
+	Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = status.Close() }()
+	lines, err := recordings.ParseStatus(status)
+	Expect(err).NotTo(HaveOccurred())
+	return lines
+}
+
 func recordedElements(file, field string) []json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(file)
@@ -128,44 +137,37 @@ func expectJSONElements(actual, expected []json.RawMessage) {
 
 var _ = Describe("fakegithub replay", Label("transport"), func() {
 	It("serves every line of every recorded status.txt with its first-hop and final status; JSON comes back compact and JSON-equal to the recording; logs, zips and BlobNotFound XML come back byte-identical", func() {
-		recordings := filepath.Dir(filepath.Dir(fakegithub.Recording(runID, "after-attempt-1")))
-		statusFiles, err := filepath.Glob(filepath.Join(recordings, "run-*", "*", "status.txt"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(statusFiles).To(HaveLen(4))
+		for _, r := range []struct {
+			run   int64
+			stage string
+		}{
+			{runID, "after-attempt-1"},
+			{runID, "after-attempt-2"},
+			{runID, "after-attempt-3"},
+			{logsDeletedRun, "logs-deleted"},
+		} {
+			dir := fakegithub.Recording(r.run, r.stage)
+			fake := fakegithub.Start(r.run, r.stage)
 
-		for _, statusFile := range statusFiles {
-			dir := filepath.Dir(statusFile)
-			run, err := strconv.ParseInt(strings.TrimPrefix(filepath.Base(filepath.Dir(dir)), "run-"), 10, 64)
-			Expect(err).NotTo(HaveOccurred())
-			fake := fakegithub.Start(run, filepath.Base(dir))
-
-			status, err := os.ReadFile(statusFile)
-			Expect(err).NotTo(HaveOccurred())
-			lines := strings.Split(strings.TrimSuffix(string(status), "\n"), "\n")
+			lines := recordedStatus(dir)
 			Expect(len(lines)).To(BeNumerically(">", 10))
 			for _, line := range lines {
-				code, path, _ := strings.Cut(line, " ")
-				first, final, redirected := strings.Cut(code, "->")
-				if !redirected {
-					final = first
-				}
-
-				resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + path)
-				Expect(strconv.Itoa(resp.status)).To(Equal(first), line)
-				if redirected && first == "302" {
+				resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/" + line.Path)
+				Expect(resp.status).To(Equal(line.First), line.Path)
+				if line.First != line.Final {
 					resp = fetch(resp.header.Get("Location"))
-					Expect(strconv.Itoa(resp.status)).To(Equal(final), line)
+					Expect(resp.status).To(Equal(line.Final), line.Path)
 				}
 
-				recorded, err := os.ReadFile(recordedFile(dir, path))
+				recorded, err := os.ReadFile(recordedFile(dir, line.Path))
 				Expect(err).NotTo(HaveOccurred())
 				if json.Valid(recorded) {
 					var compact bytes.Buffer
-					Expect(json.Compact(&compact, resp.body)).To(Succeed(), line)
-					Expect(resp.body).To(Equal(compact.Bytes()), line)
-					Expect(resp.body).To(MatchJSON(recorded), line)
+					Expect(json.Compact(&compact, resp.body)).To(Succeed(), line.Path)
+					Expect(resp.body).To(Equal(compact.Bytes()), line.Path)
+					Expect(resp.body).To(MatchJSON(recorded), line.Path)
 				} else {
-					Expect(resp.body).To(Equal(recorded), line)
+					Expect(resp.body).To(Equal(recorded), line.Path)
 				}
 			}
 		}
@@ -173,8 +175,6 @@ var _ = Describe("fakegithub replay", Label("transport"), func() {
 })
 
 var _ = Describe("fakegithub", Label("transport"), func() {
-	const logPath = "/repos/rosenhouse/lg/actions/jobs/111221289888/logs"
-
 	It("serves blobs from a host on another domain that answers 400 to any request carrying Authorization", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		redirect := fetch(fake.URL() + logPath)
@@ -205,8 +205,8 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 			want        []json.RawMessage
 		}{
 			{"runs?per_page=100", "workflow_runs", []json.RawMessage{
-				fakeRun(fakegithub.Recording(logsDeletedRun, "logs-deleted")),
-				fakeRun(recording),
+				recordedRun(fakegithub.Recording(logsDeletedRun, "logs-deleted")),
+				recordedRun(recording),
 			}},
 			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(recording, "jobs-all.json"), "jobs")},
 			{"runs/37129390741/attempts/1/jobs?per_page=100", "jobs", recordedElements(filepath.Join(recording, "attempt-1", "jobs.json"), "jobs")},
@@ -227,19 +227,14 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 	It("serves every route under /api/v3 as well", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		recording := fakegithub.Recording(runID, "after-attempt-1")
-		status, err := os.ReadFile(filepath.Join(recording, "status.txt"))
-		Expect(err).NotTo(HaveOccurred())
 
 		routes := map[string]int{
 			"/repos/rosenhouse/lg":                               http.StatusOK,
 			"/repos/rosenhouse/lg/actions/runs?per_page=100":     http.StatusOK,
 			"/repos/rosenhouse/lg/actions/artifacts/11276401837": http.StatusOK,
 		}
-		for _, line := range strings.Split(strings.TrimSuffix(string(status), "\n"), "\n") {
-			code, path, _ := strings.Cut(line, " ")
-			first, _, _ := strings.Cut(code, "->")
-			routes["/repos/rosenhouse/lg/actions/"+path], err = strconv.Atoi(first)
-			Expect(err).NotTo(HaveOccurred())
+		for _, line := range recordedStatus(recording) {
+			routes["/repos/rosenhouse/lg/actions/"+line.Path] = line.First
 		}
 		for path, code := range routes {
 			root := fetch(fake.URL() + path)
@@ -331,7 +326,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 	})
 })
 
-func fakeRun(recording string) json.RawMessage {
+func recordedRun(recording string) json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(recording, "run.json"))
 	Expect(err).NotTo(HaveOccurred())
