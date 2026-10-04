@@ -36,6 +36,8 @@ var _ = Describe("BaseURL", Label("sync"), func() {
 		Entry("a GHES host", "ghe.corp.example", "", "https://ghe.corp.example/api/v3"),
 		Entry("api_url for github.com", "github.com", "http://127.0.0.1:1/api/v3", "http://127.0.0.1:1/api/v3"),
 		Entry("api_url for GHES", "ghe.corp.example", "http://127.0.0.1:1", "http://127.0.0.1:1"),
+		Entry("api_url with a trailing slash", "github.com", "http://127.0.0.1:1/api/v3/", "http://127.0.0.1:1/api/v3"),
+		Entry("api_url of a bare host with a trailing slash", "github.com", "http://127.0.0.1:1/", "http://127.0.0.1:1"),
 	)
 
 	It("returns the error from parsing api_url", func() {

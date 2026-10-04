@@ -48,7 +48,7 @@ type Client interface {
 func BaseURL(host, apiURL string) (*url.URL, error) {
 	switch {
 	case apiURL != "":
-		return url.Parse(apiURL)
+		return url.Parse(strings.TrimRight(apiURL, "/"))
 	case host == "github.com":
 		return url.Parse("https://api.github.com")
 	default:
