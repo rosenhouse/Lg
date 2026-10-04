@@ -50,12 +50,11 @@ func (syncCmd) Run(deps *Deps) error {
 		NewGitHub: func(token string) github.Client {
 			return deps.NewGitHub(api, cfg.Repo, token, deps.Clock)
 		},
-		Store:    s,
-		Host:     cfg.Host,
-		Repo:     cfg.Repo,
-		Clock:    deps.Clock,
-		LogGrace: time.Duration(cfg.LogGrace),
-
+		Store:            s,
+		Host:             cfg.Host,
+		Repo:             cfg.Repo,
+		Clock:            deps.Clock,
+		LogGrace:         time.Duration(cfg.LogGrace),
 		ArtifactMaxBytes: int64(cfg.ArtifactMaxBytes),
 	}
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
