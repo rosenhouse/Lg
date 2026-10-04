@@ -134,3 +134,7 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run) error {
 		Sources:          s.sources,
 	})
 }
+
+func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Artifact, error) {
+	return nil, nil
+}
