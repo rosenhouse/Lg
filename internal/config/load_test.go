@@ -85,6 +85,33 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("an empty fragment", "http://127.0.0.1#", "http://127.0.0.1#"),
 	)
 
+	DescribeTable("accepts an api_url on host or api.<host> over https, or on a loopback address", Label("transport"),
+		func(host, apiURL string) {
+			_, err := config.Load(write("host: " + host + "\nrepo: rosenhouse/lg\napi_url: '" + apiURL + "'\n"))
+			Expect(err).NotTo(HaveOccurred())
+		},
+		Entry("api.<host>", "github.com", "https://api.github.com"),
+		Entry("host itself", "ghe.corp.example", "https://ghe.corp.example/api/v3"),
+		Entry("host in upper case", "ghe.corp.example", "https://GHE.CORP.EXAMPLE/api/v3"),
+		Entry("127.0.0.1 over http", "github.com", "http://127.0.0.1:1"),
+		Entry("::1 over http", "github.com", "http://[::1]:1"),
+		Entry("localhost over http", "github.com", "http://localhost:1"),
+	)
+
+	DescribeTable("rejects an api_url that could send host's token elsewhere", Label("transport"),
+		func(host, apiURL, reason string) {
+			_, err := config.Load(write("host: " + host + "\nrepo: rosenhouse/lg\napi_url: '" + apiURL + "'\n"))
+			Expect(err).To(MatchError(config.Error(reason + `: "` + apiURL + `"`)))
+		},
+		Entry("another host", "github.com", "https://ghe.corp.example/api/v3", "api_url must be on host, api.<host> or a loopback address"),
+		Entry("a subdomain of api.<host>", "github.com", "https://x.api.github.com", "api_url must be on host, api.<host> or a loopback address"),
+		Entry("a host that only starts with host", "github.com", "https://github.com.example", "api_url must be on host, api.<host> or a loopback address"),
+		Entry("a non-loopback IPv4 address", "github.com", "http://192.0.2.1:1", "api_url must be on host, api.<host> or a loopback address"),
+		Entry("a non-loopback IPv6 address over https", "github.com", "https://[2001:db8::1]", "api_url must be on host, api.<host> or a loopback address"),
+		Entry("http to api.<host>", "github.com", "http://api.github.com", "api_url must use https unless it is on a loopback address"),
+		Entry("http to host", "ghe.corp.example", "http://ghe.corp.example/api/v3", "api_url must use https unless it is on a loopback address"),
+	)
+
 	It("rejects an unknown key", func() {
 		path := write("repo: rosenhouse/lg\napi-url: http://127.0.0.1:1\n")
 		_, err := config.Load(path)

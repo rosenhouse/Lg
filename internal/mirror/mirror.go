@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
@@ -18,15 +19,21 @@ import (
 )
 
 type Mirror struct {
-	GitHub github.Client
-	Store  *store.Store
-	Host   string
-	Repo   string
+	Tokens    auth.TokenSource
+	NewGitHub func(token string) github.Client
+	Store     *store.Store
+	Host      string
+	Repo      string
 }
 
 // Cycle publishes attempt 1 of every listed run once it has completed.
 func (m *Mirror) Cycle(ctx context.Context) error {
-	runs, err := m.GitHub.ListRuns(ctx)
+	token, err := m.Tokens.Token(ctx, m.Host)
+	if err != nil {
+		return err
+	}
+	gh := m.NewGitHub(token)
+	runs, err := gh.ListRuns(ctx)
 	if err != nil {
 		return err
 	}
@@ -44,15 +51,15 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		if published {
 			continue
 		}
-		if err := m.publishAttempt(ctx, run.ID, 1, target); err != nil {
+		if err := m.publishAttempt(ctx, gh, run.ID, 1, target); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target string) error {
-	attempt, err := m.GitHub.GetAttempt(ctx, runID, n)
+func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int64, n int, target string) error {
+	attempt, err := gh.GetAttempt(ctx, runID, n)
 	if err != nil {
 		return err
 	}
@@ -61,7 +68,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 	if attempt.Status != "completed" {
 		return nil
 	}
-	jobs, err := m.GitHub.ListAttemptJobs(ctx, runID, n)
+	jobs, err := gh.ListAttemptJobs(ctx, runID, n)
 	if err != nil {
 		return err
 	}
@@ -69,7 +76,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 	if err != nil {
 		return err
 	}
-	err = m.stageAttempt(ctx, unit, attempt, jobs)
+	err = m.stageAttempt(ctx, gh, unit, attempt, jobs)
 	if err == nil {
 		err = m.Store.Publish(unit, target)
 	}
@@ -79,7 +86,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, runID int64, n int, target 
 	return nil
 }
 
-func (m *Mirror) stageAttempt(ctx context.Context, unit *store.Unit, attempt github.Run, jobs []github.Job) error {
+func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, unit *store.Unit, attempt github.Run, jobs []github.Job) error {
 	if err := unit.WriteJSON("attempt.json", attempt.Raw); err != nil {
 		return err
 	}
@@ -87,14 +94,14 @@ func (m *Mirror) stageAttempt(ctx context.Context, unit *store.Unit, attempt git
 		return err
 	}
 	for _, job := range jobs {
-		if err := m.addJob(ctx, unit, job); err != nil {
+		if err := addJob(ctx, gh, unit, job); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Mirror) addJob(ctx context.Context, unit *store.Unit, job github.Job) error {
+func addJob(ctx context.Context, gh github.Client, unit *store.Unit, job github.Job) error {
 	dir := layout.JobDir(".", job.ID, job.Name)
 	if err := unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
 		return err
@@ -110,7 +117,7 @@ func (m *Mirror) addJob(ctx context.Context, unit *store.Unit, job github.Job) e
 	if err != nil {
 		return err
 	}
-	if err := m.GitHub.DownloadJobLog(ctx, job.ID, w); err != nil {
+	if err := gh.DownloadJobLog(ctx, job.ID, w); err != nil {
 		_ = w.Close()
 		return err
 	}

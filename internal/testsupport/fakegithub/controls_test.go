@@ -17,7 +17,7 @@ const (
 	logPath = "/repos/rosenhouse/lg/actions/jobs/111221289888/logs"
 )
 
-var _ = Describe("Server controls", Label("store"), func() {
+var _ = Describe("Server controls", func() {
 	var fake *fakegithub.Server
 
 	BeforeEach(func() {
@@ -36,7 +36,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		return resp.StatusCode
 	}
 
-	It("Fail answers requests whose path ends in match with the fault's status, Times times", func() {
+	It("Fail answers requests whose path ends in match with the fault's status, Times times", Label("store"), func() {
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 2})
 
 		Expect(get(logPath)).To(Equal(http.StatusInternalServerError))
@@ -45,8 +45,8 @@ var _ = Describe("Server controls", Label("store"), func() {
 		Expect(get(logPath)).To(Equal(http.StatusOK))
 	})
 
-	It("Fail on the blob host leaves the API's redirect alone", func() {
-		fake.Fail("blob", "/logs/111221289888", fakegithub.Fault{Status: http.StatusServiceUnavailable, Times: 1})
+	It("Fail on the blob host leaves the API's redirect alone", Label("store"), func() {
+		fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: http.StatusServiceUnavailable, Times: 1})
 
 		Expect(get(logPath)).To(Equal(http.StatusServiceUnavailable))
 		Expect(fake.Requests()).To(HaveExactElements(
@@ -55,7 +55,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		))
 	})
 
-	It("Hold delays matching requests until released, recording them on arrival", func() {
+	It("Hold delays matching requests until released, recording them on arrival", Label("store"), func() {
 		release := fake.Hold("/logs")
 		done := make(chan int)
 		go func() {
@@ -72,7 +72,7 @@ var _ = Describe("Server controls", Label("store"), func() {
 		Expect(get(logPath)).To(Equal(http.StatusOK))
 	})
 
-	It("Close releases held requests", func() {
+	It("Close releases held requests", Label("store"), func() {
 		// Runs before Start's Close, so a failing spec does not hang there.
 		DeferCleanup(fake.Hold("/logs"))
 		done := make(chan struct{})
@@ -94,5 +94,29 @@ var _ = Describe("Server controls", Label("store"), func() {
 		}()
 		Eventually(closed, time.Second).Should(BeClosed())
 		Eventually(done, time.Second).Should(BeClosed())
+	})
+
+	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", Label("transport"), func() {
+		fake.RequireToken("lg-test-token")
+
+		Expect(fetch(fake.URL() + logPath).status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer other").status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "token lg-test-token").status).To(Equal(http.StatusUnauthorized))
+		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token").status).To(Equal(http.StatusFound))
+	})
+
+	It("Advance refuses a run that is not loaded", Label("transport"), func() {
+		Expect(fake.Advance(1, "after-attempt-3")).To(MatchError("run 1 is not loaded"))
+		Expect(fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs/1").status).To(Equal(http.StatusNotFound))
+	})
+
+	It("Requests reports each request's status and whether it carried Authorization", Label("transport"), func() {
+		fetch(fake.URL() + "/repos/rosenhouse/lg")
+		fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token")
+
+		Expect(fake.Requests()).To(HaveExactElements(
+			SatisfyAll(HaveField("Status", http.StatusOK), HaveField("Authorization", false)),
+			SatisfyAll(HaveField("Status", http.StatusFound), HaveField("Authorization", true)),
+		))
 	})
 })

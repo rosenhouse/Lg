@@ -13,6 +13,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -22,17 +23,22 @@ const ExitTimeout = 10 * time.Second
 type Env struct {
 	lgPath string
 	vars   map[string]string
+	gh     *fakegh.GH
 }
 
-// New gives the calling spec its own HOME and an environment built from
-// os.Environ by Scrub.
+// New gives the calling spec its own HOME, a fake gh at LG_GH and an
+// environment built from os.Environ by Scrub.
 func New(lgPath string) *Env {
 	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
 	vars["HOME"] = ginkgo.GinkgoT().TempDir()
-	return &Env{lgPath: lgPath, vars: vars}
+	gh := fakegh.New(ginkgo.GinkgoT().TempDir())
+	vars["LG_GH"] = gh.Path
+	return &Env{lgPath: lgPath, vars: vars, gh: gh}
 }
 
 func (e *Env) Home() string { return e.vars["HOME"] }
+
+func (e *Env) GH() *fakegh.GH { return e.gh }
 
 func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 
@@ -54,12 +60,15 @@ func (e *Env) Sh(script string) *gexec.Session {
 	return e.start(exec.CommandContext(ginkgo.GinkgoT().Context(), "sh", "-c", script))
 }
 
-// WriteConfig writes config.yaml for rosenhouse/lg served at apiURL.
-func (e *Env) WriteConfig(apiURL string) {
+// WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
+func (e *Env) WriteConfig(apiURL string, lines ...string) {
 	path, err := config.File(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(gomega.Succeed())
 	yaml := fmt.Sprintf("repo: rosenhouse/lg\napi_url: %s\n", apiURL)
+	for _, line := range lines {
+		yaml += line + "\n"
+	}
 	gomega.Expect(os.WriteFile(path, []byte(yaml), 0o644)).To(gomega.Succeed())
 }
 

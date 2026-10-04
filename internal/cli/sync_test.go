@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,34 @@ var _ = Describe("lg sync", Label("store"), func() {
 		Expect(stderr.String()).To(HaveSuffix(fmt.Sprintf("lg: %s is held by pid %d; gave up after 5m0s\n", writeLock, os.Getpid())))
 	})
 })
+
+var _ = Describe("lg sync with a loopback api_url", Label("transport"), func() {
+	It("exits 2 and runs no gh unless LG_GH names a test gh", func() {
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\napi_url: http://127.0.0.1:1\n"), 0o644)).To(Succeed())
+		var stderr bytes.Buffer
+		runner := &countingRunner{}
+
+		code := cli.Main([]string{"sync"}, cli.Deps{
+			Env:    map[string]string{"LG_HOME": GinkgoT().TempDir(), "LG_CONFIG": config},
+			Stdout: &bytes.Buffer{},
+			Stderr: &stderr,
+			Clock:  clock.Real{},
+			Runner: runner,
+		})
+
+		Expect(code).To(Equal(2))
+		Expect(stderr.String()).To(Equal("lg: api_url may be on a loopback address only when LG_GH is set: \"http://127.0.0.1:1\"\n"))
+		Expect(runner.runs).To(BeZero())
+	})
+})
+
+type countingRunner struct{ runs int }
+
+func (r *countingRunner) Run(context.Context, string, []string, map[string]string) (stdout, stderr []byte, err error) {
+	r.runs++
+	return nil, nil, fmt.Errorf("countingRunner runs nothing")
+}
 
 // firedClock fires every After at once, recording the durations asked for.
 type firedClock struct {

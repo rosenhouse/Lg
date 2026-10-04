@@ -1,0 +1,44 @@
+// Package auth gets the token lg sends to GitHub.
+package auth
+
+import (
+	"bytes"
+	"cmp"
+	"context"
+	"fmt"
+	"strings"
+	"unicode"
+
+	"github.com/rosenhouse/lg/internal/execx"
+)
+
+type TokenSource interface {
+	Token(ctx context.Context, host string) (string, error)
+}
+
+// GhTokenSource asks gh, or the program LG_GH names, for host's token.
+type GhTokenSource struct {
+	Runner execx.Runner
+	Env    map[string]string
+}
+
+func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
+	gh := cmp.Or(g.Env["LG_GH"], "gh")
+	args := []string{"auth", "token", "--hostname", host}
+	command := gh + " " + strings.Join(args, " ")
+	stdout, stderr, err := g.Runner.Run(ctx, gh, args, g.Env)
+	if err != nil {
+		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
+			err = fmt.Errorf("%w: %s", err, msg)
+		}
+		return "", fmt.Errorf("%s: %w", command, err)
+	}
+	token := string(bytes.TrimSpace(stdout))
+	if token == "" {
+		return "", fmt.Errorf("%s printed no token", command)
+	}
+	if strings.ContainsFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return "", fmt.Errorf("%s printed more than a token", command)
+	}
+	return token, nil
+}

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -19,11 +21,24 @@ import (
 
 const runID = 37129390741
 
+// staticTokens gives token, or err, for every host it is asked about.
+type staticTokens struct {
+	token string
+	err   error
+	hosts []string
+}
+
+func (s *staticTokens) Token(_ context.Context, host string) (string, error) {
+	s.hosts = append(s.hosts, host)
+	return s.token, s.err
+}
+
 var _ = Describe("Cycle", Label("sync"), func() {
 	var (
 		root      string
 		recording string
 		fake      *fakegithub.Server
+		tokens    *staticTokens
 		m         mirror.Mirror
 	)
 
@@ -37,12 +52,32 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		fake = fakegithub.New()
 		DeferCleanup(fake.Close)
 		Expect(fake.LoadDir(runID, recording)).To(Succeed())
+		tokens = &staticTokens{token: "gho_cycle"}
 		m = mirror.Mirror{
-			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg"),
-			Store:  s,
-			Host:   "github.com",
-			Repo:   "rosenhouse/lg",
+			Tokens: tokens,
+			NewGitHub: func(token string) github.Client {
+				return github.NewHTTP(http.DefaultClient, mustParse(fake.URL()), "rosenhouse/lg", token)
+			},
+			Store: s,
+			Host:  "github.com",
+			Repo:  "rosenhouse/lg",
 		}
+	})
+
+	It("asks Tokens for its host's token once and sends it", Label("transport"), func() {
+		fake.RequireToken("gho_cycle")
+		m.Host = "ghe.corp.example"
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(tokens.hosts).To(Equal([]string{"ghe.corp.example"}))
+		Expect(os.ReadDir(filepath.Join(root, "data/ghe.corp.example"))).NotTo(BeEmpty())
+	})
+
+	It("returns the error from Tokens and sends no request", Label("transport"), func() {
+		tokens.err = errors.New("gh: not logged in")
+
+		Expect(m.Cycle(context.Background())).To(MatchError("gh: not logged in"))
+		Expect(fake.Requests()).To(BeEmpty())
 	})
 
 	DescribeTable("refuses a run of another repository and writes nothing",
@@ -79,6 +114,23 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 	})
 
+	It("writes jobs.json joining all pages into one array whose elements are JSON-equal to those served", Label("transport"), func() {
+		fake.SetPageCap(5)
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		var stored, served []json.RawMessage
+		raw, err := os.ReadFile(filepath.Join(root, "data/github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture/attempt-1/jobs.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal(raw, &stored)).To(Succeed())
+		var listing struct{ Jobs []json.RawMessage }
+		Expect(json.Unmarshal(fake.Served("attempt-1/jobs.json"), &listing)).To(Succeed())
+		served = listing.Jobs
+		Expect(stored).To(HaveLen(len(served)))
+		for i := range served {
+			Expect(stored[i]).To(MatchJSON(served[i]))
+		}
+	})
+
 	It("publishes no attempt still in progress and requests none of its jobs", func() {
 		editJSON(filepath.Join(recording, "attempt-1", "attempt.json"), func(attempt map[string]any) {
 			attempt["status"] = "in_progress"
@@ -104,4 +156,11 @@ func editJSON(path string, edit func(map[string]any)) {
 	raw, err = json.Marshal(object)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(os.WriteFile(path, raw, 0o644)).To(Succeed())
+}
+
+func mustParse(rawURL string) *url.URL {
+	GinkgoHelper()
+	u, err := url.Parse(rawURL)
+	Expect(err).NotTo(HaveOccurred())
+	return u
 }
