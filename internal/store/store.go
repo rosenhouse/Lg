@@ -243,6 +243,14 @@ func (s *Store) Publish(u *Unit, target string) error {
 	return s.fs.SyncDir(parent)
 }
 
+// MkdirAll makes dir and its missing parents durably.
+func MkdirAll(dir string) error { return mkdirAllFS(OSFS{}, dir) }
+
+func mkdirAllFS(fsys fsOps, dir string) error {
+	_, err := mkdirAll(fsys, dir, true)
+	return err
+}
+
 // mkdirAll makes path and any missing parents, returning those it made,
 // parents first. With syncParents, it fsyncs each new dir's parent.
 func mkdirAll(fsys fsOps, path string, syncParents bool) ([]string, error) {
@@ -265,7 +273,8 @@ func mkdirBelow(fsys fsOps, base, path string, syncParents bool) ([]string, erro
 	}
 	slices.Reverse(missing)
 	for _, dir := range missing {
-		if err := fsys.Mkdir(dir); err != nil {
+		// Two lg processes may race to make state/ before either holds write.lock.
+		if err := fsys.Mkdir(dir); err != nil && !errors.Is(err, fs.ErrExist) {
 			return nil, err
 		}
 		if syncParents {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -52,7 +51,7 @@ const writeLockWait = 5 * time.Minute
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
 // holds, then initializes the store and sweeps what dead writers left in tmp/.
 func openForWriting(roots config.Roots, stderr io.Writer) (*store.Store, func(), error) {
-	if err := os.MkdirAll(roots.State, 0o755); err != nil {
+	if err := store.MkdirAll(roots.State); err != nil {
 		return nil, nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")

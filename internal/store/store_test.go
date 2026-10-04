@@ -166,6 +166,41 @@ var _ = Describe("Init", Label("store"), func() {
 	})
 })
 
+var _ = Describe("MkdirAll", Label("store"), func() {
+	It("makes each missing dir and then fsyncs its parent", func() {
+		parent := GinkgoT().TempDir()
+		journal := faultfs.New()
+
+		Expect(store.MkdirAllFS(journal, filepath.Join(parent, "lg", "state"))).To(Succeed())
+		Expect(filepath.Join(parent, "lg", "state")).To(BeADirectory())
+		var ops []string
+		for _, op := range journal.Journal() {
+			ops = append(ops, op.String())
+		}
+		Expect(ops).To(HaveExactElements(
+			"mkdir "+parent+"/lg",
+			"fsync "+parent,
+			"mkdir "+parent+"/lg/state",
+			"fsync "+parent+"/lg",
+		))
+	})
+
+	It("succeeds when another process makes a dir first", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "lg", "state")
+
+		Expect(store.MkdirAllFS(racingFS{}, dir)).To(Succeed())
+		Expect(dir).To(BeADirectory())
+	})
+})
+
+// racingFS makes each dir just before it is asked to.
+type racingFS struct{ store.OSFS }
+
+func (f racingFS) Mkdir(path string) error {
+	_ = f.OSFS.Mkdir(path)
+	return f.OSFS.Mkdir(path)
+}
+
 var _ = Describe("Open", Label("store"), func() {
 	It("returns ErrFormat naming the FORMAT it found", func() {
 		root := newStore()
