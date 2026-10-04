@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,11 +12,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/types"
 
-	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/version"
 )
 
@@ -33,13 +31,6 @@ var cycleTimeout = SpecTimeout(20 * time.Second)
 
 // attempt1Updated is attempt.json updated_at of run 37129390741 attempt 1.
 var attempt1Updated = time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC)
-
-func beTransient() types.GomegaMatcher {
-	return MatchError(func(err error) bool {
-		var transient failure.Transient
-		return errors.As(err, &transient)
-	}, "wraps a failure.Transient")
-}
 
 // readTombstone reads the log tombstone of a job in a published attempt.
 func readTombstone(attemptDir, jobID string) map[string]any {
@@ -62,7 +53,7 @@ var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attem
 		env.Fake.Fail(host, match, fakegithub.Fault{Status: http.StatusNotFound})
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour))
-		Expect(env.Mirror.Cycle(ctx)).To(beTransient())
+		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.Tombstones()).To(BeEmpty())
 
@@ -101,7 +92,7 @@ var _ = DescribeTable("mirror.Cycle on a transient log failure publishes no atte
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Fake.Fail(host, match, fault)
 
-		Expect(env.Mirror.Cycle(ctx)).To(beTransient())
+		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.Tombstones()).To(BeEmpty())
 		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
@@ -122,7 +113,7 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		env.Fake.Fail("api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusBadGateway})
 
-		Expect(env.Mirror.Cycle(ctx)).To(beTransient())
+		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 	}, cycleTimeout)

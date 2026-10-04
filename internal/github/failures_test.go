@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,20 +17,13 @@ import (
 	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/clock"
-	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 var hopTimeout = SpecTimeout(5 * time.Second)
 
 var shortTimeouts = github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: 200 * time.Millisecond, BodyIdle: 200 * time.Millisecond}
-
-func beTransient() types.GomegaMatcher {
-	return MatchError(func(err error) bool {
-		var transient failure.Transient
-		return errors.As(err, &transient)
-	}, "wraps a failure.Transient")
-}
 
 // hops serves the log of job 1 as GitHub does: the API redirects to a blob
 // host, which answers blob.
@@ -64,6 +60,10 @@ func stall(body string) http.HandlerFunc {
 	}
 }
 
+type failingWriter struct{ err error }
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
+
 // cancelOnWrite cancels once the body has started.
 type cancelOnWrite context.CancelFunc
 
@@ -86,16 +86,16 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("a blob 404 is ErrBlobMissing", nil, answer(http.StatusNotFound, blobNotFound), MatchError(github.ErrBlobMissing), hopTimeout),
 		Entry("an API 410 is ErrGone", answer(http.StatusGone, `{"message":"Gone"}`), nil, MatchError(github.ErrGone), hopTimeout),
 		Entry("a blob 410 is ErrGone", nil, answer(http.StatusGone, ""), MatchError(github.ErrGone), hopTimeout),
-		Entry("an API 500 is Transient", answer(http.StatusInternalServerError, ""), nil, beTransient(), hopTimeout),
-		Entry("an API 502 is Transient", answer(http.StatusBadGateway, ""), nil, beTransient(), hopTimeout),
-		Entry("a blob 403 is Transient", nil, answer(http.StatusForbidden, ""), beTransient(), hopTimeout),
-		Entry("a blob 503 is Transient", nil, answer(http.StatusServiceUnavailable, ""), beTransient(), hopTimeout),
+		Entry("an API 500 is Transient", answer(http.StatusInternalServerError, ""), nil, BeTransient(), hopTimeout),
+		Entry("an API 502 is Transient", answer(http.StatusBadGateway, ""), nil, BeTransient(), hopTimeout),
+		Entry("a blob 403 is Transient", nil, answer(http.StatusForbidden, ""), BeTransient(), hopTimeout),
+		Entry("a blob 503 is Transient", nil, answer(http.StatusServiceUnavailable, ""), BeTransient(), hopTimeout),
 		Entry("a short body is Transient", nil, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Length", "100")
 			_, _ = w.Write([]byte("partial"))
-		}, beTransient(), hopTimeout),
-		Entry("stalled headers are Transient", stall(""), nil, beTransient(), hopTimeout),
-		Entry("a stalled body is Transient", nil, stall("partial"), beTransient(), hopTimeout),
+		}, BeTransient(), hopTimeout),
+		Entry("stalled headers are Transient", stall(""), nil, BeTransient(), hopTimeout),
+		Entry("a stalled body is Transient", nil, stall("partial"), BeTransient(), hopTimeout),
 	)
 
 	It("keeps an API 404 apart from ErrBlobMissing", func(ctx SpecContext) {
@@ -114,13 +114,30 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Expect(err).NotTo(MatchError(github.ErrBlobMissing))
 	})
 
-	It("leaves an API 422 neither Transient nor a gap", func(ctx SpecContext) {
-		_, err := hops(answer(http.StatusUnprocessableEntity, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
-		Expect(err).To(MatchError(ContainSubstring("422")))
-		Expect(err).NotTo(beTransient())
-		Expect(err).NotTo(MatchError(github.ErrNotFound))
-		Expect(err).NotTo(MatchError(github.ErrGone))
-	})
+	DescribeTable("leaves an API error that is not a 5xx neither Transient nor a gap",
+		func(ctx SpecContext, status int) {
+			_, err := hops(answer(status, ""), nil).DownloadJobLog(ctx, 1, &bytes.Buffer{})
+			Expect(err).To(MatchError(ContainSubstring(strconv.Itoa(status))))
+			Expect(err).NotTo(BeTransient())
+			Expect(err).NotTo(MatchError(github.ErrNotFound))
+			Expect(err).NotTo(MatchError(github.ErrGone))
+		},
+		Entry("401", http.StatusUnauthorized, hopTimeout),
+		Entry("403", http.StatusForbidden, hopTimeout),
+		Entry("422", http.StatusUnprocessableEntity, hopTimeout),
+	)
+
+	It("leaves a failed write to w neither Transient nor a gap", func(ctx SpecContext) {
+		_, err := hops(nil, answer(http.StatusOK, "log")).DownloadJobLog(ctx, 1, failingWriter{syscall.ENOSPC})
+		Expect(err).To(MatchError(syscall.ENOSPC))
+		Expect(err).NotTo(BeTransient())
+	}, hopTimeout)
+
+	It("leaves a malformed 200 body non-Transient", func(ctx SpecContext) {
+		_, err := hops(answer(http.StatusOK, "{"), nil).GetAttempt(ctx, 1, 1)
+		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
+		Expect(err).NotTo(BeTransient())
+	}, hopTimeout)
 
 	DescribeTable("gives the API URL, the status and the message of a failed hop",
 		func(ctx SpecContext, api, blob http.HandlerFunc, status int, message string) {
@@ -137,15 +154,6 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("the status text of a body with no message", answer(http.StatusGone, "gone"), nil, 410, "Gone"),
 	)
 
-	It("does not call a parent's cancellation during a body Transient", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		client := hops(nil, stall("partial"))
-
-		_, err := client.DownloadJobLog(ctx, 1, cancelOnWrite(cancel))
-		Expect(err).To(MatchError(context.Canceled))
-		Expect(err).NotTo(beTransient())
-	})
-
 	It("never names the blob URL, whose query is a credential", func(ctx SpecContext) {
 		client := hops(nil, func(w http.ResponseWriter, _ *http.Request) {
 			conn, _, err := http.NewResponseController(w).Hijack()
@@ -154,22 +162,30 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		})
 
 		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
-		Expect(err).To(beTransient())
+		Expect(err).To(BeTransient())
 		Expect(err.Error()).To(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: `))
 		Expect(err.Error()).NotTo(ContainSubstring("/log\""))
 	})
 
-	It("does not call a parent's cancellation Transient", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		client := hops(func(_ http.ResponseWriter, r *http.Request) {
-			cancel()
-			<-r.Context().Done()
-		}, nil)
+	DescribeTable("leaves a parent's cancellation non-Transient",
+		func(cancelled func(cancel context.CancelFunc) (api, blob http.HandlerFunc, w io.Writer)) {
+			ctx, cancel := context.WithCancel(context.Background())
+			api, blob, w := cancelled(cancel)
 
-		_, err := client.DownloadJobLog(ctx, 1, &bytes.Buffer{})
-		Expect(err).To(MatchError(context.Canceled))
-		Expect(err).NotTo(beTransient())
-	})
+			_, err := hops(api, blob).DownloadJobLog(ctx, 1, w)
+			Expect(err).To(MatchError(context.Canceled))
+			Expect(err).NotTo(BeTransient())
+		},
+		Entry("before the response", func(cancel context.CancelFunc) (http.HandlerFunc, http.HandlerFunc, io.Writer) {
+			return func(_ http.ResponseWriter, r *http.Request) {
+				cancel()
+				<-r.Context().Done()
+			}, nil, &bytes.Buffer{}
+		}),
+		Entry("mid-body", func(cancel context.CancelFunc) (http.HandlerFunc, http.HandlerFunc, io.Writer) {
+			return nil, stall("partial"), cancelOnWrite(cancel)
+		}),
+	)
 })
 
 var _ = Describe("NewHTTPClient", Label("failures"), func() {
@@ -219,6 +235,6 @@ var _ = Describe("NewHTTPClient", Label("failures"), func() {
 
 		_, err = client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("TLS handshake timeout")))
-		Expect(err).To(beTransient())
+		Expect(err).To(BeTransient())
 	}, SpecTimeout(5*time.Second))
 })
