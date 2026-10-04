@@ -407,6 +407,41 @@ var _ = Describe("FindRunDir", Label("attempts"), func() {
 	})
 })
 
+var _ = Describe("Names", Label("attempts"), func() {
+	var (
+		s   *store.Store
+		dir string
+	)
+
+	BeforeEach(func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		var err error
+		s, err = store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
+		dir = filepath.Join(s.Data(), "run")
+	})
+
+	It("lists the names in a dir", func() {
+		Expect(os.MkdirAll(filepath.Join(dir, "attempt-1"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "x"), nil, 0o644)).To(Succeed())
+
+		Expect(s.Names(dir)).To(ConsistOf("attempt-1", "x"))
+	})
+
+	It("lists none in a missing dir", func() {
+		Expect(s.Names(dir)).To(BeEmpty())
+	})
+
+	It("returns the error when the dir cannot be read", func() {
+		Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: dir}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.Names(dir)).Error().To(MatchError(syscall.EIO))
+	})
+})
+
 // unreadableDir fails ReadDir of path.
 type unreadableDir struct {
 	store.OSFS

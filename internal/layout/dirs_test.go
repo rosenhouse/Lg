@@ -42,3 +42,17 @@ var _ = Describe("AttemptDir and JobDir", Label("sync"), func() {
 		Expect(layout.JobDir("/run/attempt-2", 111, "build (x)")).To(Equal("/run/attempt-2/jobs/111_build-x"))
 	})
 })
+
+var _ = DescribeTable("AttemptNumber gives n for a dir named as AttemptDir names attempt n", Label("attempts"),
+	func(name string, n int, ok bool) {
+		got, gotOK := layout.AttemptNumber(name)
+		Expect(gotOK).To(Equal(ok))
+		Expect(got).To(Equal(n))
+	},
+	Entry("attempt-2", "attempt-2", 2, true),
+	Entry("attempt-12", "attempt-12", 12, true),
+	Entry("a leading zero", "attempt-02", 0, false),
+	Entry("a sign", "attempt-+2", 0, false),
+	Entry("no number", "attempt-", 0, false),
+	Entry("another name", "fetch.json", 0, false),
+)

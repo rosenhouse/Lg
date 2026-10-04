@@ -73,36 +73,45 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Attempt 1 exists even when the listing gives no run_attempt.
-		latest := max(run.RunAttempt, 1)
-		onDisk, err := m.attemptsOnDisk(runDir, latest)
+		runFailed, err := m.syncRun(ctx, gh, runDir, run)
 		if err != nil {
 			return err
 		}
-	attempts:
-		for _, n := range PlanAttempts(latest, onDisk) {
-			err = m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
-			switch {
-			case errors.Is(err, errRunGone):
-				break attempts
-			case runScoped(err):
-				failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
-			case err != nil:
-				return err
-			}
-		}
+		failed = append(failed, runFailed...)
 	}
 	return errors.Join(failed...)
 }
 
-func (m *Mirror) attemptsOnDisk(runDir string, runAttempt int) ([]int, error) {
-	var onDisk []int
-	for n := 1; n <= runAttempt; n++ {
-		published, err := m.Store.Has(layout.AttemptDir(runDir, n))
-		if err != nil {
+// syncRun publishes the run's planned attempts. It returns the errors that
+// runScoped accepts, and stops at any other.
+func (m *Mirror) syncRun(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
+	onDisk, err := m.attemptsOnDisk(runDir)
+	if err != nil {
+		return nil, err
+	}
+	var failed []error
+	for n := range Plan(run, onDisk) {
+		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
+		switch {
+		case errors.Is(err, errRunGone):
+			return failed, nil
+		case runScoped(err):
+			failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
+		case err != nil:
 			return nil, err
 		}
-		if published {
+	}
+	return failed, nil
+}
+
+func (m *Mirror) attemptsOnDisk(runDir string) ([]int, error) {
+	names, err := m.Store.Names(runDir)
+	if err != nil {
+		return nil, err
+	}
+	var onDisk []int
+	for _, name := range names {
+		if n, ok := layout.AttemptNumber(name); ok {
 			onDisk = append(onDisk, n)
 		}
 	}
