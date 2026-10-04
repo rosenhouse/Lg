@@ -154,16 +154,15 @@ var _ = Describe("mirror.Cycle", Label("artifacts"), func() {
 var _ = Describe("mirror.Cycle when the listing says expired: true", Label("artifacts"), func() {
 	It("writes an expired tombstone without a request", func(ctx SpecContext) {
 		env := harness.InProcess()
-		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID)
-		Expect(env.Fake.AddRun(scenario.Expire(run, 1_011275917910))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.Expire(scenario.Recorded(runID, "after-attempt-1"), 11275917910))).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(readZipTombstone(env, cloneID, "1011275917910")).To(SatisfyAll(
+		Expect(readZipTombstone(env, runID, expiresIn1Day)).To(SatisfyAll(
 			HaveKeyWithValue("reason", "expired"),
 			HaveKeyWithValue("http_status", BeNil()),
-			HaveKeyWithValue("url", zipURL(env, "1011275917910")),
+			HaveKeyWithValue("url", zipURL(env, expiresIn1Day)),
 		))
-		Expect(requestedZip(env, "1011275917910")).To(BeFalse())
+		Expect(requestedZip(env, expiresIn1Day)).To(BeFalse())
 	}, cycleTimeout)
 })
 
@@ -263,11 +262,10 @@ var _ = Describe("mirror.Cycle when one log returns 500", Label("artifacts"), fu
 var _ = Describe("an artifact's fetch.json", Label("artifacts"), func() {
 	It("records the PR numbers of the run as listed", func(ctx SpecContext) {
 		env := harness.InProcess()
-		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID)
-		Expect(env.Fake.AddRun(scenario.WithPullRequests(run, 42, 7))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.WithPullRequests(scenario.Recorded(runID, "after-attempt-1"), 42, 7))).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		raw, err := os.ReadFile(filepath.Join(env.ArtifactDirs(cloneID)[0], "fetch.json"))
+		raw, err := os.ReadFile(filepath.Join(env.ArtifactDirs(runID)[0], "fetch.json"))
 		Expect(err).NotTo(HaveOccurred())
 		var fetch struct {
 			PRNumbers []int `json:"pr_numbers"`
