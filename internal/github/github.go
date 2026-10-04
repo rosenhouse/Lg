@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
-	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -230,7 +230,7 @@ func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}
-	if !config.IsRepo(repo.FullName) {
+	if !layout.IsRepo(repo.FullName) {
 		return Repo{}, malformed(h.repoURL, "full_name %q is not owner/name", repo.FullName)
 	}
 	return repo, nil

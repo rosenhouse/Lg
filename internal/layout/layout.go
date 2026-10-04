@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +42,15 @@ func Slug(name string) string {
 func allowed(c byte) bool {
 	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '.' || c == '-'
 }
+
+var ownerName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// IsRepo reports whether s is owner/name, safe to use as a path.
+func IsRepo(s string) bool {
+	return ownerName.MatchString(s) && !slices.ContainsFunc(strings.Split(s, "/"), isDots)
+}
+
+func isDots(s string) bool { return s == "." || s == ".." }
 
 // RepoDir is <data>/<host>/<owner>/<repo>, with the host lowercased and the
 // repo's full name spelled as GitHub returns it.

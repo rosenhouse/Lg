@@ -9,11 +9,12 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/rosenhouse/lg/internal/layout"
 )
 
 type Config struct {
@@ -39,10 +40,7 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-var (
-	ownerName = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	hostName  = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
-)
+var hostName = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 func Defaults() Config {
 	return Config{Host: "github.com", LogGrace: Duration(time.Hour)}
@@ -63,7 +61,7 @@ func Load(path string) (Config, error) {
 	if !hostName.MatchString(cfg.Host) {
 		return Config{}, Error(fmt.Sprintf("host must be a host name: %q", cfg.Host))
 	}
-	if !IsRepo(cfg.Repo) {
+	if !layout.IsRepo(cfg.Repo) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	}
 	if cfg.LogGrace < 0 {
@@ -107,13 +105,6 @@ func onLoopback(u *url.URL) bool {
 	ip := net.ParseIP(name)
 	return name == "localhost" || ip != nil && ip.IsLoopback()
 }
-
-// IsRepo reports whether s is owner/name, safe to use as a path.
-func IsRepo(s string) bool {
-	return ownerName.MatchString(s) && !slices.ContainsFunc(strings.Split(s, "/"), isDots)
-}
-
-func isDots(s string) bool { return s == "." || s == ".." }
 
 // baseURL reports whether lg can append API paths to s, and shows s with any password hidden.
 func baseURL(s string) (u *url.URL, shown string, ok bool) {
