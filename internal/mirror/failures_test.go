@@ -134,35 +134,23 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 	}, cycleTimeout)
 })
 
-var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 410", Label("failures"), func() {
-	It("skips that run without a tombstone and publishes the others", func(ctx SpecContext) {
-		env := harness.InProcess()
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
-		env.Fake.Fail("api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusGone})
-
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
-		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
-		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
-		Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring("37129738159"))))
-	}, cycleTimeout)
-})
-
 var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run still publishes the other run and returns the failure, naming its run", Label("failures"),
-	func(ctx SpecContext, host, match string) {
+	func(ctx SpecContext, host, match string, status int) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
-		env.Fake.Fail(host, match, fakegithub.Fault{Status: http.StatusBadRequest})
+		env.Fake.Fail(host, match, fakegithub.Fault{Status: status})
 
 		err := env.Mirror.Cycle(ctx)
-		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: 400 Bad Request$`)))
+		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: %d %s$`, status, http.StatusText(status))))
 		Expect(err).NotTo(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 	},
-	Entry("an API 400 on the attempt", "api", "runs/37129738159/attempts/1", cycleTimeout),
-	Entry("an API 400 on a log", "api", "jobs/111222299886/logs", cycleTimeout),
+	Entry("an API 400 on the attempt", "api", "runs/37129738159/attempts/1", http.StatusBadRequest, cycleTimeout),
+	Entry("an API 410 on the attempt", "api", "runs/37129738159/attempts/1", http.StatusGone, cycleTimeout),
+	Entry("an API 410 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", http.StatusGone, cycleTimeout),
+	Entry("an API 400 on a log", "api", "jobs/111222299886/logs", http.StatusBadRequest, cycleTimeout),
 )
 
 var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {

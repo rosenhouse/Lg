@@ -76,7 +76,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
-	if runGone(err) {
+	if errors.Is(err, github.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -88,7 +88,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return nil
 	}
 	jobs, jobsSource, err := gh.ListAttemptJobs(ctx, run.ID, n)
-	if runGone(err) {
+	if errors.Is(err, github.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -107,10 +107,6 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return errors.Join(err, unit.Abort())
 	}
 	return nil
-}
-
-func runGone(err error) bool {
-	return errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrGone)
 }
 
 func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, s *staged, run, attempt github.Run, attemptSource github.Source, jobs []github.Job, jobsSource github.Source) error {
