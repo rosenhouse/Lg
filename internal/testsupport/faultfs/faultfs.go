@@ -1,4 +1,4 @@
-// Package faultfs wraps a store filesystem seam to journal its writes and to fail every op
+// Package faultfs wraps store.OSFS to journal its writes and to fail every op
 // from a chosen one on, as if the process had died there.
 package faultfs
 
@@ -21,20 +21,8 @@ func (op Op) String() string {
 	return op.Name + " " + op.Path
 }
 
-// Ops is the method set of store's filesystem seam.
-type Ops interface {
-	Mkdir(path string) error
-	Create(path string) (store.File, error)
-	Rename(oldpath, newpath string) error
-	SyncDir(path string) error
-	RemoveAll(path string) error
-	ReadDir(path string) ([]fs.DirEntry, error)
-	Lstat(path string) (fs.FileInfo, error)
-	Device(path string) (uint64, error)
-}
-
 type FS struct {
-	inner Ops
+	inner store.OSFS
 
 	mu       sync.Mutex
 	failFrom int
@@ -43,7 +31,7 @@ type FS struct {
 	devices  map[string]uint64
 }
 
-func New(inner Ops) *FS { return &FS{inner: inner, devices: map[string]uint64{}} }
+func New() *FS { return &FS{devices: map[string]uint64{}} }
 
 // FailFrom makes the k-th journaled op, counting from 1, and every op after it return err.
 func (f *FS) FailFrom(k int, err error) {
@@ -52,7 +40,7 @@ func (f *FS) FailFrom(k int, err error) {
 	f.failFrom, f.err = k, err
 }
 
-// Journal lists the ops that reached the inner FS.
+// Journal lists the mutating ops that reached the disk.
 func (f *FS) Journal() []Op {
 	f.mu.Lock()
 	defer f.mu.Unlock()

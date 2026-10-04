@@ -96,7 +96,7 @@ var _ = Describe("Init", Label("store"), func() {
 	)
 
 	It("leaves no FORMAT or .rgignore, or a complete one, when filesystem op k and every later op fail, for every k, and a later Init and Open succeed", func() {
-		dry := faultfs.New(store.OSFS{})
+		dry := faultfs.New()
 		Expect(store.InitFS(dry, filepath.Join(GinkgoT().TempDir(), "lg"))).To(Succeed())
 		ops := len(dry.Journal())
 		Expect(ops).To(BeNumerically(">=", 15))
@@ -104,7 +104,7 @@ var _ = Describe("Init", Label("store"), func() {
 
 		for k := 1; k <= ops; k++ {
 			root := filepath.Join(GinkgoT().TempDir(), "lg")
-			faulty := faultfs.New(store.OSFS{})
+			faulty := faultfs.New()
 			faulty.FailFrom(k, syscall.EIO)
 
 			Expect(store.InitFS(faulty, root)).To(MatchError(syscall.EIO), "k=%d", k)
@@ -126,7 +126,7 @@ var _ = Describe("Init", Label("store"), func() {
 	})
 
 	It("makes dirs, then writes, fsyncs and renames .rgignore and then FORMAT into the root, fsyncing it after each", func() {
-		journal := faultfs.New(store.OSFS{})
+		journal := faultfs.New()
 		Expect(store.InitFS(journal, root)).To(Succeed())
 
 		var ops []string
@@ -213,7 +213,7 @@ var _ = Describe("Publish", Label("store"), func() {
 	})
 
 	It("maps ENOTEMPTY from rename to ErrExists", func() {
-		dry := faultfs.New(store.OSFS{})
+		dry := faultfs.New()
 		Expect(publishAttempt(openFS(dry, newStore()), "{}")).To(Succeed())
 		rename := -1
 		for i, op := range dry.Journal() {
@@ -221,7 +221,7 @@ var _ = Describe("Publish", Label("store"), func() {
 				rename = i + 1
 			}
 		}
-		notEmpty := faultfs.New(store.OSFS{})
+		notEmpty := faultfs.New()
 		notEmpty.FailFrom(rename, syscall.ENOTEMPTY)
 
 		Expect(publishAttempt(openFS(notEmpty, newStore()), "{}")).To(MatchError(store.ErrExists))

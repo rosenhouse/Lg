@@ -28,7 +28,7 @@ var _ = Describe("store.Publish", Label("store"), func() {
 		reference := newStore()
 		Expect(publishAttempt(open(reference), "{}")).To(Succeed())
 		complete := files(filepath.Join(reference, "data"))
-		dry := faultfs.New(store.OSFS{})
+		dry := faultfs.New()
 		Expect(publishAttempt(openFS(dry, newStore()), "{}")).To(Succeed())
 		ops := len(dry.Journal())
 		Expect(ops).To(BeNumerically(">=", 20))
@@ -36,7 +36,7 @@ var _ = Describe("store.Publish", Label("store"), func() {
 		for k := 1; k <= ops; k++ {
 			root := newStore()
 			before := files(filepath.Join(root, "data"))
-			faulty := faultfs.New(store.OSFS{})
+			faulty := faultfs.New()
 			faulty.FailFrom(k, syscall.EIO)
 
 			Expect(publishAttempt(openFS(faulty, root), "{}")).To(MatchError(syscall.EIO), "k=%d", k)
@@ -51,7 +51,7 @@ var _ = Describe("store.Publish", Label("store"), func() {
 	})
 
 	It("writes and fsyncs each member, fsyncs the staging dir, renames it into data/ and fsyncs the parent, in that order", func() {
-		journal := faultfs.New(store.OSFS{})
+		journal := faultfs.New()
 		Expect(publishAttempt(openFS(journal, root), "{}")).To(Succeed())
 
 		var ops []string
@@ -106,9 +106,9 @@ var _ = Describe("store.Publish", Label("store"), func() {
 var _ = Describe("store.Open", Label("store"), func() {
 	It("refuses a store whose tmp/ and data/ are on different devices", func() {
 		root := newStore()
-		Expect(store.OpenFS(faultfs.New(store.OSFS{}), root)).Error().NotTo(HaveOccurred())
+		Expect(store.OpenFS(faultfs.New(), root)).Error().NotTo(HaveOccurred())
 
-		otherDevice := faultfs.New(store.OSFS{})
+		otherDevice := faultfs.New()
 		otherDevice.SetDevice(filepath.Join(root, "tmp"), 1<<40)
 		_, err := store.OpenFS(otherDevice, root)
 		Expect(err).To(MatchError(And(

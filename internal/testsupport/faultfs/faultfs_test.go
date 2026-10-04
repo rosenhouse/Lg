@@ -20,7 +20,7 @@ var _ = Describe("FS", Label("store"), func() {
 
 	BeforeEach(func() {
 		dir = GinkgoT().TempDir()
-		f = faultfs.New(store.OSFS{})
+		f = faultfs.New()
 	})
 
 	// writeFile runs the five journaled ops of writing a file in a new dir.
