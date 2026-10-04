@@ -5,19 +5,23 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/rosenhouse/lg/internal/execx"
+	"github.com/rosenhouse/lg/internal/failure"
 )
 
 type TokenSource interface {
 	Token(ctx context.Context, host string) (string, error)
 }
 
-// GhTokenSource asks gh, or the program LG_GH names, for host's token.
+// GhTokenSource asks gh, or the program LG_GH names, for host's token. It
+// kills gh after Timeout, or 30s when Timeout is 0, since a gh waiting on a
+// keyring prompt would never exit. Every failure blocks the cycle as auth.
 type GhTokenSource struct {
 	Runner  execx.Runner
 	Env     map[string]string
@@ -25,10 +29,24 @@ type GhTokenSource struct {
 }
 
 func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
+	token, err := g.token(ctx, host)
+	if err != nil {
+		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
+	}
+	return token, nil
+}
+
+func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	gh := cmp.Or(g.Env["LG_GH"], "gh")
 	args := []string{"auth", "token", "--hostname", host}
 	command := gh + " " + strings.Join(args, " ")
+	timeout := cmp.Or(g.Timeout, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	stdout, stderr, err := g.Runner.Run(ctx, gh, args, g.Env)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", fmt.Errorf("%s did not exit within %s", command, timeout)
+	}
 	if err != nil {
 		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
 			err = fmt.Errorf("%w: %s", err, msg)
