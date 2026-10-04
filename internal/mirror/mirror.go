@@ -97,9 +97,13 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	return errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.failed}, artifactsFailed, attemptsFailed)...)
 }
 
-// saveWatch watches the runs the cycle left incomplete on disk.
+// saveWatch watches the runs the cycle left incomplete on disk, except those
+// GitHub no longer has.
 func (m *Mirror) saveWatch(w *watch, runs []listedRun) error {
 	for _, run := range runs {
+		if run.gone {
+			continue
+		}
 		onDisk, err := m.attemptsOnDisk(run.dir)
 		if err != nil {
 			return err
@@ -112,13 +116,14 @@ func (m *Mirror) saveWatch(w *watch, runs []listedRun) error {
 }
 
 // listedRun is a listed run with its dir, the attempts that Plan gives for
-// it, and this cycle's listing of its artifacts, which is nil when
-// ListArtifacts failed.
+// it, this cycle's listing of its artifacts, which is nil when
+// ListArtifacts failed, and whether an attempt of it answered 404.
 type listedRun struct {
 	github.Run
 	dir       string
 	planned   []int
 	artifacts *artifactListing
+	gone      bool
 }
 
 // artifactListing is a run's artifacts as one listing gave them. Its
@@ -157,7 +162,8 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 // accepts, and stops at any other.
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
-	for _, run := range runs {
+	for i := range runs {
+		run := &runs[i]
 		if run.artifacts == nil || !run.artifacts.runRead {
 			continue
 		}
@@ -170,14 +176,16 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 	return failed, nil
 }
 
-// syncAttempts publishes the run's planned attempts. It returns the errors that
-// runScoped accepts, and stops at any other.
-func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run listedRun) ([]error, error) {
+// syncAttempts publishes the run's planned attempts, and marks the run gone
+// at a 404. It returns the errors that runScoped accepts, and stops at any
+// other.
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
 	var failed []error
 	for _, n := range run.planned {
-		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(run.dir, n))
+		err := m.publishAttempt(ctx, gh, *run, n, layout.AttemptDir(run.dir, n))
 		switch {
 		case errors.Is(err, errRunGone):
+			run.gone = true
 			return failed, nil
 		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))

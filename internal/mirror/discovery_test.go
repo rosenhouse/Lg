@@ -232,6 +232,21 @@ var _ = Describe("a watched run that GitHub deleted", Label("discovery"), func()
 	}, cycleTimeout)
 })
 
+var _ = Describe("a watched run whose attempt GitHub deleted", Label("discovery"), func() {
+	It("is dropped from the watch list", func(ctx SpecContext) {
+		env := harness.InProcess()
+		old := cloneAt(1, "after-attempt-2", harness.DefaultNow().Add(-30*day))
+		Expect(env.Fake.AddRun(scenario.InProgress(old, 2))).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Fake.AddRun(old)).To(Succeed())
+		env.Fake.Fail("api", "/actions/runs/1/attempts/2", fakegithub.Fault{Status: http.StatusNotFound, Times: 1})
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
+		Expect(readWatch(env)).To(HaveKeyWithValue("github.com", BeEmpty()))
+	}, cycleTimeout)
+})
+
 var _ = Describe("a watched run created before the window that completes between two polls", Label("discovery"), func() {
 	It("is fetched with GET /actions/runs/{id}, because no listing returns it, and published", func(ctx SpecContext) {
 		env := harness.InProcess()
