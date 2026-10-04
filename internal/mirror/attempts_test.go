@@ -155,12 +155,12 @@ var _ = Describe("an attempt still in progress", Label("attempts"), func() {
 })
 
 var _ = Describe("a completed attempt with a job still queued", Label("attempts"), func() {
-	It("is not published, and is published with the job's log by the first sync after the job completes", func(ctx SpecContext) {
+	It("is reported pending, and is published with the job's log by the first sync after the job completes", func(ctx SpecContext) {
 		env := harness.InProcess()
 		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), cloneID)
 		Expect(env.Fake.AddRun(scenario.QueueJob(run, 2, "flaky"))).To(Succeed())
 
-		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Sync(ctx)).To(MatchError(ContainSubstring("run 1 attempt 2: job 1111221661475 is queued")))
 		Expect(env.AttemptDirs(cloneID)).To(ConsistOf(HaveSuffix("/attempt-1")))
 
 		Expect(env.Fake.AddRun(run)).To(Succeed())

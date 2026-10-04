@@ -158,8 +158,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return err
 	}
 	// An attempt still running would be frozen with partial logs and with its
-	// queued jobs tombstoned as not_applicable. A completed attempt can list
-	// jobs that are not yet completed.
+	// queued jobs tombstoned as not_applicable.
 	if attempt.Status != "completed" {
 		return nil
 	}
@@ -170,8 +169,9 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(jobs, func(job github.Job) bool { return job.Status != "completed" }) {
-		return nil
+	// A completed attempt can list jobs that are not yet completed.
+	if i := slices.IndexFunc(jobs, func(job github.Job) bool { return job.Status != "completed" }); i >= 0 {
+		return failure.Transient{Err: fmt.Errorf("job %d is %s", jobs[i].ID, jobs[i].Status)}
 	}
 	unit, err := m.Store.NewUnit()
 	if err != nil {
