@@ -65,10 +65,16 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 		for attempt := 1; attempt <= 3; attempt++ {
 			dir := layout.AttemptDir(fixtureDir, attempt)
 			logs := recordedLogs(fixtureRun, fixtureStage, attempt)
-			Expect(logs).NotTo(BeEmpty())
-			for id, want := range logs {
-				Expect(recordings.CompareLog(want, jobDir(dir, strconv.FormatInt(id, 10)))).To(Succeed(), "attempt %d job %d", attempt, id)
+			ran := 0
+			for id, kind := range recordedKinds(fixtureRun, fixtureStage, attempt) {
+				if kind != model.Ran {
+					continue
+				}
+				ran++
+				Expect(logs).To(HaveKey(id), "attempt %d job %d", attempt, id)
+				Expect(recordings.CompareLog(logs[id], jobDir(dir, strconv.FormatInt(id, 10)))).To(Succeed(), "attempt %d job %d", attempt, id)
 			}
+			Expect(ran).NotTo(BeZero())
 		}
 	})
 
@@ -173,7 +179,8 @@ func recordedKinds(runID int64, stage string, attempt int) map[int64]model.JobKi
 	return kinds
 }
 
-// recordedLogs are the log bodies GitHub served for a recorded attempt, by job id.
+// recordedLogs are the log bodies GitHub served for a recorded attempt, by
+// job id. record.sh fetches every job's log, carried-forward ones included.
 func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	GinkgoHelper()
 	status, err := os.Open(filepath.Join(recordings.Dir(runID, stage), "status.txt"))
