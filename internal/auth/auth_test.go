@@ -3,6 +3,9 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os/exec"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -61,6 +64,19 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		Entry("without stderr", " \n", "gh auth token --hostname ghe.corp.example: exit status 1"),
 	)
 
+	DescribeTable("blocks as auth, saying to install gh or set LG_GH, when gh cannot be started", Label("blocked"),
+		func(startErr error) {
+			runner := &fakeRunner{err: startErr}
+
+			_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+
+			Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "gh auth token --hostname github.com: " + startErr.Error() + "; install gh or set LG_GH to its path"}))
+		},
+		Entry("not found", &exec.Error{Name: "gh", Err: exec.ErrNotFound}),
+		Entry("not executable", &fs.PathError{Op: "fork/exec", Path: "/some/dir", Err: syscall.EACCES}),
+		Entry("missing", &fs.PathError{Op: "fork/exec", Path: "/no/gh", Err: syscall.ENOENT}),
+	)
+
 	DescribeTable("blocks as auth, without showing the output, when gh prints no token or more than a token", Label("blocked"),
 		func(stdout, message string) {
 			_, err := auth.GhTokenSource{Runner: &fakeRunner{stdout: stdout}}.Token(context.Background(), "github.com")
@@ -103,5 +119,17 @@ var _ = Describe("GhTokenSource's timeout", Label("blocked"), func() {
 		_, err := auth.GhTokenSource{Runner: execx.Real{}, Env: map[string]string{"LG_GH": gh.Path}, Timeout: 200 * time.Millisecond}.Token(ctx, "github.com")
 
 		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: gh.Path + " auth token --hostname github.com did not exit within 200ms; run `gh auth login --hostname github.com`"}))
+	}, SpecTimeout(10*time.Second))
+
+	It("returns ctx's error, not Blocked, when ctx ends first", func(ctx SpecContext) {
+		gh := fakegh.New(GinkgoT().TempDir())
+		gh.Hang()
+		cancelled, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+		DeferCleanup(cancel)
+
+		_, err := auth.GhTokenSource{Runner: execx.Real{}, Env: map[string]string{"LG_GH": gh.Path}}.Token(cancelled, "github.com")
+
+		Expect(err).To(MatchError(context.DeadlineExceeded))
+		Expect(errors.As(err, new(failure.Blocked))).To(BeFalse())
 	}, SpecTimeout(10*time.Second))
 })
