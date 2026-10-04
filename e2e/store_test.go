@@ -87,13 +87,21 @@ var _ = Describe("lg sync on a fresh LG_HOME", Label("store"), func() {
 		Expect(env.Sync()).To(gexec.Exit(0))
 
 		Expect(os.ReadFile(filepath.Join(env.Store(), "FORMAT"))).To(Equal([]byte("lg-store 1\n")))
-		Expect(os.ReadFile(filepath.Join(env.Store(), ".rgignore"))).To(Equal([]byte("state/\ntmp/\n")))
-		for _, dir := range []string{env.Store(), env.State(), env.Tmp()} {
-			Expect(os.WriteFile(filepath.Join(dir, "probe.txt"), []byte("rgignore probe"), 0o644)).To(Succeed())
+		Expect(os.ReadFile(filepath.Join(env.Store(), ".rgignore"))).To(Equal([]byte("/state/\n/tmp/\n")))
+		shown := []string{"probe.txt", "data/github.com/acme/tmp/probe.txt", "data/github.com/state/x/probe.txt"}
+		for _, path := range append([]string{"state/probe.txt", "tmp/probe.txt"}, shown...) {
+			path = filepath.Join(env.Store(), path)
+			Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
+			Expect(os.WriteFile(path, []byte("rgignore probe"), 0o644)).To(Succeed())
 		}
-		rg := env.Sh("cd '" + env.Store() + "' && rg -l 'rgignore probe'")
-		Eventually(rg, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(rg.Out.Contents())).To(Equal("probe.txt\n"))
+
+		fromStore := env.Sh("cd '" + env.Store() + "' && rg -l 'rgignore probe'")
+		Eventually(fromStore, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(strings.Fields(string(fromStore.Out.Contents()))).To(ConsistOf(shown))
+		fromRoot := env.Sh("cd / && rg -l 'rgignore probe' \"$(lg root)\"")
+		Eventually(fromRoot, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(strings.Fields(string(fromRoot.Out.Contents()))).To(ConsistOf(
+			filepath.Join(env.Store(), shown[1]), filepath.Join(env.Store(), shown[2])))
 	})
 })
 

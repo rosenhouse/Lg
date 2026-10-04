@@ -26,7 +26,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(store.Init(root)).To(Succeed())
 
 		Expect(os.ReadFile(filepath.Join(root, "FORMAT"))).To(Equal([]byte("lg-store 1\n")))
-		Expect(os.ReadFile(filepath.Join(root, ".rgignore"))).To(Equal([]byte("state/\ntmp/\n")))
+		Expect(os.ReadFile(filepath.Join(root, ".rgignore"))).To(Equal([]byte("/state/\n/tmp/\n")))
 		for _, dir := range []string{"data", "state", "tmp"} {
 			Expect(filepath.Join(root, dir)).To(BeADirectory())
 		}
@@ -100,7 +100,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(store.InitFS(dry, filepath.Join(GinkgoT().TempDir(), "lg"))).To(Succeed())
 		ops := len(dry.Journal())
 		Expect(ops).To(BeNumerically(">=", 15))
-		want := map[string]string{"FORMAT": "lg-store 1\n", ".rgignore": "state/\ntmp/\n"}
+		want := map[string]string{"FORMAT": "lg-store 1\n", ".rgignore": "/state/\n/tmp/\n"}
 
 		for k := 1; k <= ops; k++ {
 			root := filepath.Join(GinkgoT().TempDir(), "lg")

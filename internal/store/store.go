@@ -19,7 +19,7 @@ import (
 
 const (
 	format     = "lg-store 1"
-	rgignore   = "state/\ntmp/\n"
+	rgignore   = "/state/\n/tmp/\n"
 	unitPrefix = "unit-"
 )
 
