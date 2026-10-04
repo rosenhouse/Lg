@@ -43,6 +43,12 @@ var _ = Describe("AttemptDir and JobDir", Label("sync"), func() {
 	})
 })
 
+var _ = Describe("ArtifactDir", Label("artifacts"), func() {
+	It("is artifacts/<id>_<name slug>", func() {
+		Expect(layout.ArtifactDir("/run", 11276401837, "flaky report (x)")).To(Equal("/run/artifacts/11276401837_flaky-report-x"))
+	})
+})
+
 var _ = DescribeTable("AttemptNumber gives n for a dir named as AttemptDir names attempt n", Label("attempts"),
 	func(name string, n int, ok bool) {
 		got, gotOK := layout.AttemptNumber(name)
