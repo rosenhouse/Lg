@@ -21,13 +21,19 @@ type GH struct {
 	dir  string
 }
 
-// New writes the script into dir. It prints the token in dir/token and
-// appends its arguments to dir/calls and its GH_CONFIG_DIR to dir/config-dirs.
+// New writes the script into dir. It appends its arguments to dir/calls and
+// its GH_CONFIG_DIR to dir/config-dirs. Then it sleeps if dir/hang exists,
+// fails printing dir/stderr if that exists, and else prints dir/token.
 func New(dir string) *GH {
 	ginkgo.GinkgoHelper()
 	g := &GH{Path: filepath.Join(dir, "gh"), dir: dir}
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> '%s'\nprintf '%%s\\n' \"$GH_CONFIG_DIR\" >> '%s'\ncat '%s'\n",
-		g.file("calls"), g.file("config-dirs"), g.file("token"))
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> '%s'
+printf '%%s\n' "$GH_CONFIG_DIR" >> '%s'
+[ -e '%s' ] && exec sleep 3600
+[ -e '%s' ] && { cat '%[4]s' >&2; exit 1; }
+cat '%s'
+`, g.file("calls"), g.file("config-dirs"), g.file("hang"), g.file("stderr"), g.file("token"))
 	g.SetToken(Token)
 	gomega.Expect(os.WriteFile(g.Path, []byte(script), 0o755)).To(gomega.Succeed())
 	return g
@@ -64,7 +70,13 @@ func (g *GH) lines(name string) []string {
 func (g *GH) file(name string) string { return filepath.Join(g.dir, name) }
 
 // Fail makes the script print stderr and exit 1.
-func (g *GH) Fail(stderr string) {}
+func (g *GH) Fail(stderr string) {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(os.WriteFile(g.file("stderr"), []byte(stderr+"\n"), 0o644)).To(gomega.Succeed())
+}
 
 // Hang makes the script wait until it is killed.
-func (g *GH) Hang() {}
+func (g *GH) Hang() {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(os.WriteFile(g.file("hang"), nil, 0o644)).To(gomega.Succeed())
+}
