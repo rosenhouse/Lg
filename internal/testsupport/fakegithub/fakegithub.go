@@ -14,10 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
@@ -72,6 +74,7 @@ type download struct {
 // answers; 0 means every one.
 type Fault struct {
 	Status   int
+	Headers  map[string]string
 	Body     string
 	Times    int
 	Drop     bool
@@ -222,6 +225,16 @@ func (s *Server) RequireToken(token string) {
 	defer s.mu.Unlock()
 	s.token = token
 }
+
+// ResetAfter is how long after its clock's time the fake says the rate limit resets.
+const ResetAfter = time.Hour
+
+// SetClock sets the clock that absolute headers such as X-RateLimit-Reset come from.
+func (s *Server) SetClock(c clock.Clock) {}
+
+// SetRateLimit makes X-RateLimit-Limit limit and X-RateLimit-Remaining
+// remaining, less one for each later API request.
+func (s *Server) SetRateLimit(limit, remaining int) {}
 
 // AddRun lists a run with the given body.
 func (s *Server) AddRun(body json.RawMessage) {

@@ -62,3 +62,9 @@ func (g *GH) lines(name string) []string {
 }
 
 func (g *GH) file(name string) string { return filepath.Join(g.dir, name) }
+
+// Fail makes the script print stderr and exit 1.
+func (g *GH) Fail(stderr string) {}
+
+// Hang makes the script wait until it is killed.
+func (g *GH) Hang() {}

@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 )
 
 // DefaultNow is past log_grace for every recorded attempt.
@@ -31,6 +32,7 @@ func shortTimeouts() github.Timeouts {
 
 // InProcessEnv drives mirror.Cycle against its own fake and store.
 type InProcessEnv struct {
+	FS     *faultfs.FS
 	Fake   *fakegithub.Server
 	Clock  *clock.Fake
 	Mirror *mirror.Mirror
@@ -52,6 +54,7 @@ func InProcess() *InProcessEnv {
 	clk := clock.NewFake(DefaultNow())
 	transport := github.NewTransport(shortTimeouts())
 	return &InProcessEnv{
+		FS:    faultfs.New(),
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{

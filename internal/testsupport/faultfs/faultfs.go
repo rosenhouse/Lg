@@ -128,3 +128,6 @@ func (w *faultFile) Sync() error {
 func (w *faultFile) Close() error {
 	return w.fs.do(Op{Name: "close", Path: w.path}, w.inner.Close)
 }
+
+// FailOn makes every later op named name return err.
+func (f *FS) FailOn(name string, err error) {}
