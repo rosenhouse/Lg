@@ -61,7 +61,9 @@ type Timeouts struct {
 	Dial, TLSHandshake, ResponseHeader, BodyIdle time.Duration
 }
 
-var DefaultTimeouts = Timeouts{Dial: 10 * time.Second, TLSHandshake: 10 * time.Second, ResponseHeader: 30 * time.Second, BodyIdle: time.Minute}
+func DefaultTimeouts() Timeouts {
+	return Timeouts{Dial: 10 * time.Second, TLSHandshake: 10 * time.Second, ResponseHeader: 30 * time.Second, BodyIdle: time.Minute}
+}
 
 func NewTransport(t Timeouts) http.RoundTripper {
 	dialer := &net.Dialer{Timeout: t.Dial}
@@ -69,13 +71,13 @@ func NewTransport(t Timeouts) http.RoundTripper {
 	base.DialContext = dialer.DialContext
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
-	return &idleTransport{base: base, bodyIdle: t.BodyIdle}
+	return &idleTransport{base: base, timeouts: t}
 }
 
-// idleTransport cancels a request once its body has sent nothing for bodyIdle.
+// idleTransport cancels a request once its body has sent nothing for BodyIdle.
 type idleTransport struct {
 	base     *http.Transport
-	bodyIdle time.Duration
+	timeouts Timeouts
 }
 
 func (t *idleTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -85,7 +87,7 @@ func (t *idleTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		cancel()
 		return nil, err
 	}
-	resp.Body = &idleBody{ReadCloser: resp.Body, cancel: cancel, idle: t.bodyIdle}
+	resp.Body = &idleBody{ReadCloser: resp.Body, cancel: cancel, idle: t.timeouts.BodyIdle}
 	return resp, nil
 }
 
@@ -183,6 +185,11 @@ type HTTP struct {
 
 func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string) *HTTP {
 	return &HTTP{transport: transport, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
+}
+
+// NewDefault is the Client lg sync uses, with DefaultTimeouts.
+func NewDefault(api *url.URL, repo, token string) Client {
+	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token)
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {

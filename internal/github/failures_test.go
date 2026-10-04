@@ -272,13 +272,19 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 	)
 })
 
+var _ = Describe("DefaultTimeouts", Label("failures"), func() {
+	It("waits 10s to dial, 10s for a TLS handshake, 30s for headers and 60s on an idle body", func() {
+		Expect(github.DefaultTimeouts()).To(Equal(github.Timeouts{Dial: 10 * time.Second, TLSHandshake: 10 * time.Second, ResponseHeader: 30 * time.Second, BodyIdle: time.Minute}))
+	})
+
+	It("are NewDefault's", func() {
+		Expect(github.TimeoutsOf(github.NewDefault(mustParse("https://api.github.com"), "o/r", "lg-test-token"))).To(Equal(github.DefaultTimeouts()))
+	})
+})
+
 var _ = Describe("NewTransport", Label("failures"), func() {
-	It("sets the TLS-handshake and response-header timeouts", func() {
-		transport, bodyIdle := github.TransportOf(github.NewTransport(github.DefaultTimeouts))
-		Expect(transport.TLSHandshakeTimeout).To(Equal(10 * time.Second))
-		Expect(transport.ResponseHeaderTimeout).To(Equal(30 * time.Second))
-		Expect(bodyIdle).To(Equal(60 * time.Second))
-		Expect(transport.Proxy).NotTo(BeNil())
+	It("uses the proxy from the environment", func() {
+		Expect(github.TransportOf(github.NewTransport(github.DefaultTimeouts())).Proxy).NotTo(BeNil())
 	})
 
 	It("gives up on a body idle for BodyIdle", func(ctx SpecContext) {

@@ -44,7 +44,7 @@ func (syncCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer release()
-	transport := github.NewTransport(github.DefaultTimeouts)
+	transport := github.NewTransport(github.DefaultTimeouts())
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
