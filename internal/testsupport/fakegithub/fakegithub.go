@@ -36,17 +36,17 @@ type Request struct {
 type Server struct {
 	api, blob *httptest.Server
 
-	mu       sync.Mutex
-	runs     map[string]*run
-	first    string
-	added    []json.RawMessage
-	pageCap  int
-	token    string
-	requests []Request
-	faults   []*fault
-	holds    []*hold
-	closing  chan struct{}
-	close    sync.Once
+	mu        sync.Mutex
+	runs      map[string]*run
+	first     string
+	added     []json.RawMessage
+	pageCap   int
+	token     string
+	requests  []Request
+	faults    []*fault
+	holds     []*hold
+	closing   chan struct{}
+	closeOnce sync.Once
 }
 
 // run is a recorded run at one stage.
@@ -243,7 +243,7 @@ func (s *Server) Hold(match string) (release func()) {
 }
 
 func (s *Server) Close() {
-	s.close.Do(func() { close(s.closing) })
+	s.closeOnce.Do(func() { close(s.closing) })
 	s.mu.Lock()
 	for _, h := range s.holds {
 		h.release()

@@ -28,7 +28,6 @@ var ShortTimeouts = github.Timeouts{Dial: time.Second, TLSHandshake: time.Second
 
 // InProcessEnv drives mirror.Cycle against its own fake and store.
 type InProcessEnv struct {
-	Store  *store.Store
 	Fake   *fakegithub.Server
 	Clock  *clock.Fake
 	Mirror *mirror.Mirror
@@ -50,7 +49,6 @@ func InProcess() *InProcessEnv {
 	clk := clock.NewFake(DefaultNow)
 	transport := github.NewTransport(ShortTimeouts)
 	return &InProcessEnv{
-		Store: s,
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{
