@@ -57,7 +57,7 @@ func (syncCmd) Run(deps *Deps) error {
 		LogGrace: time.Duration(cfg.LogGrace),
 	}
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	return m.Cycle(ctx)
 }

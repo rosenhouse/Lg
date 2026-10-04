@@ -33,8 +33,8 @@ var _ = Describe("lg sync when gh fails", Label("blocked"), func() {
 	})
 })
 
-var _ = Describe("lg sync interrupted while gh hangs", Label("blocked"), func() {
-	It("leaves no gh running", func() {
+var _ = DescribeTable("lg sync signalled while gh hangs leaves no gh running", Label("blocked"),
+	func(sig os.Signal) {
 		env := harness.New(lgPath)
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
@@ -44,12 +44,15 @@ var _ = Describe("lg sync interrupted while gh hangs", Label("blocked"), func() 
 		Eventually(env.GH().HungPIDs, harness.ExitTimeout).Should(HaveLen(1))
 		gh := env.GH().HungPIDs()[0]
 		DeferCleanup(func() { _ = syscall.Kill(gh, syscall.SIGKILL) })
-		session.Interrupt()
+		session.Signal(sig)
 
 		Expect(wait()).NotTo(gexec.Exit(0))
 		Eventually(func() error { return syscall.Kill(gh, 0) }, harness.ExitTimeout).Should(MatchError(syscall.ESRCH))
-	})
-})
+	},
+	Entry("SIGINT", os.Interrupt),
+	Entry("SIGTERM", syscall.SIGTERM),
+	Entry("SIGHUP", syscall.SIGHUP),
+)
 
 var _ = Describe("lg sync when GET /repos/rosenhouse/lg returns 404", Label("blocked"), func() {
 	It("exits 3 saying the repo was not found or the token lacks access", func() {
