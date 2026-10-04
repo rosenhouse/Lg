@@ -136,7 +136,9 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 	It("records lg_format, lg_version, fetched_at, host, repo, run_id, attempt, run_created_at, run_attempt_at_fetch and sources with the API URL, status, bytes and sha256, and never a blob URL", func(ctx SpecContext) {
 		env := harness.InProcess()
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		// The run listing says attempt 3; attempt 1's own run_attempt says 1.
+		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
+		env.Clock.Set(harness.DefaultNow.Add(500 * time.Millisecond))
 
 		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
 		attempt1 := env.AttemptDirs(runID)[0]
@@ -169,7 +171,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		Expect(fetch.RunID).To(BeEquivalentTo(runID))
 		Expect(fetch.Attempt).To(Equal(1))
 		Expect(fetch.RunCreatedAt).To(Equal("2026-10-03T14:22:54Z"))
-		Expect(fetch.RunAttemptAtFetch).To(Equal(1))
+		Expect(fetch.RunAttemptAtFetch).To(Equal(3))
 
 		api := env.Fake.URL() + "/repos/rosenhouse/lg/actions/"
 		urls := map[string]string{}
