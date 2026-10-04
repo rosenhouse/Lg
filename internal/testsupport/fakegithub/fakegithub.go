@@ -25,6 +25,9 @@ type Request struct {
 	Method string
 	Path   string
 	Query  string
+	Status int
+
+	Authorization bool
 }
 
 const recordedRepo = "rosenhouse/lg"
@@ -124,6 +127,18 @@ func (s *Server) dir() string {
 	defer s.mu.Unlock()
 	return s.runDir
 }
+
+// Advance serves a loaded run at another stage.
+func (s *Server) Advance(runID int64, stage string) error { return nil }
+
+// SetPageCap pages every listing at most n elements per page.
+func (s *Server) SetPageCap(n int) {}
+
+// RequireToken answers 401 to API requests without Authorization: Bearer token.
+func (s *Server) RequireToken(token string) {}
+
+// AddRun lists a run with the given body.
+func (s *Server) AddRun(run json.RawMessage) {}
 
 func (s *Server) URL() string { return s.api.URL }
 

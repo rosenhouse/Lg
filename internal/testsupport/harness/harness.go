@@ -13,6 +13,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -22,17 +23,22 @@ const ExitTimeout = 10 * time.Second
 type Env struct {
 	lgPath string
 	vars   map[string]string
+	gh     *fakegh.GH
 }
 
-// New gives the calling spec its own HOME and an environment built from
-// os.Environ by Scrub.
+// New gives the calling spec its own HOME, a fake gh at LG_GH and an
+// environment built from os.Environ by Scrub.
 func New(lgPath string) *Env {
 	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
 	vars["HOME"] = ginkgo.GinkgoT().TempDir()
-	return &Env{lgPath: lgPath, vars: vars}
+	gh := fakegh.New(ginkgo.GinkgoT().TempDir())
+	vars["LG_GH"] = gh.Path
+	return &Env{lgPath: lgPath, vars: vars, gh: gh}
 }
 
 func (e *Env) Home() string { return e.vars["HOME"] }
+
+func (e *Env) GH() *fakegh.GH { return e.gh }
 
 func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 
