@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,6 +35,9 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 	}
 	run.artifactsListed, run.artifacts, run.listing = true, artifacts, listing
 	retry, err := m.retrySet(*run, p.runs[run.ID])
+	if runScoped(err) {
+		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+	}
 	if err == nil {
 		err = p.set(run.ID, retry)
 	}
@@ -171,7 +175,8 @@ func (m *Mirror) retrySet(run listedRun, pending []github.Artifact) ([]github.Ar
 	return retry, nil
 }
 
-// snapshots gives the artifacts in each attempt's artifacts.json, oldest attempt first.
+// snapshots gives the artifacts in each attempt's artifacts.json, oldest
+// attempt first. An attempt that lg published before it kept snapshots has none.
 func (m *Mirror) snapshots(runDir string) ([]github.Artifact, error) {
 	attempts, err := m.attemptsOnDisk(runDir)
 	if err != nil {
@@ -181,6 +186,9 @@ func (m *Mirror) snapshots(runDir string) ([]github.Artifact, error) {
 	var all []github.Artifact
 	for _, n := range attempts {
 		artifacts, err := readArtifacts(filepath.Join(layout.AttemptDir(runDir, n), "artifacts.json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +210,7 @@ func readArtifacts(path string) ([]github.Artifact, error) {
 		artifacts, err = decodeArtifacts(raws)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, &github.MalformedError{Err: err})
 	}
 	return artifacts, nil
 }
