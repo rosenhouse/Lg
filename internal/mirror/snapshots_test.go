@@ -13,6 +13,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
@@ -99,6 +100,16 @@ var _ = Describe("the retry set", Label("artifacts"), func() {
 		Expect(ids(retry)).To(Equal([]int64{5, 3, 4, 7, 2}))
 		Expect(retry[3].Raw).To(MatchJSON(listedArtifact(7).Raw))
 	})
+
+	It("takes nothing from an attempt dir with no artifacts.json, as lg wrote before snapshots", func() {
+		env := harness.InProcess()
+		runDir := filepath.Join(env.Data(), "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "1_w_b")
+		Expect(os.MkdirAll(layout.AttemptDir(runDir, 1), 0o755)).To(Succeed())
+
+		retry, err := env.Mirror.RetrySet(runDir, []github.Artifact{listedArtifact(5)}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ids(retry)).To(Equal([]int64{5}))
+	})
 })
 
 // readPending reads state/pending-artifacts.json as run id -> artifact objects.
@@ -149,5 +160,21 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 			listed = append(listed, MatchJSON(raw))
 		}
 		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(listed...)))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when an attempt's artifacts.json is not JSON", Label("artifacts"), func() {
+	It("fails only that run and publishes the others", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(os.Chmod(attemptDir(env, runID, 1), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(attemptDir(env, runID, 1), "artifacts.json"), []byte("<"), 0o644)).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+
+		err := env.Sync(ctx)
+		Expect(err).To(MatchError(ContainSubstring("artifacts.json")))
+		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(env.AttemptDirs(deletedRun)).To(HaveLen(1))
 	}, cycleTimeout)
 })
