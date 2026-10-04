@@ -331,6 +331,7 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		if host == "api" && s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
 			f = Fault{Status: http.StatusUnauthorized}
 		}
+		w.Header().Set("Date", s.clock.Now().UTC().Format(http.TimeFormat))
 		if host == "api" {
 			s.countRequest(w.Header())
 		}
