@@ -13,7 +13,6 @@ import (
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
-	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
@@ -52,8 +51,7 @@ var _ = Describe("lg sync rate limited with LG_TEST_NOW one year after the recor
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
 		yearLater := harness.DefaultNow().AddDate(1, 0, 0)
-		env.Setenv("LG_TEST_NOW", yearLater.Format(time.RFC3339))
-		fake.SetClock(clock.NewFake(yearLater))
+		env.SetNow(yearLater, fake)
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests})
 
 		session := env.Sync()

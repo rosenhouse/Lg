@@ -41,7 +41,8 @@ type InProcessEnv struct {
 }
 
 // InProcess gives the calling spec an empty fakegithub, a store, a clock at
-// DefaultNow, and a Mirror of rosenhouse/lg that uses them.
+// DefaultNow that both lg and the fake use, and a Mirror of rosenhouse/lg
+// that uses them.
 func InProcess() *InProcessEnv {
 	ginkgo.GinkgoHelper()
 	root := filepath.Join(ginkgo.GinkgoT().TempDir(), "lg")
@@ -54,6 +55,7 @@ func InProcess() *InProcessEnv {
 	api, err := url.Parse(fake.URL())
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	clk := clock.NewFake(DefaultNow())
+	fake.SetClock(clk)
 	transport := github.NewTransport(shortTimeouts())
 	return &InProcessEnv{
 		FS:    fsys,

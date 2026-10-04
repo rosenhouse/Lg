@@ -64,12 +64,12 @@ var _ = Describe("lg sync with LG_TEST_NOW", Label("failures"), func() {
 		env := harness.New(lgPath)
 		fake := fakegithub.Start(37129738159, "logs-deleted")
 		env.WriteConfig(fake.URL())
-		env.Setenv("LG_TEST_NOW", "2026-10-03T15:00:00Z")
+		env.SetNow(time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC), fake)
 
 		Expect(env.Sync()).To(gexec.Exit(1))
 		Expect(os.ReadDir(env.Data())).To(BeEmpty())
 
-		env.Setenv("LG_TEST_NOW", "2026-10-03T15:31:00Z")
+		env.SetNow(time.Date(2026, 10, 3, 15, 31, 0, 0, time.UTC), fake)
 		Expect(env.Sync()).To(gexec.Exit(0))
 		fetchJSON, err := filepath.Glob(filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03/37129738159_*/attempt-1/fetch.json"))
 		Expect(err).NotTo(HaveOccurred())
