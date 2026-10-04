@@ -127,7 +127,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(blobAuthorization).To(Equal([]string{""}))
 	})
 
-	It("stops after 10 redirects", Label("transport"), func() {
+	It("stops after 10 redirects", Label("transport"), func(ctx SpecContext) {
 		var requests int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requests++
@@ -135,10 +135,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(ContainSubstring("stopped after 10 redirects")))
 		Expect(requests).To(Equal(10))
-	})
+	}, SpecTimeout(5*time.Second))
 
 	It("lists runs and jobs 100 per page", func() {
 		_, err := client.ListRuns(context.Background())
