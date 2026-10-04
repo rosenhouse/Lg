@@ -65,9 +65,11 @@ type download struct {
 
 // Fault answers a request with Status, or breaks the connection. Body
 // replaces the error GitHub or blob storage would send with Status. Drop
-// closes it without a response. Truncate sends the response's
+// closes it partway through the status line. Truncate sends the response's
 // Content-Length and half its body. Stall sends nothing more until the
-// client gives up. Times limits how many requests it answers; 0 means every one.
+// client gives up. Truncate cuts the matched response, so a log's belongs on
+// its blob, not on the API hop's redirect. Times limits how many requests it
+// answers; 0 means every one.
 type Fault struct {
 	Status   int
 	Body     string
@@ -301,6 +303,8 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		case f.Drop:
 			sw.status = 0
 			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				// A response cut short, unlike none at all, is one Go never retries.
+				_, _ = conn.Write([]byte("HTTP/1.1 2"))
 				_ = conn.Close()
 			}
 		case f.Truncate:

@@ -86,7 +86,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(try(logs + "111221289861/logs")).To(Equal(http.StatusBadGateway))
 		Expect(try(logs + "111221289861/logs")).To(Equal(http.StatusFound))
 		_, err, _ := try(logs + "111221289875/logs")
-		Expect(err).To(MatchError(io.EOF))
+		Expect(err).To(MatchError(ContainSubstring(`malformed HTTP status code "2"`)))
 		_, _, err = try(logs + "111221289888/logs")
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		_, err, _ = try(logs + "111221289909/logs")

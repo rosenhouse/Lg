@@ -160,11 +160,29 @@ var _ = Describe("Server controls", func() {
 		}
 		recorded := func() []byte { return fake.Served("attempt-1/logs/111221289888.txt") }
 
-		It("Drop closes the connection without a response", func(ctx SpecContext) {
+		It("Drop closes the connection partway through the status line", func(ctx SpecContext) {
 			fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Drop: true})
 
 			_, err := download(ctx)
-			Expect(err).To(MatchError(io.EOF))
+			Expect(err).To(MatchError(ContainSubstring(`malformed HTTP status code "2"`)))
+		}, SpecTimeout(5*time.Second))
+
+		It("Drop fails a request on a reused connection, which Go would otherwise retry", func(ctx SpecContext) {
+			client := &http.Client{Transport: &http.Transport{}}
+			get := func() error {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+"/repos/rosenhouse/lg", http.NoBody)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := client.Do(req)
+				if err != nil {
+					return err
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				return resp.Body.Close()
+			}
+			Expect(get()).To(Succeed())
+			fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Drop: true, Times: 1})
+
+			Expect(get()).NotTo(Succeed())
 		}, SpecTimeout(5*time.Second))
 
 		It("Truncate declares the whole body's Content-Length and sends half of it", func(ctx SpecContext) {

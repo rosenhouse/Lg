@@ -74,7 +74,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	var runs, failFlags repeated
 	flags.Var(&runs, "run", "serve run `ID=STAGE` from testdata/recordings (repeatable)")
-	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall or truncate+stall), at most TIMES times (repeatable)")
+	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall or truncate+stall), at most TIMES times (repeatable); truncate a log or zip on the blob host, since the API hop only redirects")
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
 	if err := flags.Parse(args); err != nil {
