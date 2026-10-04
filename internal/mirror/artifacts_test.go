@@ -105,6 +105,14 @@ var _ = Describe("mirror.Cycle for a run still in progress", Label("artifacts"),
 			HaveEach(WithTransform(func(dir string) string { return filepath.Join(dir, "artifact.zip") }, BeARegularFile())),
 		))
 		Expect(env.AttemptDirs(cloneID)).To(BeEmpty())
+		raw, err := os.ReadFile(filepath.Join(env.ArtifactDirs(cloneID)[0], "fetch.json"))
+		Expect(err).NotTo(HaveOccurred())
+		var fetch map[string]any
+		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+		Expect(fetch).To(SatisfyAll(
+			HaveKeyWithValue("run_status_at_fetch", "in_progress"),
+			HaveKeyWithValue("run_attempt_at_fetch", 1.0),
+		))
 	}, cycleTimeout)
 })
 

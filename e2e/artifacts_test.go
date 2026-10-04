@@ -88,6 +88,7 @@ var _ = Describe("lg sync at after-attempt-1, then -2, then -3", Label("artifact
 			HaveSuffix("/11276267449_flaky-report/artifact.zip"),
 			HaveSuffix("/11276182467_flaky-report-overwrite/artifact.zip"),
 		))
+		Expect(readJSON(filepath.Join(env.Data(), fixtureRunDir, "artifacts", "11276267449_flaky-report", "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", 2.0))
 	})
 })
 
