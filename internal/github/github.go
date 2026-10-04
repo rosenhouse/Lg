@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -182,6 +183,9 @@ type HTTP struct {
 	api       url.URL
 	repoURL   string
 	token     string
+
+	mu        sync.Mutex
+	rateLimit http.Header // of the last API response
 }
 
 func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk clock.Clock) *HTTP {
@@ -198,7 +202,16 @@ type Repo struct {
 	FullName string `json:"full_name"`
 }
 
-func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) { return Repo{}, nil }
+func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
+	var repo Repo
+	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
+		return Repo{}, err
+	}
+	if repo.FullName == "" {
+		return Repo{}, malformed(h.repoURL, "no full_name")
+	}
+	return repo, nil
+}
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 	raws, _, _, err := h.list(ctx, h.repoURL+"/actions/runs?per_page=100", "workflow_runs")
@@ -350,11 +363,21 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 }
 
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
+	h.mu.Lock()
+	blocked, reserved := failure.Reserve(h.rateLimit, h.clock.Now())
+	h.mu.Unlock()
+	if reserved {
+		return blocked
+	}
 	resp, err := h.follow(ctx, rawURL)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", rawURL, err)
-		if ctx.Err() != nil {
+		var opErr *net.OpError
+		switch {
+		case ctx.Err() != nil:
 			return err
+		case errors.As(err, &opErr) && opErr.Op == "dial":
+			return failure.Blocked{Kind: failure.Unreachable, Detail: err.Error()}
 		}
 		return failure.Transient{Err: err}
 	}
@@ -418,16 +441,27 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "lg/"+version.Version)
-	if h.onAPIHost(u) {
-		req.Header.Set("Authorization", "Bearer "+h.token)
+	if !h.onAPIHost(u) {
+		return h.transport.RoundTrip(req)
 	}
-	return h.transport.RoundTrip(req)
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	resp, err := h.transport.RoundTrip(req)
+	if err == nil {
+		h.mu.Lock()
+		h.rateLimit = resp.Header
+		h.mu.Unlock()
+	}
+	return resp, err
 }
 
 // statusError classifies a failed response by the hop that sent it.
 func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
+	if blocked, ok := failure.FromStatus(e.Status, resp.Header, e.Message, h.clock.Now()); ok && !e.Blob {
+		blocked.Detail = e.Error() + ": " + e.Message
+		return blocked
+	}
 	if e.Status >= 500 || e.Blob && Refusal(e.Status) {
 		return failure.Transient{Err: e}
 	}
