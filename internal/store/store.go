@@ -445,7 +445,8 @@ func (u *Unit) Create(name string, maxBytes int64) (io.WriteCloser, error) {
 	return &member{File: f, unit: u, name: name, maxBytes: maxBytes, hash: sha256.New()}, nil
 }
 
-// member sums its bytes, refuses more than maxBytes, and fsyncs its file on Close, which Publish requires first.
+// member sums its bytes, refuses more than maxBytes, and fsyncs its file on
+// Close, which Publish requires first.
 type member struct {
 	File
 	unit     *Unit
