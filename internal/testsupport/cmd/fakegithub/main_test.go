@@ -119,9 +119,21 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(header).To(SatisfyAll(
 			HaveKeyWithValue("X-Ratelimit-Limit", []string{"100"}),
 			HaveKeyWithValue("X-Ratelimit-Remaining", []string{"11"}),
-			HaveKeyWithValue("X-Ratelimit-Reset", []string{strconv.FormatInt(now.Add(time.Hour).Unix(), 10)}),
-			HaveKeyWithValue("Date", []string{now.Format(http.TimeFormat)}),
 		))
+		Expect(clockOf(header)).To(BeTemporally("~", now, 5*time.Second))
+		Eventually(func() time.Time {
+			header, _ := get(url + "/repos/rosenhouse/lg")
+			return clockOf(header)
+		}, "5s").Should(BeTemporally(">", clockOf(header)))
+	})
+
+	It("takes its clock from the real time without -now", Label("blocked"), func() {
+		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0")
+		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
+
+		header, _ := get(url + "/repos/rosenhouse/lg")
+		Expect(clockOf(header)).To(BeTemporally("~", time.Now(), 5*time.Second))
 	})
 
 	It("injects each rate-limit -fail kind", Label("blocked"), func() {
@@ -211,3 +223,15 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(session.Err).To(gbytes.Say(`no recording of run 37129390741`))
 	})
 })
+
+// clockOf gives the server's time from header's Date, checking that
+// X-RateLimit-Reset is an hour later.
+func clockOf(header http.Header) time.Time {
+	GinkgoHelper()
+	date, err := http.ParseTime(header.Get("Date"))
+	Expect(err).NotTo(HaveOccurred())
+	reset, err := strconv.ParseInt(header.Get("X-Ratelimit-Reset"), 10, 64)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(time.Unix(reset, 0)).To(BeTemporally("~", date.Add(time.Hour), time.Second))
+	return date
+}
