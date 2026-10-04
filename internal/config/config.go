@@ -21,7 +21,19 @@ type Config struct {
 	Repo   string `yaml:"repo"`
 	APIURL string `yaml:"api_url"`
 
-	LogGrace time.Duration `yaml:"log_grace"`
+	LogGrace Duration `yaml:"log_grace"`
+}
+
+// Duration is a Go duration such as 1h or 0s, or a bare 0.
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	parsed, err := time.ParseDuration(node.Value)
+	if node.Kind != yaml.ScalarNode || err != nil {
+		return fmt.Errorf("line %d: %q is not a duration such as 1h or 0s", node.Line, node.Value)
+	}
+	*d = Duration(parsed)
+	return nil
 }
 
 var (
@@ -30,7 +42,7 @@ var (
 )
 
 func Defaults() Config {
-	return Config{Host: "github.com", LogGrace: time.Hour}
+	return Config{Host: "github.com", LogGrace: Duration(time.Hour)}
 }
 
 func Load(path string) (Config, error) {
@@ -52,7 +64,7 @@ func Load(path string) (Config, error) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
 	}
 	if cfg.LogGrace < 0 {
-		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", cfg.LogGrace))
+		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", time.Duration(cfg.LogGrace)))
 	}
 	if cfg.APIURL != "" {
 		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {

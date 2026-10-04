@@ -21,7 +21,7 @@ var _ = Describe("Load", Label("sync"), func() {
 	It("reads host, repo and api_url", func() {
 		cfg, err := config.Load(write("host: ghe.corp.example\nrepo: platform/infra\napi_url: http://127.0.0.1:1/api/v3\n"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: time.Hour}))
+		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour)}))
 	})
 
 	It("defaults host to github.com", func() {
@@ -29,15 +29,25 @@ var _ = Describe("Load", Label("sync"), func() {
 	})
 
 	It("defaults log_grace to 1h", Label("failures"), func() {
-		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(HaveField("LogGrace", time.Hour))
+		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(HaveField("LogGrace", config.Duration(time.Hour)))
 	})
 
 	It("reads log_grace as a Go duration", Label("failures"), func() {
-		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 90m\n"))).To(HaveField("LogGrace", 90*time.Minute))
+		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 90m\n"))).To(HaveField("LogGrace", config.Duration(90*time.Minute)))
 	})
 
-	It("accepts a log_grace of 0", Label("failures"), func() {
-		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 0s\n"))).To(HaveField("LogGrace", time.Duration(0)))
+	DescribeTable("accepts a log_grace of 0",
+		func(zero string) {
+			Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: " + zero + "\n"))).To(HaveField("LogGrace", config.Duration(0)))
+		},
+		Entry("with a unit", "0s", Label("failures")),
+		Entry("bare", "0", Label("failures")),
+	)
+
+	It("rejects a log_grace with no unit", Label("failures"), func() {
+		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: 3600\n"))
+		Expect(err).To(MatchError(HaveSuffix(`config.yaml: line 2: "3600" is not a duration such as 1h or 0s`)))
+		Expect(err).To(BeAssignableToTypeOf(config.Error("")))
 	})
 
 	It("rejects a negative log_grace", Label("failures"), func() {

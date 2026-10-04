@@ -54,7 +54,7 @@ func (syncCmd) Run(deps *Deps) error {
 		Host:     cfg.Host,
 		Repo:     cfg.Repo,
 		Clock:    deps.Clock,
-		LogGrace: cfg.LogGrace,
+		LogGrace: time.Duration(cfg.LogGrace),
 	}
 	return m.Cycle(context.Background())
 }
