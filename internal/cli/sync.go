@@ -51,7 +51,7 @@ const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
 // holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots, stderr io.Writer) (s *store.Store, release func(), err error) {
+func openForWriting(roots config.Roots, stderr io.Writer) (*store.Store, func(), error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, nil, err
 	}
@@ -62,17 +62,21 @@ func openForWriting(roots config.Roots, stderr io.Writer) (s *store.Store, relea
 	if err != nil {
 		return nil, nil, err
 	}
-	release = func() { _ = held.Release() }
-	if err := store.Init(roots.Store); err != nil {
-		release()
-		return nil, nil, err
-	}
-	if s, err = store.Open(roots.Store); err == nil {
-		err = s.Sweep()
-	}
+	s, err := initAndSweep(roots.Store)
 	if err != nil {
-		release()
+		_ = held.Release()
 		return nil, nil, err
 	}
-	return s, release, nil
+	return s, func() { _ = held.Release() }, nil
+}
+
+func initAndSweep(root string) (*store.Store, error) {
+	if err := store.Init(root); err != nil {
+		return nil, err
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	return s, s.Sweep()
 }
