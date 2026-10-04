@@ -43,6 +43,9 @@ type Server struct {
 	first     string
 	added     []json.RawMessage
 	pageCap   int
+	clock     clock.Clock
+	limit     int
+	remaining int
 	token     string
 	requests  []Request
 	faults    []*fault
@@ -109,7 +112,13 @@ func New() *Server { return Listen(nil) }
 
 // Listen serves the API on l, or on a free port of 127.0.0.1 when l is nil.
 func Listen(l net.Listener) *Server {
-	s := &Server{runs: map[string]*run{}, closing: make(chan struct{})}
+	s := &Server{
+		runs:      map[string]*run{},
+		closing:   make(chan struct{}),
+		clock:     clock.NewFake(recordings.DefaultNow()),
+		limit:     5000,
+		remaining: 5000,
+	}
 	s.api = httptest.NewUnstartedServer(s.record("api", s.routes()))
 	if l != nil {
 		_ = s.api.Listener.Close()
@@ -230,11 +239,30 @@ func (s *Server) RequireToken(token string) {
 const ResetAfter = time.Hour
 
 // SetClock sets the clock that absolute headers such as X-RateLimit-Reset come from.
-func (s *Server) SetClock(c clock.Clock) {}
+func (s *Server) SetClock(c clock.Clock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = c
+}
 
 // SetRateLimit makes X-RateLimit-Limit limit and X-RateLimit-Remaining
 // remaining, less one for each later API request.
-func (s *Server) SetRateLimit(limit, remaining int) {}
+func (s *Server) SetRateLimit(limit, remaining int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limit, s.remaining = limit, remaining
+}
+
+// countRequest counts an API request against the rate limit and sets the
+// headers GitHub sends about it. Callers hold mu.
+func (s *Server) countRequest(header http.Header) {
+	s.remaining = max(s.remaining-1, 0)
+	header.Set("X-RateLimit-Limit", strconv.Itoa(s.limit))
+	header.Set("X-RateLimit-Remaining", strconv.Itoa(s.remaining))
+	header.Set("X-RateLimit-Used", strconv.Itoa(s.limit-s.remaining))
+	header.Set("X-RateLimit-Reset", strconv.FormatInt(s.clock.Now().Add(ResetAfter).Unix(), 10))
+	header.Set("X-RateLimit-Resource", "core")
+}
 
 // AddRun lists a run with the given body.
 func (s *Server) AddRun(body json.RawMessage) {
@@ -303,7 +331,13 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		if host == "api" && s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
 			f = Fault{Status: http.StatusUnauthorized}
 		}
+		if host == "api" {
+			s.countRequest(w.Header())
+		}
 		s.mu.Unlock()
+		for k, v := range f.Headers {
+			w.Header().Set(k, v)
+		}
 		for _, held := range holds {
 			select {
 			case <-held.released:

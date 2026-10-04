@@ -60,10 +60,11 @@ var _ = Describe("Server rate-limit headers", Label("blocked"), func() {
 	It("Fail with Headers sets them on the faulted response", func() {
 		fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusForbidden, Headers: map[string]string{"Retry-After": "120", "X-RateLimit-Remaining": "0"}})
 
-		Expect(fetch(fake.URL() + "/repos/rosenhouse/lg")).To(SatisfyAll(
-			HaveField("status", http.StatusForbidden),
-			HaveField("header", HaveKeyWithValue("Retry-After", []string{"120"})),
-			HaveField("header", HaveKeyWithValue("X-Ratelimit-Remaining", []string{"0"})),
+		repo := fetch(fake.URL() + "/repos/rosenhouse/lg")
+		Expect(repo.status).To(Equal(http.StatusForbidden))
+		Expect(repo.header).To(SatisfyAll(
+			HaveKeyWithValue("Retry-After", []string{"120"}),
+			HaveKeyWithValue("X-Ratelimit-Remaining", []string{"0"}),
 		))
 	})
 })

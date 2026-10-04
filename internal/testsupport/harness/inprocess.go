@@ -20,10 +20,11 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
-// DefaultNow is past log_grace for every recorded attempt.
-func DefaultNow() time.Time { return time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC) }
+// DefaultNow is the LG_TEST_NOW of each spec and the time fakegithub's clock starts at.
+func DefaultNow() time.Time { return recordings.DefaultNow() }
 
 // shortTimeouts let fault specs give up on a stalled fake within seconds.
 func shortTimeouts() github.Timeouts {
