@@ -120,11 +120,11 @@ func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
-	var pending map[string][]struct{ Artifact json.RawMessage }
+	var pending map[string]struct{ Artifacts []struct{ Artifact json.RawMessage } }
 	Expect(json.Unmarshal(raw, &pending)).To(Succeed())
 	artifacts := map[string][]json.RawMessage{}
-	for runID, candidates := range pending {
-		for _, c := range candidates {
+	for runID, run := range pending {
+		for _, c := range run.Artifacts {
 			artifacts[runID] = append(artifacts[runID], c.Artifact)
 		}
 	}
@@ -224,9 +224,11 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 		Entry("empty", "", cycleTimeout),
 		Entry("an array", "[]", cycleTimeout),
 		Entry("a run id that is not a number", `{"abc":[]}`, cycleTimeout),
-		Entry("an artifact id that is not a number", `{"1":[{"artifact":{"id":"x"}}]}`, cycleTimeout),
-		Entry("an entry with no artifact", `{"1":[{}]}`, cycleTimeout),
-		Entry("an entry with a null artifact", `{"1":[{"artifact":null}]}`, cycleTimeout),
+		Entry("a run that is an array", `{"1":[]}`, cycleTimeout),
+		Entry("a run whose id is not its key", `{"1":{"run":{"id":2},"artifacts":[]}}`, cycleTimeout),
+		Entry("an artifact id that is not a number", `{"1":{"run":{"id":1},"artifacts":[{"artifact":{"id":"x"}}]}}`, cycleTimeout),
+		Entry("an entry with no artifact", `{"1":{"run":{"id":1},"artifacts":[{}]}}`, cycleTimeout),
+		Entry("an entry with a null artifact", `{"1":{"run":{"id":1},"artifacts":[{"artifact":null}]}}`, cycleTimeout),
 	)
 
 	It("syncs a null file as an empty one", func(ctx SpecContext) {
@@ -285,5 +287,18 @@ var _ = Describe("an artifact pending for a run that was then deleted", Label("a
 		Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "deleted"))
 		Expect(readJSONFile(filepath.Join(artifactDir(env, runID, flakyReport), "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(1)))
 		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+})
+
+var _ = Describe("an artifact pending for a run of another repo", Label("artifacts"), func() {
+	It("stays pending and untouched while lg syncs this repo", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		other := `{"5":{"run":{"id":5,"repository":{"full_name":"other/repo"}},"artifacts":[{"artifact":{"id":9,"name":"a"}}]}}`
+		Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte(other), 0o644)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readPending(env)).To(HaveKeyWithValue("5", ConsistOf(MatchJSON(`{"id":9,"name":"a"}`))))
+		Expect(requestedZip(env, "9")).To(BeFalse())
 	}, cycleTimeout)
 })

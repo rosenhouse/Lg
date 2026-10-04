@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -71,13 +72,13 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runs, err := m.listRuns(ctx, gh, repo)
-	if err != nil {
-		return err
-	}
 	p, pendingErr := loadPending(m.Store, m.State)
 	if p == nil {
 		return pendingErr
+	}
+	runs, err := m.listRuns(ctx, gh, repo, p)
+	if err != nil {
+		return err
 	}
 	artifactsFailed, err := m.artifactPhase(ctx, gh, runs, p)
 	if err != nil {
@@ -112,16 +113,25 @@ func (l *artifactListing) candidates() []candidate {
 	return candidates
 }
 
-func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
+// listRuns lists the repo's runs, then each run with pending artifacts that
+// the listing does not name, since it may have been deleted since.
+func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo, p *pending) ([]listedRun, error) {
 	runs, err := gh.ListRuns(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if i := slices.IndexFunc(runs, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
+		return nil, fmt.Errorf("run %d belongs to %q, not %q", runs[i].ID, runs[i].Repository.FullName, repo.FullName)
+	}
+	for _, id := range slices.Backward(slices.Sorted(maps.Keys(p.runs))) {
+		run := p.runs[id].Run
+		listed := slices.ContainsFunc(runs, func(listed github.Run) bool { return listed.ID == id })
+		if !listed && ofRepo(run, repo) {
+			runs = append(runs, run)
+		}
+	}
 	listed := make([]listedRun, len(runs))
 	for i, run := range runs {
-		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
-			return nil, fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
-		}
 		dir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
 		if err != nil {
 			return nil, err
@@ -129,6 +139,10 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 		listed[i] = listedRun{Run: run, dir: dir}
 	}
 	return listed, nil
+}
+
+func ofRepo(run github.Run, repo github.Repo) bool {
+	return strings.EqualFold(run.Repository.FullName, repo.FullName)
 }
 
 // artifactPhase publishes every run's artifacts. It returns the errors that

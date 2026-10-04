@@ -41,22 +41,21 @@ type candidate struct {
 // failed, and the errors that runScoped accepts. It stops at any other error.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listedRun, p *pending) (*artifactListing, []error, error) {
 	listing, err := listArtifacts(ctx, gh, run.ID)
-	if errors.Is(err, github.ErrNotFound) {
-		return nil, nil, nil
-	}
-	if runScoped(err) {
+	switch {
+	case errors.Is(err, github.ErrNotFound):
+		// The run is deleted, but its artifacts that lg saw still need dirs.
+	case runScoped(err):
 		return nil, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
-	}
-	if err != nil {
+	case err != nil:
 		return nil, nil, err
 	}
 	run.artifacts = listing
-	retry, err := m.retrySet(run, p.runs[run.ID])
+	retry, err := m.retrySet(run, p.runs[run.ID].Artifacts)
 	if runScoped(err) {
 		return listing, []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	}
 	if err == nil {
-		err = p.set(run.ID, retry)
+		err = p.set(run.Run, retry)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -73,7 +72,7 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 			return nil, nil, err
 		}
 	}
-	return listing, failed, p.set(run.ID, unpublished)
+	return listing, failed, p.set(run.Run, unpublished)
 }
 
 // listArtifacts lists the run's artifacts, then gets the run, since a

@@ -15,19 +15,25 @@ import (
 )
 
 // pending is state/pending-artifacts.json: each run's listed artifacts that
-// have no dir yet, with their origins. A re-run of all jobs deletes a run's artifacts, so the
-// next listing may not name one that failed.
+// have no dir yet, with their origins. A re-run of all jobs deletes a run's
+// artifacts, so the next listing may not name one that failed.
 type pending struct {
 	store *store.Store
 	path  string
-	runs  map[int64][]candidate
+	runs  map[int64]pendingRun
+}
+
+// pendingRun is a run as last listed, with its pending artifacts.
+type pendingRun struct {
+	Run       github.Run  `json:"run"`
+	Artifacts []candidate `json:"artifacts"`
 }
 
 // loadPending reads the file. One that does not parse is moved aside, since
 // snapshots still name the artifacts of published attempts, and loadPending
 // returns a MalformedError with an empty pending.
 func loadPending(s *store.Store, stateDir string) (*pending, error) {
-	p := &pending{store: s, path: filepath.Join(stateDir, "pending-artifacts.json"), runs: map[int64][]candidate{}}
+	p := &pending{store: s, path: filepath.Join(stateDir, "pending-artifacts.json"), runs: map[int64]pendingRun{}}
 	raw, err := os.ReadFile(p.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return p, nil
@@ -35,7 +41,7 @@ func loadPending(s *store.Store, stateDir string) (*pending, error) {
 	if err != nil {
 		return nil, err
 	}
-	var runs map[int64][]candidate
+	var runs map[int64]pendingRun
 	if err := decodePending(raw, &runs); err != nil {
 		aside := p.path + ".corrupt"
 		if err := os.Rename(p.path, aside); err != nil {
@@ -49,27 +55,30 @@ func loadPending(s *store.Store, stateDir string) (*pending, error) {
 	return p, nil
 }
 
-func decodePending(raw []byte, runs *map[int64][]candidate) error {
+func decodePending(raw []byte, runs *map[int64]pendingRun) error {
 	if err := json.Unmarshal(raw, runs); err != nil {
 		return err
 	}
-	for runID, candidates := range *runs {
-		if i := slices.IndexFunc(candidates, func(c candidate) bool { return c.Artifact.ID == 0 }); i >= 0 {
-			return fmt.Errorf("run %d entry %d has no artifact id", runID, i)
+	for runID, r := range *runs {
+		if r.Run.ID != runID {
+			return fmt.Errorf("run %d has run id %d", runID, r.Run.ID)
+		}
+		if i := slices.IndexFunc(r.Artifacts, func(c candidate) bool { return c.Artifact.ID == 0 }); i >= 0 {
+			return fmt.Errorf("run %d artifact %d has no id", runID, i)
 		}
 	}
 	return nil
 }
 
 // set records the run's pending artifacts, and saves the file when their ids changed.
-func (p *pending) set(runID int64, candidates []candidate) error {
-	if slices.Equal(ids(p.runs[runID]), ids(candidates)) {
+func (p *pending) set(run github.Run, candidates []candidate) error {
+	if slices.Equal(ids(p.runs[run.ID].Artifacts), ids(candidates)) {
 		return nil
 	}
 	if len(candidates) == 0 {
-		delete(p.runs, runID)
+		delete(p.runs, run.ID)
 	} else {
-		p.runs[runID] = candidates
+		p.runs[run.ID] = pendingRun{Run: run, Artifacts: candidates}
 	}
 	return p.save()
 }
