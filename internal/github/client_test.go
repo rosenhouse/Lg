@@ -74,7 +74,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		},
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetAttempt(ctx, 1, 1); return err }),
-		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
+		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
 		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error { _, err := c.DownloadJobLog(ctx, 1, &bytes.Buffer{}); return err }),
 	)
 
@@ -103,7 +103,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	})
 
 	It("lists an attempt's jobs with their fields and the element served for each", func() {
-		jobs, err := client.ListAttemptJobs(context.Background(), runID, 1)
+		jobs, _, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		var listing struct{ Jobs []json.RawMessage }
 		Expect(json.Unmarshal(fake.Served("attempt-1/jobs.json"), &listing)).To(Succeed())
@@ -117,6 +117,21 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(jobs[10].Name).To(Equal("skipped"))
 		Expect(jobs[10].RunnerName).To(BeNil())
 		Expect(jobs[10].Steps).To(BeEmpty())
+	})
+
+	It("gives the API URL, status and page count of what it fetched", Label("failures"), func() {
+		fake.SetPageCap(5)
+		attempt, err := client.GetAttempt(context.Background(), runID, 1)
+		Expect(err).NotTo(HaveOccurred())
+		_, listing, err := client.ListAttemptJobs(context.Background(), runID, 1)
+		Expect(err).NotTo(HaveOccurred())
+		log, err := client.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{})
+		Expect(err).NotTo(HaveOccurred())
+
+		api := fake.URL() + "/repos/rosenhouse/lg/actions/"
+		Expect(attempt.Source).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1", Status: 200}))
+		Expect(listing).To(Equal(github.Source{URL: api + "runs/37129390741/attempts/1/jobs?per_page=100", Status: 200, Pages: 3}))
+		Expect(log).To(Equal(github.Source{URL: api + "jobs/111221289888/logs", Status: 200}))
 	})
 
 	It("downloads a job log through the redirect, byte for byte", func() {
@@ -154,7 +169,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	It("lists runs and jobs 100 per page", func() {
 		_, err := client.ListRuns(context.Background())
 		Expect(err).NotTo(HaveOccurred())
-		_, err = client.ListAttemptJobs(context.Background(), runID, 1)
+		_, _, err = client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(fake.Requests()).To(ConsistOf(
 			HaveField("Query", "per_page=100"),
@@ -169,7 +184,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		runs, err := client.ListRuns(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(2))
-		jobs, err := client.ListAttemptJobs(context.Background(), runID, 1)
+		jobs, _, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(jobs).To(HaveLen(12))
 		requested := func(path string, page int) types.GomegaMatcher {
@@ -289,7 +304,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		_, err := github.NewHTTP(http.DefaultClient, mustParse(server.URL), "o/r", "lg-test-token").ListAttemptJobs(context.Background(), 1, 1)
+		_, _, err := github.NewHTTP(http.DefaultClient, mustParse(server.URL), "o/r", "lg-test-token").ListAttemptJobs(context.Background(), 1, 1)
 		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: listed 1 of 2 jobs"))
 	})
 

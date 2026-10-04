@@ -72,7 +72,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int
 	if attempt.Status != "completed" {
 		return nil
 	}
-	jobs, err := gh.ListAttemptJobs(ctx, runID, n)
+	jobs, _, err := gh.ListAttemptJobs(ctx, runID, n)
 	if err != nil {
 		return err
 	}
