@@ -109,6 +109,9 @@ var _ = Describe("a first sync at after-attempt-3", Label("attempts"), func() {
 
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(env.AttemptDirs(runID)).To(ConsistOf(HaveSuffix("/attempt-1"), HaveSuffix("/attempt-2"), HaveSuffix("/attempt-3")))
+		for n, logs := range map[int]int{1: 10, 2: 3, 3: 11} {
+			Expect(glob(filepath.Join(attemptDir(env, runID, n), "jobs", "*", "log.txt"))).To(HaveLen(logs), "attempt %d", n)
+		}
 	}, cycleTimeout)
 
 	It("asks for no attempt of the run on the next sync", func(ctx SpecContext) {
