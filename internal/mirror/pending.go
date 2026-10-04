@@ -35,7 +35,7 @@ func loadPending(s *store.Store, stateDir string) (*pending, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := p.decode(raw); err != nil {
+	if err := json.Unmarshal(raw, &p.runs); err != nil {
 		p.runs = map[int64][]github.Artifact{}
 		aside := p.path + ".corrupt"
 		if err := os.Rename(p.path, aside); err != nil {
@@ -44,21 +44,6 @@ func loadPending(s *store.Store, stateDir string) (*pending, error) {
 		return p, fmt.Errorf("%s, moved to %s: %w", p.path, aside, &github.MalformedError{Err: err})
 	}
 	return p, nil
-}
-
-func (p *pending) decode(raw []byte) error {
-	var runs map[int64][]json.RawMessage
-	if err := json.Unmarshal(raw, &runs); err != nil {
-		return err
-	}
-	for runID, raws := range runs {
-		artifacts, err := decodeArtifacts(raws)
-		if err != nil {
-			return err
-		}
-		p.runs[runID] = artifacts
-	}
-	return nil
 }
 
 // set records the run's pending artifacts, and saves the file when their ids changed.
@@ -83,17 +68,11 @@ func ids(artifacts []github.Artifact) []int64 {
 }
 
 func (p *pending) save() error {
-	runs := map[int64][]json.RawMessage{}
-	for runID, artifacts := range p.runs {
-		for _, a := range artifacts {
-			runs[runID] = append(runs[runID], a.Raw)
-		}
-	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(runs); err != nil {
+	if err := enc.Encode(p.runs); err != nil {
 		return err
 	}
 	return p.store.ReplaceFile(p.path, buf.Bytes())

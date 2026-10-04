@@ -203,25 +203,9 @@ func readArtifacts(path string) ([]github.Artifact, error) {
 	if err != nil {
 		return nil, err
 	}
-	var raws []json.RawMessage
-	err = json.Unmarshal(raw, &raws)
 	var artifacts []github.Artifact
-	if err == nil {
-		artifacts, err = decodeArtifacts(raws)
-	}
-	if err != nil {
+	if err := json.Unmarshal(raw, &artifacts); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, &github.MalformedError{Err: err})
-	}
-	return artifacts, nil
-}
-
-func decodeArtifacts(raws []json.RawMessage) ([]github.Artifact, error) {
-	artifacts := make([]github.Artifact, len(raws))
-	for i, raw := range raws {
-		artifacts[i].Raw = raw
-		if err := json.Unmarshal(raw, &artifacts[i].Artifact); err != nil {
-			return nil, err
-		}
 	}
 	return artifacts, nil
 }
