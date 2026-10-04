@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/model"
@@ -146,7 +148,18 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		jobs, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(jobs).To(HaveLen(12))
-		Expect(fake.Requests()).To(HaveLen(14))
+		requested := func(path string, page int) types.GomegaMatcher {
+			return SatisfyAll(HaveField("Path", path), HaveField("Query", fmt.Sprintf("page=%d&per_page=100", page)))
+		}
+		want := []any{
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs"),
+			requested("/repositories/1402714635/actions/runs", 2),
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/attempts/1/jobs"),
+		}
+		for page := 2; page <= 12; page++ {
+			want = append(want, requested("/repositories/1402714635/actions/runs/37129390741/attempts/1/jobs", page))
+		}
+		Expect(fake.Requests()).To(HaveExactElements(want...))
 	})
 
 	DescribeTable("follows Link next only on the API host's scheme, host and port", Label("transport"),
