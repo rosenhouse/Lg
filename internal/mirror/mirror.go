@@ -72,12 +72,14 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		onDisk, err := m.attemptsOnDisk(runDir, run.RunAttempt)
+		// Attempt 1 exists even when the listing gives no run_attempt.
+		latest := max(run.RunAttempt, 1)
+		onDisk, err := m.attemptsOnDisk(runDir, latest)
 		if err != nil {
 			return err
 		}
 	attempts:
-		for _, n := range PlanAttempts(run.RunAttempt, onDisk) {
+		for _, n := range PlanAttempts(latest, onDisk) {
 			err = m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
 			switch {
 			case errors.Is(err, errRunGone):

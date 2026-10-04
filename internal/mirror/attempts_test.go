@@ -192,3 +192,21 @@ var _ = Describe("an attempt that ended in startup_failure with no jobs", Label(
 		Expect(filepath.Join(attempt1, "jobs")).NotTo(BeAnExistingFile())
 	}, cycleTimeout)
 })
+
+var _ = Describe("a run listed without run_attempt", Label("attempts"), func() {
+	It("publishes attempt-1 once", func(ctx SpecContext) {
+		env := harness.InProcess()
+		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID)
+		var listed map[string]any
+		Expect(json.Unmarshal(run.Files["run.json"].Data, &listed)).To(Succeed())
+		delete(listed, "run_attempt")
+		var err error
+		run.Files["run.json"].Data, err = json.Marshal(listed)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(env.Fake.AddRun(run)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(cloneID)).To(ConsistOf(HaveSuffix("/attempt-1")))
+	}, cycleTimeout)
+})
