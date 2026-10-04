@@ -163,6 +163,9 @@ var _ = Describe("a run whose attempt 2 was created the next UTC day", Label("at
 			ContainSubstring("/runs/2026-10-03/1_lg-fixture_lg-fixture/attempt-1"),
 			ContainSubstring("/runs/2026-10-03/1_lg-fixture_lg-fixture/attempt-2"),
 		))
+		raw, err := os.ReadFile(filepath.Join(attemptDir(env, cloneID, 2), "fetch.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(raw).To(ContainSubstring(`"run_created_at": "2026-10-03T14:22:54Z"`))
 	}, cycleTimeout)
 })
 
