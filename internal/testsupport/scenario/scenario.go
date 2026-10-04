@@ -169,7 +169,7 @@ func QueueJob(r Run, attempt int, name string) Run {
 	return out
 }
 
-// Expire lists the artifact as expired.
+// Expire lists the artifact as expired: true, as the docs describe. No recording shows it.
 func Expire(r Run, artifactID int64) Run {
 	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["expired"] = true })
 }

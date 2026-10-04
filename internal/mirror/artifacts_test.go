@@ -26,8 +26,11 @@ const (
 	expiresIn1Day   = "11275917910"
 )
 
-// expiresIn1DayAt is expires_at of artifact 11275917910.
-var expiresIn1DayAt = time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
+// expiresIn1DayAt is expires_at of artifact 11275917910, and expiresIn1DayCreatedAt its created_at.
+var (
+	expiresIn1DayAt        = time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
+	expiresIn1DayCreatedAt = time.Date(2026, 10, 3, 14, 23, 2, 0, time.UTC)
+)
 
 // artifactDir is the published dir of a run's artifact.
 func artifactDir(env *harness.InProcessEnv, runID int64, artifactID string) string {
@@ -177,9 +180,31 @@ var _ = DescribeTable("mirror.Cycle when a zip fails permanently writes artifact
 		))
 	},
 	Entry("410: expired", http.StatusGone, harness.DefaultNow(), "expired", cycleTimeout),
-	Entry("404 with expires_at in the past: expired", http.StatusNotFound, expiresIn1DayAt.Add(time.Hour), "expired", cycleTimeout),
+	Entry("404 with expires_at in the past: deleted, as recorded for 11275917910 at after-expiry", http.StatusNotFound, expiresIn1DayAt.Add(time.Hour), "deleted", cycleTimeout),
 	Entry("404 with expires_at in the future: deleted", http.StatusNotFound, harness.DefaultNow(), "deleted", cycleTimeout),
 )
+
+var _ = Describe("mirror.Cycle when a zip 404s at the blob hop", Label("artifacts"), func() {
+	It("keeps the artifact pending within log_grace of its created_at, and tombstones it as deleted after", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("blob", "/artifacts/"+expiresIn1Day+".zip", fakegithub.Fault{Status: http.StatusNotFound})
+		env.Clock.Set(expiresIn1DayCreatedAt.Add(env.Mirror.LogGrace))
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.ArtifactDirs(runID)).To(HaveLen(3))
+		Expect(env.ArtifactDirs(runID)).NotTo(ContainElement(ContainSubstring("/" + expiresIn1Day + "_")))
+		Expect(readPending(env)).To(HaveKeyWithValue("github.com/37129390741", HaveLen(1)))
+
+		env.Clock.Set(expiresIn1DayCreatedAt.Add(env.Mirror.LogGrace + time.Second))
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readZipTombstone(env, runID, expiresIn1Day)).To(SatisfyAll(
+			HaveKeyWithValue("reason", "deleted"),
+			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
+		))
+		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+})
 
 var _ = Describe("mirror.Cycle when a zip does not match its digest", Label("artifacts"), func() {
 	It("publishes no artifact dir, and the next cycle downloads it", func(ctx SpecContext) {

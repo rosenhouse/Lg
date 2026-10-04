@@ -179,7 +179,7 @@ func (m *Mirror) zipTombstone(err error, artifact github.Artifact, url string) (
 		message := fmt.Sprintf("the zip exceeded artifact_max_bytes %d although size_in_bytes is %d", m.ArtifactMaxBytes, artifact.SizeInBytes)
 		return tombstone.New("artifact.zip", url, tombstone.TooLarge, message, m.Clock.Now()), nil
 	}
-	return tombstone.FromZipError(err, artifact.ExpiresAt, m.Clock.Now())
+	return tombstone.FromZipError(err, artifact.Artifact, m.LogGrace, m.Clock.Now())
 }
 
 // artifactFetch is an artifact's fetch.json. It holds the run's facts as

@@ -19,7 +19,10 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
-const fixtureRun = 37129390741
+const (
+	fixtureRun     = 37129390741
+	logsDeletedRun = 37129738159
+)
 
 var notApplicableJobs = []string{"111221290616", "111221313824"}
 

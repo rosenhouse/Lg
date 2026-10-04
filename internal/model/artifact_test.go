@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
 var _ = DescribeTable("ClassifyArtifact checks expired, then too_large, then download", Label("artifacts"),
@@ -19,6 +20,19 @@ var _ = DescribeTable("ClassifyArtifact checks expired, then too_large, then dow
 	Entry("at the cap", model.Artifact{SizeInBytes: 700}, model.ArtifactDownload),
 	Entry("empty", model.Artifact{}, model.ArtifactDownload),
 )
+
+var _ = Describe("ClassifyArtifact over the after-expiry recordings", Label("artifacts"), func() {
+	It("gives download for every listed artifact, since GitHub delists an expired artifact rather than listing it expired: true", func() {
+		for _, run := range []int64{37129390741, 37129738159} {
+			artifacts, err := recordings.Artifacts(run, "after-expiry")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(artifacts).NotTo(BeEmpty())
+			for _, artifact := range artifacts {
+				Expect(model.ClassifyArtifact(artifact, 500_000_000)).To(Equal(model.ArtifactDownload), "artifact %d", artifact.ID)
+			}
+		}
+	})
+})
 
 const recordedSum = "d9df8b557651cd5b643604d89ba20ea3cb8d7e3636d28a1377c2a38254865f6e"
 

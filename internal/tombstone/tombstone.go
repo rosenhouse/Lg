@@ -8,6 +8,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/model"
 )
 
 type Reason string
@@ -59,20 +60,26 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 }
 
 // FromZipError tombstones artifact.zip when err shows GitHub has lost it for
-// good: a 410, or a 404, which is expired once expires_at has passed and
-// deleted before it or with no expires_at. It gives back any other err.
-func FromZipError(err error, expiresAt, now time.Time) (Tombstone, error) {
+// good. A 410 is expired, whatever expires_at says, since GitHub delists an
+// expired artifact and keeps answering 404 for one deleted before its
+// expiry. An API-hop 404 is deleted at once; a blob-hop 404 is Transient
+// until log_grace has passed since the artifact's created_at, then deleted.
+// Any other error comes back as it is.
+func FromZipError(err error, artifact model.Artifact, logGrace time.Duration, now time.Time) (Tombstone, error) {
 	statusErr, ok := permanent(err)
 	if !ok {
 		return Tombstone{}, err
 	}
-	notFound := errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrBlobMissing)
-	expired := !expiresAt.IsZero() && !expiresAt.After(now)
 	var reason Reason
 	switch {
-	case errors.Is(err, github.ErrGone), notFound && expired:
+	case errors.Is(err, github.ErrGone):
 		reason = Expired
-	case notFound:
+	case errors.Is(err, github.ErrNotFound):
+		reason = Deleted
+	case errors.Is(err, github.ErrBlobMissing):
+		if !now.After(artifact.CreatedAt.Add(logGrace)) {
+			return Tombstone{}, failure.Transient{Err: fmt.Errorf("within log_grace: %w", err)}
+		}
 		reason = Deleted
 	default:
 		return Tombstone{}, err
