@@ -15,25 +15,24 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 var start = time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
 
-func blockedOf(err error) failure.Blocked {
-	GinkgoHelper()
-	var blocked failure.Blocked
-	Expect(errors.As(err, &blocked)).To(BeTrue(), "want a failure.Blocked, got %v", err)
-	return blocked
+func serve(h http.HandlerFunc) *httptest.Server {
+	server := httptest.NewServer(h)
+	DeferCleanup(server.Close)
+	return server
 }
 
 // counting serves h and counts the requests it serves.
 func counting(h http.HandlerFunc) (*httptest.Server, *atomic.Int32) {
 	var served atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := serve(func(w http.ResponseWriter, r *http.Request) {
 		served.Add(1)
 		h(w, r)
-	}))
-	DeferCleanup(server.Close)
+	})
 	return server, &served
 }
 
@@ -43,21 +42,19 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 	It("give the API URL, status and message of an API response that refuses the token", func(ctx SpecContext) {
 		client := hops(answer(http.StatusUnauthorized, `{"message":"Bad credentials"}`), nil)
 
-		Expect(blockedOf(client.DownloadJobLog(ctx, 1, &bytes.Buffer{}))).To(SatisfyAll(
-			HaveField("Kind", failure.Auth),
+		Expect(client.DownloadJobLog(ctx, 1, &bytes.Buffer{})).To(BeBlocked(failure.Auth,
 			HaveField("Detail", MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/jobs/1/logs: 401 Unauthorized: Bad credentials$`)),
 		))
 	}, hopTimeout)
 
 	It("take retry_at from the client's clock", func(ctx SpecContext) {
-		server, _ := counting(func(w http.ResponseWriter, _ *http.Request) {
+		server := serve(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Retry-After", "30")
 			w.WriteHeader(http.StatusTooManyRequests)
 		})
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.NewFake(start))
 
-		Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
-			HaveField("Kind", failure.RateLimit),
+		Expect(getAttempt(ctx, client)).To(BeBlocked(failure.RateLimit,
 			HaveField("RetryAt", start.Add(30*time.Second)),
 		))
 	}, hopTimeout)
@@ -67,8 +64,7 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 		server.Close()
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
 
-		Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
-			HaveField("Kind", failure.Unreachable),
+		Expect(getAttempt(ctx, client)).To(BeBlocked(failure.Unreachable,
 			HaveField("Detail", ContainSubstring(server.Listener.Addr().String())),
 		))
 	}, hopTimeout)
@@ -78,19 +74,17 @@ var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 		proxy.Close()
 		client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
 
-		Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
-			HaveField("Kind", failure.Unreachable),
+		Expect(getAttempt(ctx, client)).To(BeBlocked(failure.Unreachable,
 			HaveField("Detail", ContainSubstring("ghes.example.invalid")),
 		))
 	}, hopTimeout)
 
 	DescribeTable("call a proxy's refusal to CONNECT unreachable, naming the proxy and the host",
 		func(ctx SpecContext, status int) {
-			proxy, _ := counting(answer(status, ""))
+			proxy := serve(answer(status, ""))
 			client := github.NewHTTP(viaProxy(proxy.URL), mustParse("https://ghes.example.invalid/api/v3"), "o/r", "lg-test-token", clock.Real{})
 
-			Expect(blockedOf(getAttempt(ctx, client))).To(SatisfyAll(
-				HaveField("Kind", failure.Unreachable),
+			Expect(getAttempt(ctx, client)).To(BeBlocked(failure.Unreachable,
 				HaveField("Detail", ContainSubstring(mustParse(proxy.URL).Host)),
 				HaveField("Detail", ContainSubstring("ghes.example.invalid:443")),
 				HaveField("Detail", ContainSubstring(strconv.Itoa(status))),
@@ -139,7 +133,7 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clk)
 
 		Expect(getAttempt(ctx, client)).To(Succeed())
-		Expect(blockedOf(getAttempt(ctx, client))).To(Equal(failure.Blocked{
+		Expect(getAttempt(ctx, client)).To(Equal(failure.Blocked{
 			Kind:    failure.RateLimit,
 			Detail:  "X-RateLimit-Remaining 9 is below 10% of X-RateLimit-Limit 100",
 			RetryAt: reset,
@@ -158,7 +152,7 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 
 		Expect(getAttempt(ctx, client)).To(Succeed())
 		clk.Set(start.Add(time.Minute))
-		Expect(blockedOf(getAttempt(ctx, client))).To(HaveField("RetryAt", reset))
+		Expect(getAttempt(ctx, client)).To(BeBlocked(failure.RateLimit, HaveField("RetryAt", reset)))
 		Expect(served.Load()).To(BeEquivalentTo(1))
 
 		clk.Set(reset)
@@ -167,7 +161,7 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 	}, hopTimeout)
 
 	It("counts only API responses, not a redirected log's blob response", func(ctx SpecContext) {
-		blob, _ := counting(answer(http.StatusOK, "log"))
+		blob := serve(answer(http.StatusOK, "log"))
 		api, served := counting(func(w http.ResponseWriter, r *http.Request) {
 			setRemaining(w.Header(), "9", 0)
 			http.Redirect(w, r, blob.URL+"/log", http.StatusFound)
@@ -175,7 +169,7 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		client := github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token", clock.NewFake(start))
 
 		Expect(client.DownloadJobLog(ctx, 1, &bytes.Buffer{})).To(Succeed())
-		Expect(blockedOf(getAttempt(ctx, client))).To(HaveField("RetryAt", reset))
+		Expect(getAttempt(ctx, client)).To(BeBlocked(failure.RateLimit, HaveField("RetryAt", reset)))
 		Expect(served.Load()).To(BeEquivalentTo(1))
 	}, hopTimeout)
 
@@ -193,7 +187,7 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 var _ = Describe("GetRepo", Label("blocked"), func() {
 	It("returns the repo's full name as GitHub spells it", func(ctx SpecContext) {
 		var path string
-		server, _ := counting(func(w http.ResponseWriter, r *http.Request) {
+		server := serve(func(w http.ResponseWriter, r *http.Request) {
 			path = r.URL.Path
 			_, _ = w.Write([]byte(`{"id":1402714635,"full_name":"rosenhouse/Lg"}`))
 		})
@@ -204,7 +198,7 @@ var _ = Describe("GetRepo", Label("blocked"), func() {
 	}, hopTimeout)
 
 	It("returns ErrNotFound on a 404", func(ctx SpecContext) {
-		server, _ := counting(answer(http.StatusNotFound, gitHubNotFound))
+		server := serve(answer(http.StatusNotFound, gitHubNotFound))
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
 
 		_, err := client.GetRepo(ctx)
@@ -212,7 +206,7 @@ var _ = Describe("GetRepo", Label("blocked"), func() {
 	}, hopTimeout)
 
 	It("calls a full_name that is not owner/name malformed, naming it", func(ctx SpecContext) {
-		server, _ := counting(answer(http.StatusOK, `{"full_name":"../../escaped"}`))
+		server := serve(answer(http.StatusOK, `{"full_name":"../../escaped"}`))
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
 
 		_, err := client.GetRepo(ctx)
@@ -222,7 +216,7 @@ var _ = Describe("GetRepo", Label("blocked"), func() {
 	}, hopTimeout)
 
 	It("calls a body with no full_name malformed", func(ctx SpecContext) {
-		server, _ := counting(answer(http.StatusOK, `{"id":1}`))
+		server := serve(answer(http.StatusOK, `{"id":1}`))
 		client := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
 
 		_, err := client.GetRepo(ctx)

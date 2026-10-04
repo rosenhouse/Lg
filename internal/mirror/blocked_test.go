@@ -1,7 +1,6 @@
 package mirror_test
 
 import (
-	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,18 +15,11 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
-// blockedOf is the failure.Blocked that err wraps.
-func blockedOf(err error) failure.Blocked {
-	GinkgoHelper()
-	var blocked failure.Blocked
-	Expect(errors.As(err, &blocked)).To(BeTrue(), "want a failure.Blocked, got %v", err)
-	return blocked
-}
-
 func blockedAs(kind failure.Kind, retryAt time.Time) types.GomegaMatcher {
-	return SatisfyAll(HaveField("Kind", kind), HaveField("RetryAt", BeTemporally("==", retryAt)))
+	return BeBlocked(kind, HaveField("RetryAt", BeTemporally("==", retryAt)))
 }
 
 // failAttempts answers every request for a run's attempt 1 with f.
@@ -117,7 +109,7 @@ var _ = Describe("mirror.Cycle", Label("blocked"), func() {
 		// The third API response says 9 of 100 remain.
 		env.Fake.SetRateLimit(100, 12)
 
-		Expect(blockedOf(env.Mirror.Cycle(ctx))).To(blockedAs(failure.RateLimit, harness.DefaultNow().Add(fakegithub.ResetAfter)))
+		Expect(env.Mirror.Cycle(ctx)).To(blockedAs(failure.RateLimit, harness.DefaultNow().Add(fakegithub.ResetAfter)))
 		Expect(env.Fake.Requests()).To(HaveLen(3))
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 	}, cycleTimeout)

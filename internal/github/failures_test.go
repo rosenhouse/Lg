@@ -337,7 +337,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		_, _, err := client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("dial tcp 127.0.0.1:")))
 		Expect(err).To(MatchError(ContainSubstring("i/o timeout")))
-		Expect(blockedOf(err)).To(HaveField("Kind", failure.Unreachable))
+		Expect(err).To(BeBlocked(failure.Unreachable))
 	}, SpecTimeout(5*time.Second))
 
 	It("gives up on a TLS handshake after TLSHandshake", func(ctx SpecContext) {
