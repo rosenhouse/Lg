@@ -60,6 +60,7 @@ type Job struct {
 type Client interface {
 	GetRepo(ctx context.Context) (Repo, error)
 	ListRuns(ctx context.Context) ([]Run, error)
+	GetRun(ctx context.Context, runID int64) (Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
@@ -272,6 +273,10 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 		}
 	}
 	return runs, nil
+}
+
+func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
+	return Run{}, nil
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {

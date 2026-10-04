@@ -78,6 +78,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		},
 		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
+		Entry("GetRun", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRun(ctx, 1); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
 		Entry("DownloadJobLog", func(ctx context.Context, c *github.HTTP) error { return c.DownloadJobLog(ctx, 1, &bytes.Buffer{}) }),
@@ -106,6 +107,21 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			DisplayTitle: "Add lg-fixture workflow for recording Actions API shapes",
 		}))
 		Expect(runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
+	})
+
+	It("gets a run with its fields and the body served", Label("artifacts"), func() {
+		run, err := client.GetRun(context.Background(), runID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(run.RunAttempt).To(Equal(1))
+		Expect(run.Raw).To(Equal(json.RawMessage(fake.Served("run.json"))))
+	})
+
+	It("calls an unparsable run malformed, naming its URL", Label("artifacts"), func() {
+		fake.Fail("api", "runs/37129390741", fakegithub.Fault{Status: http.StatusOK, Body: "<"})
+		_, err := client.GetRun(context.Background(), runID)
+		var malformed *github.MalformedError
+		Expect(errors.As(err, &malformed)).To(BeTrue())
+		Expect(err).To(MatchError(ContainSubstring("/actions/runs/37129390741")))
 	})
 
 	It("gets an attempt with its fields and the body served", func() {
