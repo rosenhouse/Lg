@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -19,6 +20,23 @@ type Config struct {
 	Host   string `yaml:"host"`
 	Repo   string `yaml:"repo"`
 	APIURL string `yaml:"api_url"`
+
+	LogGrace Duration `yaml:"log_grace"`
+}
+
+// Duration is a Go duration such as 1h or 0s, or a bare 0.
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("line %d: want a duration such as 1h, not %s", node.Line, node.ShortTag())
+	}
+	parsed, err := time.ParseDuration(node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: %w", node.Line, err)
+	}
+	*d = Duration(parsed)
+	return nil
 }
 
 var (
@@ -26,12 +44,16 @@ var (
 	hostName  = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 )
 
+func Defaults() Config {
+	return Config{Host: "github.com", LogGrace: Duration(time.Hour)}
+}
+
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, Error(err.Error())
 	}
-	cfg := Config{Host: "github.com"}
+	cfg := Defaults()
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
@@ -43,6 +65,9 @@ func Load(path string) (Config, error) {
 	}
 	if !ownerName.MatchString(cfg.Repo) || slices.ContainsFunc(strings.Split(cfg.Repo, "/"), isDots) {
 		return Config{}, Error(fmt.Sprintf("repo must be owner/name: %q", cfg.Repo))
+	}
+	if cfg.LogGrace < 0 {
+		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", time.Duration(cfg.LogGrace)))
 	}
 	if cfg.APIURL != "" {
 		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {

@@ -96,6 +96,30 @@ var _ = Describe("Server controls", func() {
 		Eventually(done, time.Second).Should(BeClosed())
 	})
 
+	It("Close ends a stalled response", Label("failures"), func() {
+		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Stall: true})
+		// Runs before Start's Close, so a failing spec does not hang there.
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		go func() {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			if err != nil {
+				return
+			}
+			if resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req); err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		Eventually(fake.Requests, time.Second).ShouldNot(BeEmpty())
+
+		closed := make(chan struct{})
+		go func() {
+			fake.Close()
+			close(closed)
+		}()
+		Eventually(closed, time.Second).Should(BeClosed())
+	})
+
 	It("RequireToken answers 401 to API requests without Authorization: Bearer <token>", Label("transport"), func() {
 		fake.RequireToken("lg-test-token")
 
@@ -119,4 +143,101 @@ var _ = Describe("Server controls", func() {
 			SatisfyAll(HaveField("Status", http.StatusFound), HaveField("Authorization", true)),
 		))
 	})
+
+	Describe("faults that break the connection", Label("failures"), func() {
+		// download follows the redirect and reads the whole body, giving up after a second.
+		download := func(ctx context.Context) ([]byte, error) {
+			timeout, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(timeout, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return io.ReadAll(resp.Body)
+		}
+		recorded := func() []byte { return fake.Served("attempt-1/logs/111221289888.txt") }
+
+		It("Drop closes the connection partway through the status line", func(ctx SpecContext) {
+			fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Drop: true})
+
+			_, err := download(ctx)
+			Expect(err).To(MatchError(ContainSubstring(`malformed HTTP status code "2"`)))
+		}, SpecTimeout(5*time.Second))
+
+		It("Drop fails a request on a reused connection, which Go would otherwise retry", func(ctx SpecContext) {
+			client := &http.Client{Transport: &http.Transport{}}
+			get := func() error {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+"/repos/rosenhouse/lg", http.NoBody)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := client.Do(req)
+				if err != nil {
+					return err
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				return resp.Body.Close()
+			}
+			Expect(get()).To(Succeed())
+			fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Drop: true, Times: 1})
+
+			Expect(get()).NotTo(Succeed())
+		}, SpecTimeout(5*time.Second))
+
+		It("Truncate declares the whole body's Content-Length and sends half of it", func(ctx SpecContext) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true})
+
+			body, err := download(ctx)
+			Expect(err).To(MatchError(io.ErrUnexpectedEOF))
+			Expect(body).To(Equal(recorded()[:len(recorded())/2]))
+		}, SpecTimeout(5*time.Second))
+
+		It("Stall sends nothing until the client gives up", func(ctx SpecContext) {
+			fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Stall: true})
+
+			_, err := download(ctx)
+			Expect(err).To(MatchError(context.DeadlineExceeded))
+		}, SpecTimeout(5*time.Second))
+
+		It("Truncate with Stall sends half the body, then nothing until the client gives up", func(ctx SpecContext) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true, Stall: true})
+			timeout, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(timeout, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			half := make([]byte, len(recorded())/2)
+			Expect(io.ReadFull(resp.Body, half)).To(Equal(len(half)))
+			Expect(half).To(Equal(recorded()[:len(half)]))
+			_, err = resp.Body.Read(make([]byte, 1))
+			Expect(err).To(MatchError(context.DeadlineExceeded))
+		}, SpecTimeout(5*time.Second))
+	})
+
+	It("Fail with a Body answers with the fault's status and that body", Label("failures"), func() {
+		fake.Fail("api", "runs/37129390741/attempts/1", fakegithub.Fault{Status: http.StatusOK, Body: "<html>unicorn</html>"})
+
+		attempt := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs/37129390741/attempts/1")
+		Expect(attempt.status).To(Equal(http.StatusOK))
+		Expect(string(attempt.body)).To(Equal("<html>unicorn</html>"))
+	})
+
+	DescribeTable("Fail on the blob host answers with blob storage's XML error", Label("failures"),
+		func(status int, code string) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: status})
+
+			redirect := fetch(fake.URL() + logPath)
+			blob := fetch(redirect.header.Get("Location"))
+			Expect(blob.status).To(Equal(status))
+			Expect(blob.header.Get("Content-Type")).To(Equal("application/xml"))
+			Expect(string(blob.body)).To(ContainSubstring("<Code>" + code + "</Code>"))
+		},
+		Entry("404", http.StatusNotFound, "BlobNotFound"),
+		Entry("403", http.StatusForbidden, "AuthenticationFailed"),
+		Entry("503", http.StatusServiceUnavailable, "ServerBusy"),
+	)
 })

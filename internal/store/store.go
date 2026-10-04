@@ -3,9 +3,12 @@ package store
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"maps"
@@ -254,6 +257,7 @@ type Unit struct {
 	dir      string
 	dirs     []string // created under dir, parents first
 	unclosed map[string]bool
+	sums     map[string]Sum
 }
 
 func (s *Store) NewUnit() (*Unit, error) {
@@ -261,7 +265,7 @@ func (s *Store) NewUnit() (*Unit, error) {
 	if err := s.fs.Mkdir(dir); err != nil {
 		return nil, err
 	}
-	return &Unit{fs: s.fs, dir: dir, unclosed: map[string]bool{}}, nil
+	return &Unit{fs: s.fs, dir: dir, unclosed: map[string]bool{}, sums: map[string]Sum{}}, nil
 }
 
 func isUnit(name string) bool { return strings.HasPrefix(name, unitPrefix) }
@@ -344,6 +348,29 @@ func (u *Unit) place(name, content, dir string) error {
 	return u.fs.SyncDir(dir)
 }
 
+// Sum is the size and SHA-256 of a member's bytes.
+type Sum struct {
+	Bytes  int64
+	SHA256 string
+}
+
+func (u *Unit) Sum(name string) (Sum, error) {
+	sum, closed := u.sums[name]
+	if !closed {
+		return Sum{}, fmt.Errorf("member %q is not closed", name)
+	}
+	return sum, nil
+}
+
+// Remove deletes a closed member.
+func (u *Unit) Remove(name string) error {
+	if _, closed := u.sums[name]; !closed {
+		return fmt.Errorf("member %q is not closed", name)
+	}
+	delete(u.sums, name)
+	return u.fs.RemoveAll(filepath.Join(u.dir, name))
+}
+
 // Abort removes the staged unit.
 func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
 
@@ -364,14 +391,23 @@ func (u *Unit) Create(name string) (io.WriteCloser, error) {
 		return nil, err
 	}
 	u.unclosed[name] = true
-	return &member{File: f, unit: u, name: name}, nil
+	return &member{File: f, unit: u, name: name, hash: sha256.New()}, nil
 }
 
-// member fsyncs its file on Close, which Publish requires first.
+// member sums its bytes and fsyncs its file on Close, which Publish requires first.
 type member struct {
 	File
-	unit *Unit
-	name string
+	unit  *Unit
+	name  string
+	hash  hash.Hash
+	bytes int64
+}
+
+func (m *member) Write(p []byte) (int, error) {
+	n, err := m.File.Write(p)
+	m.hash.Write(p[:n])
+	m.bytes += int64(n)
+	return n, err
 }
 
 func (m *member) Close() error {
@@ -380,7 +416,11 @@ func (m *member) Close() error {
 		_ = m.File.Close()
 		return err
 	}
-	return m.File.Close()
+	if err := m.File.Close(); err != nil {
+		return err
+	}
+	m.unit.sums[m.name] = Sum{Bytes: m.bytes, SHA256: hex.EncodeToString(m.hash.Sum(nil))}
+	return nil
 }
 
 // WriteJSON stores raw indented two spaces, plus a newline, so each key sits

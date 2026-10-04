@@ -36,15 +36,17 @@ type Request struct {
 type Server struct {
 	api, blob *httptest.Server
 
-	mu       sync.Mutex
-	runs     map[string]*run
-	first    string
-	added    []json.RawMessage
-	pageCap  int
-	token    string
-	requests []Request
-	faults   []*fault
-	holds    []*hold
+	mu        sync.Mutex
+	runs      map[string]*run
+	first     string
+	added     []json.RawMessage
+	pageCap   int
+	token     string
+	requests  []Request
+	faults    []*fault
+	holds     []*hold
+	closing   chan struct{}
+	closeOnce sync.Once
 }
 
 // run is a recorded run at one stage.
@@ -61,11 +63,20 @@ type download struct {
 	file string
 }
 
-// Fault answers a request with Status. Times limits how many requests it
+// Fault answers a request with Status, or breaks the connection. Body
+// replaces the error GitHub or blob storage would send with Status. Drop
+// closes it partway through the status line. Truncate sends the response's
+// Content-Length and half its body. Stall sends nothing more until the
+// client gives up. Truncate cuts the matched response, so a log's belongs on
+// its blob, not on the API hop's redirect. Times limits how many requests it
 // answers; 0 means every one.
 type Fault struct {
-	Status int
-	Times  int
+	Status   int
+	Body     string
+	Times    int
+	Drop     bool
+	Truncate bool
+	Stall    bool
 }
 
 type fault struct {
@@ -95,7 +106,7 @@ func New() *Server { return Listen(nil) }
 
 // Listen serves the API on l, or on a free port of 127.0.0.1 when l is nil.
 func Listen(l net.Listener) *Server {
-	s := &Server{runs: map[string]*run{}}
+	s := &Server{runs: map[string]*run{}, closing: make(chan struct{})}
 	s.api = httptest.NewUnstartedServer(s.record("api", s.routes()))
 	if l != nil {
 		_ = s.api.Listener.Close()
@@ -236,6 +247,7 @@ func (s *Server) Hold(match string) (release func()) {
 }
 
 func (s *Server) Close() {
+	s.closeOnce.Do(func() { close(s.closing) })
 	s.mu.Lock()
 	for _, h := range s.holds {
 		h.release()
@@ -257,6 +269,9 @@ type statusWriter struct {
 	status int
 }
 
+// Unwrap lets http.ResponseController flush through statusWriter.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
@@ -271,9 +286,9 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 			Authorization: r.Header.Get("Authorization") != "",
 		})
 		holds := s.holdsOf(r.URL.Path)
-		status := s.takeFault(host, r.URL.Path)
+		f := s.takeFault(host, r.URL.Path)
 		if host == "api" && s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
-			status = http.StatusUnauthorized
+			f = Fault{Status: http.StatusUnauthorized}
 		}
 		s.mu.Unlock()
 		for _, held := range holds {
@@ -284,15 +299,75 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 			}
 		}
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
-		if status != 0 {
-			writeError(sw, status)
-		} else {
+		switch {
+		case f.Drop:
+			sw.status = 0
+			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				// A response cut short, unlike none at all, is one Go never retries.
+				_, _ = conn.Write([]byte("HTTP/1.1 2"))
+				_ = conn.Close()
+			}
+		case f.Truncate:
+			s.truncate(sw, r, h, f.Stall)
+		case f.Stall:
+			sw.status = 0
+			s.stall(r)
+		case f.Body != "":
+			sw.WriteHeader(f.Status)
+			_, _ = sw.Write([]byte(f.Body))
+		case f.Status != 0 && host == "blob":
+			writeBlobError(sw, f.Status)
+		case f.Status != 0:
+			writeError(sw, f.Status)
+		default:
 			h.ServeHTTP(sw, r)
 		}
 		s.mu.Lock()
 		s.requests[i].Status = sw.status
 		s.mu.Unlock()
 	})
+}
+
+// truncate sends h's status, headers and Content-Length, but half its body.
+func (s *Server) truncate(w http.ResponseWriter, r *http.Request, h http.Handler, stall bool) {
+	whole := httptest.NewRecorder()
+	h.ServeHTTP(whole, r)
+	body := whole.Body.Bytes()
+	for k, v := range whole.Header() {
+		w.Header()[k] = v
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(whole.Code)
+	_, _ = w.Write(body[:len(body)/2])
+	_ = http.NewResponseController(w).Flush()
+	if stall {
+		s.stall(r)
+	}
+}
+
+// stall waits until the client gives up or the server closes.
+func (s *Server) stall(r *http.Request) {
+	select {
+	case <-r.Context().Done():
+	case <-s.closing:
+	}
+}
+
+var blobErrorCodes = map[int]string{
+	http.StatusForbidden:          "AuthenticationFailed",
+	http.StatusNotFound:           "BlobNotFound",
+	http.StatusServiceUnavailable: "ServerBusy",
+}
+
+// writeBlobError answers as blob storage does, in XML.
+func writeBlobError(w http.ResponseWriter, status int) {
+	code, ok := blobErrorCodes[status]
+	if !ok {
+		code = "InternalError"
+	}
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, "\uFEFF<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>%s</Code><Message>%s\nRequestId:00000000-0000-0000-0000-000000000000\nTime:2026-10-03T14:24:46.0000000Z</Message></Error>", code, http.StatusText(status))
 }
 
 func writeError(w http.ResponseWriter, status int) {
@@ -311,16 +386,16 @@ func (s *Server) holdsOf(path string) []*hold {
 	return holds
 }
 
-// takeFault returns the status of the first matching fault with answers
-// left, or 0, and counts this answer.
-func (s *Server) takeFault(host, path string) int {
+// takeFault returns the first matching fault with answers left, or none,
+// and counts this answer.
+func (s *Server) takeFault(host, path string) Fault {
 	for _, f := range s.faults {
 		if f.host == host && strings.HasSuffix(path, f.match) && (f.Times == 0 || f.answered < f.Times) {
 			f.answered++
-			return f.Status
+			return f.Fault
 		}
 	}
-	return 0
+	return Fault{}
 }
 
 // recordingsDir finds testdata/recordings from this source file, so it works

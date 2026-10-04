@@ -24,9 +24,16 @@ var _ = Describe("Main", Label("cli"), func() {
 	}
 
 	It("exits 1 and prints the error when a command fails", func() {
-		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{}, Stderr: stderr})
+		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{errDiskFull}, Stderr: stderr})
 		Expect(code).To(Equal(1))
 		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
+	It("prefixes every line of a multi-line error", func() {
+		failing := failingWriter{errors.Join(errors.New("run 1: 502 Bad Gateway"), errors.New("run 2: 503 Service Unavailable"))}
+		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failing, Stderr: stderr})
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(Equal("lg: run 1: 502 Bad Gateway\nlg: run 2: 503 Service Unavailable\n"))
 	})
 
 	It("exits 2 and prints the error for a config error", func() {
@@ -49,9 +56,15 @@ var _ = Describe("Main", Label("cli"), func() {
 	})
 
 	It("exits 1 without usage when help cannot be written", func() {
-		code := cli.Main([]string{"--help"}, cli.Deps{Env: map[string]string{}, Stdout: failingWriter{}, Stderr: stderr})
+		code := cli.Main([]string{"--help"}, cli.Deps{Env: map[string]string{}, Stdout: failingWriter{errDiskFull}, Stderr: stderr})
 		Expect(code).To(Equal(1))
 		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
+	It("exits 2 for an LG_TEST_NOW that is not RFC 3339", Label("failures"), func() {
+		Expect(run(map[string]string{"LG_TEST_NOW": "yesterday"}, "version")).To(Equal(2))
+		Expect(stderr.String()).To(HavePrefix(`lg: LG_TEST_NOW: parsing time "yesterday"`))
+		Expect(stdout.String()).To(BeEmpty())
 	})
 
 	It("exits 2 when no command is given", func() {
@@ -60,6 +73,8 @@ var _ = Describe("Main", Label("cli"), func() {
 	})
 })
 
-type failingWriter struct{}
+var errDiskFull = errors.New("disk full")
 
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+type failingWriter struct{ err error }
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }

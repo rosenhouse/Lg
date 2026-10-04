@@ -7,15 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
+	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
+	"github.com/rosenhouse/lg/internal/version"
 )
 
 type Mirror struct {
@@ -24,9 +29,13 @@ type Mirror struct {
 	Store     *store.Store
 	Host      string
 	Repo      string
+	Clock     clock.Clock
+	LogGrace  time.Duration
 }
 
-// Cycle publishes attempt 1 of every listed run once it has completed.
+// Cycle publishes attempt 1 of every listed run once it has completed. An
+// error that runScoped accepts aborts only its run's attempt; Cycle returns
+// these after trying every other run. Any other error stops the cycle.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
@@ -37,6 +46,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var failed []error
 	for _, run := range runs {
 		// The API's spelling names the repo dir, so it must be the configured repo.
 		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
@@ -51,15 +61,47 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		if published {
 			continue
 		}
-		if err := m.publishAttempt(ctx, gh, run.ID, 1, target); err != nil {
+		err = m.publishAttempt(ctx, gh, run, 1, target)
+		switch {
+		case runScoped(err):
+			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
+		case err != nil:
 			return err
 		}
 	}
-	return nil
+	return errors.Join(failed...)
 }
 
-func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int64, n int, target string) error {
-	attempt, err := gh.GetAttempt(ctx, runID, n)
+// runScoped reports whether err leaves other runs worth trying: GitHub
+// failed this run, not lg's store, credentials or rate limit. A joined
+// error must be run-scoped in every part.
+func runScoped(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, part := range joined.Unwrap() {
+			if !runScoped(part) {
+				return false
+			}
+		}
+		return true
+	}
+	var statusErr *github.StatusError
+	if errors.As(err, &statusErr) {
+		return !blocksCycle(statusErr)
+	}
+	var transient failure.Transient
+	var malformed *github.MalformedError
+	return errors.As(err, &transient) || errors.As(err, &malformed)
+}
+
+func blocksCycle(e *github.StatusError) bool {
+	return !e.Blob && github.Refusal(e.Status)
+}
+
+func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
+	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
+	if errors.Is(err, github.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -68,7 +110,10 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int
 	if attempt.Status != "completed" {
 		return nil
 	}
-	jobs, err := gh.ListAttemptJobs(ctx, runID, n)
+	jobs, jobsSource, err := gh.ListAttemptJobs(ctx, run.ID, n)
+	if errors.Is(err, github.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -76,7 +121,17 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int
 	if err != nil {
 		return err
 	}
-	err = m.stageAttempt(ctx, gh, unit, attempt, jobs)
+	s := &staged{unit: unit, sources: map[string]source{}}
+	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
+	if err == nil {
+		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
+	}
+	if err == nil {
+		err = m.stageJobs(ctx, gh, s, attempt, jobs)
+	}
+	if err == nil {
+		err = m.writeFetch(s, run, attempt)
+	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
 	}
@@ -86,42 +141,118 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, runID int
 	return nil
 }
 
-func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, unit *store.Unit, attempt github.Run, jobs []github.Job) error {
-	if err := unit.WriteJSON("attempt.json", attempt.Raw); err != nil {
-		return err
-	}
-	if err := unit.WriteJSON("jobs.json", jsonArray(jobs)); err != nil {
-		return err
-	}
+func (m *Mirror) stageJobs(ctx context.Context, gh github.Client, s *staged, attempt github.Run, jobs []github.Job) error {
 	for _, job := range jobs {
-		if err := addJob(ctx, gh, unit, job); err != nil {
+		if err := m.addJob(ctx, gh, s, attempt, job); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func addJob(ctx context.Context, gh github.Client, unit *store.Unit, job github.Job) error {
+func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attempt github.Run, job github.Job) error {
 	dir := layout.JobDir(".", job.ID, job.Name)
-	if err := unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
+	if err := s.unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
 		return err
 	}
 	if model.Classify(job.Job) == model.NotApplicable {
-		ts, err := json.Marshal(tombstone.New("log.txt", tombstone.NotApplicable))
-		if err != nil {
-			return err
-		}
-		return unit.WriteJSON(filepath.Join(dir, "log.txt.tombstone"), ts)
+		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
+		return writeTombstone(s.unit, dir, ts)
 	}
-	w, err := unit.Create(filepath.Join(dir, "log.txt"))
+	log := filepath.Join(dir, "log.txt")
+	w, err := s.unit.Create(log)
 	if err != nil {
 		return err
 	}
-	if err := gh.DownloadJobLog(ctx, job.ID, w); err != nil {
-		_ = w.Close()
+	err = gh.DownloadJobLog(ctx, job.ID, w)
+	if closeErr := w.Close(); closeErr != nil {
+		return errors.Join(err, closeErr)
+	}
+	if err == nil {
+		return s.record(log, github.Source{URL: gh.JobLogURL(job.ID)})
+	}
+	ts, err := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
+	if err != nil {
 		return err
 	}
-	return w.Close()
+	if err := s.unit.Remove(log); err != nil {
+		return err
+	}
+	return writeTombstone(s.unit, dir, ts)
+}
+
+func writeTombstone(unit *store.Unit, dir string, ts tombstone.Tombstone) error {
+	return writeValue(unit, filepath.Join(dir, ts.Target+".tombstone"), ts)
+}
+
+// writeValue stores v as JSON with <, > and & as they are, so rg finds them.
+func writeValue(unit *store.Unit, name string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	return unit.WriteJSON(name, buf.Bytes())
+}
+
+// fetch is fetch.json: how and when lg fetched its unit.
+type fetch struct {
+	LgFormat          int               `json:"lg_format"`
+	LgVersion         string            `json:"lg_version"`
+	FetchedAt         time.Time         `json:"fetched_at"`
+	Host              string            `json:"host"`
+	Repo              string            `json:"repo"`
+	RunID             int64             `json:"run_id"`
+	Attempt           int               `json:"attempt"`
+	RunCreatedAt      time.Time         `json:"run_created_at"`
+	RunAttemptAtFetch int               `json:"run_attempt_at_fetch"`
+	Sources           map[string]source `json:"sources"`
+}
+
+type source struct {
+	URL    string `json:"url"`
+	Status int    `json:"status"`
+	Pages  int    `json:"pages,omitempty"`
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
+}
+
+func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
+	return writeValue(s.unit, "fetch.json", fetch{
+		LgFormat:          1,
+		LgVersion:         version.Version,
+		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
+		Host:              m.Host,
+		Repo:              run.Repository.FullName,
+		RunID:             run.ID,
+		Attempt:           attempt.RunAttempt,
+		RunCreatedAt:      run.CreatedAt,
+		RunAttemptAtFetch: run.RunAttempt,
+		Sources:           s.sources,
+	})
+}
+
+// staged is a unit being staged with the sources of its files.
+type staged struct {
+	unit    *store.Unit
+	sources map[string]source
+}
+
+func (s *staged) writeJSON(name string, raw []byte, from github.Source) error {
+	if err := s.unit.WriteJSON(name, raw); err != nil {
+		return err
+	}
+	return s.record(name, from)
+}
+
+func (s *staged) record(name string, from github.Source) error {
+	sum, err := s.unit.Sum(name)
+	if err != nil {
+		return err
+	}
+	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
+	return nil
 }
 
 // jsonArray joins the jobs as served into one array, as if GitHub had sent a single page.

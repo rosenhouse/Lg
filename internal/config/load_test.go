@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,11 +21,44 @@ var _ = Describe("Load", Label("sync"), func() {
 	It("reads host, repo and api_url", func() {
 		cfg, err := config.Load(write("host: ghe.corp.example\nrepo: platform/infra\napi_url: http://127.0.0.1:1/api/v3\n"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3"}))
+		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour)}))
 	})
 
 	It("defaults host to github.com", func() {
-		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(Equal(config.Config{Host: "github.com", Repo: "rosenhouse/lg"}))
+		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(HaveField("Host", "github.com"))
+	})
+
+	It("defaults log_grace to 1h", Label("failures"), func() {
+		Expect(config.Load(write("repo: rosenhouse/lg\n"))).To(HaveField("LogGrace", config.Duration(time.Hour)))
+	})
+
+	It("reads log_grace as a Go duration", Label("failures"), func() {
+		Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: 90m\n"))).To(HaveField("LogGrace", config.Duration(90*time.Minute)))
+	})
+
+	DescribeTable("accepts a log_grace of 0",
+		func(zero string) {
+			Expect(config.Load(write("repo: rosenhouse/lg\nlog_grace: " + zero + "\n"))).To(HaveField("LogGrace", config.Duration(0)))
+		},
+		Entry("with a unit", "0s", Label("failures")),
+		Entry("bare", "0", Label("failures")),
+	)
+
+	DescribeTable("rejects a log_grace that is not a duration",
+		func(value, message string) {
+			_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: " + value + "\n"))
+			Expect(err).To(MatchError(HaveSuffix("config.yaml: line 2: " + message)))
+			Expect(err).To(BeAssignableToTypeOf(config.Error("")))
+		},
+		Entry("with no unit", "3600", `time: missing unit in duration "3600"`, Label("failures")),
+		Entry("out of range", "3000000h", `time: invalid duration "3000000h"`, Label("failures")),
+		Entry("a sequence", "[1h]", "want a duration such as 1h, not !!seq", Label("failures")),
+		Entry("a mapping", "{a: 1}", "want a duration such as 1h, not !!map", Label("failures")),
+	)
+
+	It("rejects a negative log_grace", Label("failures"), func() {
+		_, err := config.Load(write("repo: rosenhouse/lg\nlog_grace: -1m\n"))
+		Expect(err).To(MatchError(config.Error(`log_grace must not be negative: "-1m0s"`)))
 	})
 
 	DescribeTable("rejects a repo that is not owner/name",

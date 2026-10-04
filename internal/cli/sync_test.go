@@ -76,6 +76,7 @@ func (r *countingRunner) Run(context.Context, string, []string, map[string]strin
 
 // firedClock fires every After at once, recording the durations asked for.
 type firedClock struct {
+	clock.Real
 	mu        sync.Mutex
 	durations []time.Duration
 }

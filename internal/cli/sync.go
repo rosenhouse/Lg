@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -48,11 +47,13 @@ func (syncCmd) Run(deps *Deps) error {
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
-			return github.NewHTTP(&http.Client{}, api, cfg.Repo, token)
+			return deps.NewGitHub(api, cfg.Repo, token)
 		},
-		Store: s,
-		Host:  cfg.Host,
-		Repo:  cfg.Repo,
+		Store:    s,
+		Host:     cfg.Host,
+		Repo:     cfg.Repo,
+		Clock:    deps.Clock,
+		LogGrace: time.Duration(cfg.LogGrace),
 	}
 	return m.Cycle(context.Background())
 }

@@ -9,14 +9,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
 const runID = 37129390741
@@ -56,11 +59,13 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		m = mirror.Mirror{
 			Tokens: tokens,
 			NewGitHub: func(token string) github.Client {
-				return github.NewHTTP(http.DefaultClient, mustParse(fake.URL()), "rosenhouse/lg", token)
+				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token)
 			},
-			Store: s,
-			Host:  "github.com",
-			Repo:  "rosenhouse/lg",
+			Store:    s,
+			Host:     "github.com",
+			Repo:     "rosenhouse/lg",
+			Clock:    clock.NewFake(harness.DefaultNow()),
+			LogGrace: time.Hour,
 		}
 	})
 
