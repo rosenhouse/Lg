@@ -35,9 +35,9 @@ type Mirror struct {
 	ArtifactMaxBytes int64
 }
 
-// Cycle publishes every listed artifact, newest run first, and then each
-// completed attempt of every listed run, that is not on disk. Artifacts go
-// first because a re-run of all jobs deletes them. An error that runScoped
+// Cycle publishes each listed artifact and completed attempt that is not on
+// disk. It does every run's artifacts first, newest run first as GitHub lists
+// them, because a re-run of all jobs deletes them. An error that runScoped
 // accepts aborts only its artifact or attempt; Cycle returns these after
 // trying every other. Any other error stops the cycle, and a local error that
 // no retry fixes blocks it.
@@ -81,8 +81,8 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	}
 	var failed []error
 	gone := make([]bool, len(runs))
-	for _, i := range newestFirst(runs) {
-		runFailed, err := m.syncArtifacts(ctx, gh, dirs[i], runs[i])
+	for i, run := range runs {
+		runFailed, err := m.syncArtifacts(ctx, gh, dirs[i], run)
 		switch {
 		case errors.Is(err, errRunGone):
 			gone[i] = true
@@ -102,16 +102,6 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		failed = append(failed, runFailed...)
 	}
 	return errors.Join(failed...)
-}
-
-// newestFirst gives the indexes of runs, newest created first.
-func newestFirst(runs []github.Run) []int {
-	order := make([]int, len(runs))
-	for i := range order {
-		order[i] = i
-	}
-	slices.SortStableFunc(order, func(a, b int) int { return runs[b].CreatedAt.Compare(runs[a].CreatedAt) })
-	return order
 }
 
 // syncRun publishes the run's planned attempts. It returns the errors that
