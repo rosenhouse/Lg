@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/github"
@@ -37,13 +38,18 @@ func (syncCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer release()
+	ctx := context.Background()
+	token, err := auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env}.Token(ctx, cfg.Host)
+	if err != nil {
+		return err
+	}
 	m := mirror.Mirror{
-		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, ""),
+		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, token),
 		Store:  s,
 		Host:   cfg.Host,
 		Repo:   cfg.Repo,
 	}
-	return m.Cycle(context.Background())
+	return m.Cycle(ctx)
 }
 
 // writeLockWait bounds how long a writer waits for another to finish.

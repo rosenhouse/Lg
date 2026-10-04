@@ -12,6 +12,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/execx"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -21,6 +22,7 @@ type Deps struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Clock  clock.Clock
+	Runner execx.Runner
 }
 
 func RealDeps() Deps {
@@ -29,7 +31,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}}
 }
 
 type commands struct {
