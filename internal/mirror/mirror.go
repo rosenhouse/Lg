@@ -143,11 +143,8 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 	if err == nil {
 		return s.record(log, logSource)
 	}
-	ts, gone := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
-	if !gone {
-		if errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrBlobMissing) {
-			return failure.Transient{Err: fmt.Errorf("within log_grace: %w", err)}
-		}
+	ts, err := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
+	if err != nil {
 		return err
 	}
 	if err := s.unit.Remove(log); err != nil {

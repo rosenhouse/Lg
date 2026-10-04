@@ -10,10 +10,14 @@ import (
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
-const logURL = "https://api.github.com/repos/o/r/actions/jobs/1/logs"
+const (
+	logURL         = "https://api.github.com/repos/o/r/actions/jobs/1/logs"
+	expiredMessage = "The logs for this run have expired and are no longer available."
+)
 
 var (
 	updated = time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC)
@@ -36,8 +40,8 @@ func asJSON(t tombstone.Tombstone) map[string]any {
 
 var _ = Describe("Tombstone JSON", Label("failures"), func() {
 	It("has lg_format, tombstoned_at, target, url, http_status, reason and message", func() {
-		t, ok := tombstone.FromError(statusError(github.ErrGone, 410, "Gone"), updated, grace, updated.Add(time.Minute+500*time.Millisecond))
-		Expect(ok).To(BeTrue())
+		t, err := tombstone.FromError(statusError(github.ErrGone, 410, expiredMessage), updated, grace, updated.Add(time.Minute+500*time.Millisecond))
+		Expect(err).NotTo(HaveOccurred())
 		Expect(asJSON(t)).To(Equal(map[string]any{
 			"lg_format":     1.0,
 			"tombstoned_at": "2026-10-03T14:25:12Z",
@@ -45,7 +49,7 @@ var _ = Describe("Tombstone JSON", Label("failures"), func() {
 			"url":           logURL,
 			"http_status":   410.0,
 			"reason":        "expired",
-			"message":       "Gone",
+			"message":       expiredMessage,
 		}))
 	})
 
@@ -65,9 +69,9 @@ var _ = Describe("Tombstone JSON", Label("failures"), func() {
 
 var _ = Describe("FromError", Label("failures"), func() {
 	DescribeTable("tombstones a log GitHub has lost for good",
-		func(err error, now time.Time, reason tombstone.Reason, status int) {
-			t, ok := tombstone.FromError(err, updated, grace, now)
-			Expect(ok).To(BeTrue())
+		func(lost error, now time.Time, reason tombstone.Reason, status int) {
+			t, err := tombstone.FromError(lost, updated, grace, now)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Reason).To(Equal(reason))
 			Expect(t.HTTPStatus).To(HaveValue(Equal(status)))
 			Expect(t.TombstonedAt).To(Equal(now))
@@ -77,16 +81,26 @@ var _ = Describe("FromError", Label("failures"), func() {
 		Entry("ErrGone within log_grace is expired", statusError(github.ErrGone, 410, "Gone"), updated, tombstone.Expired, 410),
 	)
 
-	DescribeTable("gives no tombstone for what may yet come back",
-		func(err error, now time.Time) {
-			_, ok := tombstone.FromError(err, updated, grace, now)
-			Expect(ok).To(BeFalse())
+	DescribeTable("calls a 404 within log_grace Transient",
+		func(lost error, now time.Time) {
+			_, err := tombstone.FromError(lost, updated, grace, now)
+			Expect(err).To(BeTransient())
+			Expect(err).To(MatchError(lost))
+			Expect(err).To(MatchError(ContainSubstring("within log_grace")))
 		},
 		Entry("ErrNotFound at log_grace", statusError(github.ErrNotFound, 404, "Not Found"), updated.Add(grace)),
 		Entry("ErrNotFound within log_grace", statusError(github.ErrNotFound, 404, "Not Found"), updated.Add(time.Minute)),
 		Entry("ErrBlobMissing at log_grace", statusError(github.ErrBlobMissing, 404, ""), updated.Add(grace)),
-		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: logURL, Status: 500}}, updated.Add(24*time.Hour)),
-		Entry("a Transient ErrNotFound", failure.Transient{Err: statusError(github.ErrNotFound, 404, "")}, updated.Add(24*time.Hour)),
-		Entry("any other error", errors.New("disk full"), updated.Add(24*time.Hour)),
+	)
+
+	DescribeTable("returns any other error as it is",
+		func(other error) {
+			_, err := tombstone.FromError(other, updated, grace, updated.Add(24*time.Hour))
+			Expect(err).To(BeIdenticalTo(other))
+		},
+		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: logURL, Status: 500}}),
+		Entry("a Transient ErrNotFound", failure.Transient{Err: statusError(github.ErrNotFound, 404, "")}),
+		Entry("an API 422", statusError(errors.New("unprocessable"), 422, "")),
+		Entry("any other error", errors.New("disk full")),
 	)
 })

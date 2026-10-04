@@ -3,6 +3,7 @@ package tombstone
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/failure"
@@ -38,12 +39,13 @@ func NeverProduced(target, url, message string, now time.Time) Tombstone {
 }
 
 // FromError tombstones log.txt when err shows GitHub has lost it for good: a
-// 410, or a 404 once log_grace has passed since the attempt's updated_at.
-func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, now time.Time) (Tombstone, bool) {
+// 410, or a 404 once log_grace has passed since the attempt's updated_at. A
+// 404 within log_grace is Transient. Any other error comes back as it is.
+func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, now time.Time) (Tombstone, error) {
 	var transient failure.Transient
 	var statusErr *github.StatusError
 	if errors.As(err, &transient) || !errors.As(err, &statusErr) {
-		return Tombstone{}, false
+		return Tombstone{}, err
 	}
 	var reason Reason
 	switch {
@@ -51,13 +53,13 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 		reason = Expired
 	case errors.Is(err, github.ErrNotFound), errors.Is(err, github.ErrBlobMissing):
 		if !now.After(attemptUpdatedAt.Add(logGrace)) {
-			return Tombstone{}, false
+			return Tombstone{}, failure.Transient{Err: fmt.Errorf("within log_grace: %w", err)}
 		}
 		reason = Deleted
 	default:
-		return Tombstone{}, false
+		return Tombstone{}, err
 	}
 	t := newTombstone("log.txt", statusErr.URL, reason, statusErr.Message, now)
 	t.HTTPStatus = &statusErr.Status
-	return t, true
+	return t, nil
 }
