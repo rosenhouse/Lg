@@ -111,6 +111,19 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(log.Bytes()).To(Equal(fake.Served("attempt-1/logs/111221289888.txt")))
 	})
 
+	It("sends no Authorization to a blob host on the API host's IP at another port", Label("transport"), func() {
+		blobAuthorization := []string{}
+		blob := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			blobAuthorization = append(blobAuthorization, r.Header.Get("Authorization"))
+		}))
+		DeferCleanup(blob.Close)
+		api := httptest.NewServer(http.RedirectHandler(blob.URL+"/blob", http.StatusFound))
+		DeferCleanup(api.Close)
+
+		Expect(github.NewHTTP(http.DefaultClient, api.URL, "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).To(Succeed())
+		Expect(blobAuthorization).To(Equal([]string{""}))
+	})
+
 	It("lists runs and jobs 100 per page", func() {
 		_, err := client.ListRuns(context.Background())
 		Expect(err).NotTo(HaveOccurred())

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"regexp"
 
 	"github.com/rosenhouse/lg/internal/model"
@@ -49,12 +49,32 @@ func BaseURL(host, apiURL string) string {
 
 type HTTP struct {
 	client  *http.Client
+	api     neturl.URL
 	repoURL string
 	token   string
 }
 
 func NewHTTP(client *http.Client, baseURL, repo, token string) *HTTP {
-	return &HTTP{client: client, repoURL: baseURL + "/repos/" + repo, token: token}
+	h := &HTTP{repoURL: baseURL + "/repos/" + repo, token: token}
+	if api, err := neturl.Parse(baseURL); err == nil {
+		h.api = *api
+	}
+	withRedirects := *client
+	withRedirects.CheckRedirect = h.checkRedirect
+	h.client = &withRedirects
+	return h
+}
+
+// checkRedirect keeps the token on the API host. Go's own rule would send it
+// to a blob host that differs only by port or is a subdomain.
+func (h *HTTP) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if !h.onAPIHost(req.URL) {
+		req.Header.Del("Authorization")
+	}
+	return nil
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
@@ -125,8 +145,10 @@ func (h *HTTP) list(ctx context.Context, path, field string) (elements []json.Ra
 		if err != nil {
 			return nil, 0, err
 		}
-		if next != "" && !h.onAPIHost(next) {
-			return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", url, next)
+		if next != "" {
+			if u, err := neturl.Parse(next); err != nil || !h.onAPIHost(u) {
+				return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", url, next)
+			}
 		}
 		elements = append(elements, items...)
 		url = next
@@ -143,10 +165,8 @@ func nextLink(header string) string {
 	return ""
 }
 
-func (h *HTTP) onAPIHost(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	api, apiErr := url.Parse(h.repoURL)
-	return err == nil && apiErr == nil && u.Scheme == api.Scheme && u.Host == api.Host
+func (h *HTTP) onAPIHost(u *neturl.URL) bool {
+	return u.Host != "" && u.Scheme == h.api.Scheme && u.Host == h.api.Host
 }
 
 func (h *HTTP) getJSON(ctx context.Context, url string, v any) error {
