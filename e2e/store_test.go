@@ -25,18 +25,33 @@ import (
 const fixtureRunDir = "github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture"
 
 var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), func() {
+	const failingLog = "jobs/111221289888/logs"
 	var (
 		env      *harness.Env
+		fake     *fakegithub.Server
 		attempt1 string
 	)
 
 	BeforeEach(func() {
 		env = harness.New(lgPath)
-		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
-		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		fake = fakegithub.Start(fixtureRun, "after-attempt-1")
+		fake.Fail("api", failingLog, fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 		env.WriteConfig(fake.URL())
 		attempt1 = filepath.Join(env.Data(), fixtureRunDir, "attempt-1")
 	})
+
+	// syncThroughFault runs lg sync, checking that data/ is unchanged while
+	// the failing log request is held, part way through staging attempt-1.
+	syncThroughFault := func() *gexec.Session {
+		GinkgoHelper()
+		release := fake.Hold(failingLog)
+		before := treesnap.Snapshot(env.Data())
+		_, wait := env.StartSync()
+		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix(failingLog))))
+		Expect(treesnap.Snapshot(env.Data())).To(Equal(before))
+		release()
+		return wait()
+	}
 
 	It("exits 1, publishes no attempt-1, and BeAppendOnlyFrom holds", func() {
 		Expect(store.Init(env.Store())).To(Succeed())
@@ -44,12 +59,12 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 		Expect(os.MkdirAll(filepath.Dir(earlier), 0o755)).To(Succeed())
 		Expect(os.WriteFile(earlier, []byte("earlier"), 0o644)).To(Succeed())
 
-		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(syncThroughFault()).To(gexec.Exit(1))
 		Expect(attempt1).NotTo(BeAnExistingFile())
 	})
 
 	It("publishes the complete attempt-1 on the next sync after the fault clears", func() {
-		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(syncThroughFault()).To(gexec.Exit(1))
 		Expect(env.Sync()).To(gexec.Exit(0))
 
 		files := map[string]int{}
