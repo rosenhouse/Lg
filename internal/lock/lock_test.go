@@ -116,6 +116,7 @@ var _ = Describe("Wait", Label("store"), func() {
 
 // recordingClock is the real clock, recording each duration it is asked for.
 type recordingClock struct {
+	clock.Real
 	mu        sync.Mutex
 	durations []time.Duration
 }
