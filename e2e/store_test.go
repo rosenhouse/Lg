@@ -191,6 +191,23 @@ var _ = Describe("lg sync", Label("store"), func() {
 	})
 })
 
+var _ = Describe("lg sync with tmp/ a symlink to data/", Label("store"), func() {
+	It("refuses to run and keeps data/", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		Expect(os.Remove(env.Tmp())).To(Succeed())
+		Expect(os.Symlink("data", env.Tmp())).To(Succeed())
+		before := treesnap.Snapshot(env.Data())
+
+		session := env.Sync()
+		Expect(session).To(gexec.Exit(1))
+		Expect(string(session.Err.Contents())).To(ContainSubstring("move LG_HOME as a whole"))
+		Expect(treesnap.Snapshot(env.Data())).To(Equal(before))
+	})
+})
+
 var _ = Describe("lg sync after tmp/ and data/ are removed", Label("store"), func() {
 	It("recreates them and exits 0", func() {
 		env := harness.New(lgPath)

@@ -71,6 +71,9 @@ func initFS(fsys fsOps, root string) error {
 			return err
 		}
 	}
+	if err := s.checkDirs(); err != nil {
+		return err
+	}
 	formatFile := filepath.Join(root, "FORMAT")
 	if done, err := s.Has(formatFile); done || err != nil {
 		return err
@@ -79,17 +82,21 @@ func initFS(fsys fsOps, root string) error {
 	if err != nil {
 		return err
 	}
-	if has, err := s.Has(filepath.Join(root, ".rgignore")); err != nil {
+	return errors.Join(s.placeFormat(unit, root), unit.Abort())
+}
+
+// placeFormat publishes .rgignore, unless the user has one, and then FORMAT.
+func (s *Store) placeFormat(unit *Unit, root string) error {
+	has, err := s.Has(filepath.Join(root, ".rgignore"))
+	if err != nil {
 		return err
-	} else if !has {
+	}
+	if !has {
 		if err := unit.place(".rgignore", rgignore, root); err != nil {
 			return err
 		}
 	}
-	if err := unit.place("FORMAT", format+"\n", root); err != nil {
-		return err
-	}
-	return unit.Abort()
+	return unit.place("FORMAT", format+"\n", root)
 }
 
 // Check returns an error unless root is an lg-store 1 store, or holds only
@@ -157,18 +164,36 @@ func openFS(fsys fsOps, root string) (*Store, error) {
 		return nil, err
 	}
 	s := newStore(fsys, root)
-	dataMount, err := fsys.Mount(s.data)
-	if err != nil {
+	if err := s.checkDirs(); err != nil {
 		return nil, err
-	}
-	tmpMount, err := fsys.Mount(s.tmp)
-	if err != nil {
-		return nil, err
-	}
-	if dataMount != tmpMount {
-		return nil, fmt.Errorf("%s and %s are on different devices or mounts, so units cannot be renamed into place", s.tmp, s.data)
 	}
 	return s, nil
+}
+
+// checkDirs refuses a tmp/ that units cannot be renamed from into data/, and
+// a symlinked tmp/ or data/, since Sweep would empty what tmp/ points at.
+func (s *Store) checkDirs() error {
+	for _, dir := range []string{s.data, s.tmp} {
+		info, err := s.fs.Lstat(dir)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a plain dir; to move the store, move LG_HOME as a whole", dir)
+		}
+	}
+	dataMount, err := s.fs.Mount(s.data)
+	if err != nil {
+		return err
+	}
+	tmpMount, err := s.fs.Mount(s.tmp)
+	if err != nil {
+		return err
+	}
+	if dataMount != tmpMount {
+		return fmt.Errorf("%s and %s are on different devices or mounts, so units cannot be renamed into place; to move the store, move LG_HOME as a whole", s.tmp, s.data)
+	}
+	return nil
 }
 
 // checkFormat returns ErrFormat unless root's FORMAT is lg-store 1, and

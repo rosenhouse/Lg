@@ -114,7 +114,8 @@ var _ = Describe("store.Open", Label("store"), func() {
 		Expect(err).To(MatchError(And(
 			ContainSubstring(filepath.Join(root, "tmp")),
 			ContainSubstring(filepath.Join(root, "data")),
-			ContainSubstring("different devices"))))
+			ContainSubstring("different devices or mounts"),
+			ContainSubstring("move LG_HOME as a whole"))))
 	})
 
 	It("refuses a store whose tmp/ is another mount of data/'s device, as a bind mount is", func() {
@@ -128,6 +129,52 @@ var _ = Describe("store.Open", Label("store"), func() {
 		Expect(err).To(MatchError(ContainSubstring("different devices or mounts")))
 	})
 })
+
+var _ = DescribeTable("store.Open and store.Init refuse a store whose tmp/ or data/ is a symlink, and leave it untouched", Label("store"),
+	func(dir, target string) {
+		root := newStore()
+		Expect(os.MkdirAll(filepath.Join(root, "elsewhere"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(root, "data", "log.txt"), []byte("only copy"), 0o644)).To(Succeed())
+		Expect(os.RemoveAll(filepath.Join(root, dir))).To(Succeed())
+		Expect(os.Symlink(target, filepath.Join(root, dir))).To(Succeed())
+		before := treesnap.Snapshot(root)
+
+		_, err := store.Open(root)
+		Expect(err).To(MatchError(filepath.Join(root, dir) + " is not a plain dir; to move the store, move LG_HOME as a whole"))
+		Expect(store.Init(root)).To(MatchError(err.Error()))
+		Expect(treesnap.Snapshot(root)).To(Equal(before))
+	},
+	Entry("tmp/ to data/", "tmp", "data"),
+	Entry("tmp/ to the root", "tmp", "."),
+	Entry("tmp/ elsewhere", "tmp", "elsewhere"),
+	Entry("data/ elsewhere", "data", "elsewhere"),
+)
+
+var _ = Describe("store.Init", Label("store"), func() {
+	It("refuses a root whose tmp/ and data/ are on different mounts before staging anything", func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+		otherDevice := faultfs.New()
+		otherDevice.SetMount(filepath.Join(root, "tmp"), store.Mount{Dev: 1 << 40})
+
+		Expect(store.InitFS(otherDevice, root)).To(MatchError(ContainSubstring("different devices or mounts")))
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "FORMAT")).NotTo(BeAnExistingFile())
+	})
+
+	It("removes its staging unit when placing a file fails", func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+
+		Expect(store.InitFS(crossDeviceFS{}, root)).To(MatchError(syscall.EXDEV))
+		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+	})
+})
+
+// crossDeviceFS fails every rename as if tmp/ were on another device.
+type crossDeviceFS struct{ store.OSFS }
+
+func (crossDeviceFS) Rename(oldpath, newpath string) error {
+	return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EXDEV}
+}
 
 func newStore() string {
 	GinkgoHelper()
