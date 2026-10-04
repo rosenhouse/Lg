@@ -90,7 +90,7 @@ func (m *Mirror) syncRun(ctx context.Context, gh github.Client, runDir string, r
 		return nil, err
 	}
 	var failed []error
-	for n := range Plan(run, onDisk) {
+	for _, n := range Plan(run, onDisk) {
 		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
 		switch {
 		case errors.Is(err, errRunGone):
