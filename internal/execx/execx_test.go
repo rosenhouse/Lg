@@ -44,6 +44,18 @@ var _ = Describe("Real", Label("transport"), func() {
 		Expect(err).To(HaveOccurred())
 	})
 
+	It("kills the program's children too when ctx ends", func() {
+		alive := filepath.Join(GinkgoT().TempDir(), "alive")
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		DeferCleanup(cancel)
+
+		_, _, err := execx.Real{}.Run(ctx, "sh", []string{"-c", `(sleep 1; touch "$ALIVE") & wait`},
+			map[string]string{"PATH": os.Getenv("PATH"), "ALIVE": alive})
+
+		Expect(err).To(HaveOccurred())
+		Consistently(alive, "2s").ShouldNot(BeAnExistingFile())
+	})
+
 	It("returns the stdout of a program that exits 0 while its child holds stdout", func() {
 		args, env := withStdoutHolder("echo lg-test-token")
 
