@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -55,7 +56,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		m = mirror.Mirror{
 			Tokens: tokens,
 			NewGitHub: func(token string) github.Client {
-				return github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg", token)
+				return github.NewHTTP(http.DefaultClient, mustParse(fake.URL()), "rosenhouse/lg", token)
 			},
 			Store: s,
 			Host:  "github.com",
@@ -155,4 +156,11 @@ func editJSON(path string, edit func(map[string]any)) {
 	raw, err = json.Marshal(object)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(os.WriteFile(path, raw, 0o644)).To(Succeed())
+}
+
+func mustParse(rawURL string) *url.URL {
+	GinkgoHelper()
+	u, err := url.Parse(rawURL)
+	Expect(err).NotTo(HaveOccurred())
+	return u
 }

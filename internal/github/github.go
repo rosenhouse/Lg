@@ -37,14 +37,14 @@ type Client interface {
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
 // /api/v3 on any other host. A non-empty apiURL overrides both.
-func BaseURL(host, apiURL string) string {
+func BaseURL(host, apiURL string) (*url.URL, error) {
 	switch {
 	case apiURL != "":
-		return apiURL
+		return url.Parse(apiURL)
 	case host == "github.com":
-		return "https://api.github.com"
+		return url.Parse("https://api.github.com")
 	default:
-		return "https://" + host + "/api/v3"
+		return url.Parse("https://" + host + "/api/v3")
 	}
 }
 
@@ -55,11 +55,8 @@ type HTTP struct {
 	token   string
 }
 
-func NewHTTP(client *http.Client, baseURL, repo, token string) *HTTP {
-	h := &HTTP{repoURL: baseURL + "/repos/" + repo, token: token}
-	if api, err := url.Parse(baseURL); err == nil {
-		h.api = *api
-	}
+func NewHTTP(client *http.Client, api *url.URL, repo, token string) *HTTP {
+	h := &HTTP{api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
 	withRedirects := *client
 	withRedirects.CheckRedirect = h.checkRedirect
 	h.client = &withRedirects

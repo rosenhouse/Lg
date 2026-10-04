@@ -36,6 +36,10 @@ func (syncCmd) Run(deps *Deps) error {
 	if config.IsLoopback(cfg.APIURL) && deps.Env["LG_GH"] == "" {
 		return config.Error(fmt.Sprintf("api_url may be on a loopback address only when LG_GH is set: %q", cfg.APIURL))
 	}
+	api, err := github.BaseURL(cfg.Host, cfg.APIURL)
+	if err != nil {
+		return err
+	}
 	s, release, err := openForWriting(roots, deps.Clock, deps.Stderr)
 	if err != nil {
 		return err
@@ -44,7 +48,7 @@ func (syncCmd) Run(deps *Deps) error {
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
-			return github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, token)
+			return github.NewHTTP(&http.Client{}, api, cfg.Repo, token)
 		},
 		Store: s,
 		Host:  cfg.Host,
