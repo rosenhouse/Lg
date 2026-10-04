@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -76,7 +77,7 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 		Expect(files).To(Equal(map[string]int{
 			"attempt.json": 1, "jobs.json": 1, "fetch.json": 1, "job.json": 12, "log.txt": 10, "log.txt.tombstone": 2,
 		}))
-		recorded, err := os.ReadFile(filepath.Join(fakegithub.Recording(fixtureRun, "after-attempt-1"), "attempt-1/logs/111221289888.txt"))
+		recorded, err := os.ReadFile(filepath.Join(recordings.Dir(fixtureRun, "after-attempt-1"), "attempt-1/logs/111221289888.txt"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.ReadFile(jobDir(attempt1, "111221289888") + "/log.txt")).To(Equal(recorded))
 	})

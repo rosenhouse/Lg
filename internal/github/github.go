@@ -265,6 +265,8 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 		return Run{}, Source{}, malformed(source.URL, "no status")
 	case run.UpdatedAt.IsZero():
 		return Run{}, Source{}, malformed(source.URL, "no updated_at")
+	case run.RunStartedAt.IsZero():
+		return Run{}, Source{}, malformed(source.URL, "no run_started_at")
 	case run.RunAttempt != attempt:
 		return Run{}, Source{}, malformed(source.URL, "run_attempt is %d", run.RunAttempt)
 	}
@@ -281,11 +283,16 @@ func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([
 		return nil, Source{}, malformed(source.URL, "listed %d of %d jobs", len(raws), total)
 	}
 	jobs := make([]Job, len(raws))
+	listed := map[int64]bool{}
 	for i, raw := range raws {
 		jobs[i].Raw = raw
 		if err := json.Unmarshal(raw, &jobs[i].Job); err != nil {
 			return nil, Source{}, malformed(source.URL, "%w", err)
 		}
+		if listed[jobs[i].ID] {
+			return nil, Source{}, malformed(source.URL, "job %d listed twice", jobs[i].ID)
+		}
+		listed[jobs[i].ID] = true
 	}
 	source.Pages = pages
 	return jobs, source, nil

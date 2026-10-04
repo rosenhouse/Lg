@@ -65,7 +65,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				headers = r.Header
-				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`))
+				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_started_at":"2026-10-03T14:22:54Z","run_attempt":1}`))
 			}))
 			DeferCleanup(server.Close)
 
@@ -87,15 +87,16 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1))
 		Expect(runs[0].Run).To(Equal(model.Run{
-			ID:         runID,
-			Name:       "lg-fixture",
-			Path:       ".github/workflows/lg-fixture.yml",
-			HeadBranch: "lg-fixture",
-			CreatedAt:  time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC),
-			UpdatedAt:  time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC),
-			Status:     "completed",
-			RunAttempt: 1,
-			Repository: model.Repository{FullName: "rosenhouse/Lg"},
+			ID:           runID,
+			Name:         "lg-fixture",
+			Path:         ".github/workflows/lg-fixture.yml",
+			HeadBranch:   "lg-fixture",
+			CreatedAt:    time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC),
+			RunStartedAt: time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC),
+			UpdatedAt:    time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC),
+			Status:       "completed",
+			RunAttempt:   1,
+			Repository:   model.Repository{FullName: "rosenhouse/Lg"},
 		}))
 		Expect(runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
 	})
@@ -117,6 +118,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(job.Raw).To(Equal(listing.Jobs[i]))
 		}
 		Expect(jobs[0].ID).To(BeEquivalentTo(111221289861))
+		Expect(jobs[0].StartedAt).To(HaveValue(Equal(time.Date(2026, 10, 3, 14, 22, 57, 0, time.UTC))))
 		Expect(jobs[0].RunnerName).To(HaveValue(Equal("GitHub Actions 1000002376")))
 		Expect(jobs[0].Steps).To(HaveLen(3))
 		Expect(jobs[10].Name).To(Equal("skipped"))

@@ -146,7 +146,7 @@ var _ = Describe("fakegithub replay", Label("transport"), func() {
 			{runID, "after-attempt-3"},
 			{logsDeletedRun, "logs-deleted"},
 		} {
-			dir := fakegithub.Recording(r.run, r.stage)
+			dir := recordings.Dir(r.run, r.stage)
 			fake := fakegithub.Start(r.run, r.stage)
 
 			lines := recordedStatus(dir)
@@ -207,14 +207,14 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		api, err := url.Parse(fake.URL())
 		Expect(err).NotTo(HaveOccurred())
 		actions := fake.URL() + "/repos/rosenhouse/lg/actions/"
-		recording := fakegithub.Recording(runID, "after-attempt-1")
+		recording := recordings.Dir(runID, "after-attempt-1")
 
 		for _, l := range []struct {
 			path, field string
 			want        []json.RawMessage
 		}{
 			{"runs?per_page=100", "workflow_runs", []json.RawMessage{
-				recordedRun(fakegithub.Recording(logsDeletedRun, "logs-deleted")),
+				recordedRun(recordings.Dir(logsDeletedRun, "logs-deleted")),
 				recordedRun(recording),
 			}},
 			{"runs/37129390741/jobs?filter=all&per_page=100", "jobs", recordedElements(filepath.Join(recording, "jobs-all.json"), "jobs")},
@@ -235,7 +235,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 
 	It("serves every route under /api/v3 as well", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
-		recording := fakegithub.Recording(runID, "after-attempt-1")
+		recording := recordings.Dir(runID, "after-attempt-1")
 
 		routes := map[string]int{
 			"/repos/rosenhouse/lg":                               http.StatusOK,
@@ -269,7 +269,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		}
 		ids := func(stage string) map[string]json.RawMessage {
 			present := map[string]json.RawMessage{}
-			for _, a := range recordedElements(filepath.Join(fakegithub.Recording(runID, stage), "artifacts.json"), "artifacts") {
+			for _, a := range recordedElements(filepath.Join(recordings.Dir(runID, stage), "artifacts.json"), "artifacts") {
 				var meta struct{ ID json.RawMessage }
 				Expect(json.Unmarshal(a, &meta)).To(Succeed())
 				present[string(meta.ID)] = a
@@ -314,7 +314,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 			fake := fakegithub.New()
 			DeferCleanup(fake.Close)
 			for i := range 150 {
-				fake.AddRun(json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":"2026-10-02T00:00:00Z","status":"completed"}`, i+1)))
+				fake.AddListed(json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":"2026-10-02T00:00:00Z","status":"completed"}`, i+1)))
 			}
 
 			resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs" + query)
@@ -336,13 +336,13 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		DeferCleanup(fake.Close)
 		const added = 1050
 		for i := range added {
-			fake.AddRun(json.RawMessage(fmt.Sprintf(
+			fake.AddListed(json.RawMessage(fmt.Sprintf(
 				`{"id":%d,"created_at":"2026-10-02T%02d:%02d:00Z","status":"completed","conclusion":"success","repository":{"full_name":"rosenhouse/Lg"}}`,
 				i+1, i/60, i%60)))
 		}
 		const unmatched = 5
 		for i := range unmatched {
-			fake.AddRun(json.RawMessage(fmt.Sprintf(
+			fake.AddListed(json.RawMessage(fmt.Sprintf(
 				`{"id":%d,"created_at":"2026-10-03T00:%02d:00Z","status":"in_progress","repository":{"full_name":"rosenhouse/Lg"}}`,
 				added+i+1, i)))
 		}

@@ -237,6 +237,49 @@ func (s *Store) Has(target string) (bool, error) {
 	return err == nil, err
 }
 
+// Names lists the names in dir, and none when dir is missing.
+func (s *Store) Names(dir string) ([]string, error) {
+	entries, err := s.fs.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name()
+	}
+	return names, nil
+}
+
+// FindRunDir gives runDir when it exists, else the dir beside it that holds
+// the same run, named <id>_<slugs> with slugs that may differ, else runDir.
+func (s *Store) FindRunDir(runDir string) (string, error) {
+	exists, err := s.Has(runDir)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return runDir, nil
+	}
+	date, name := filepath.Split(runDir)
+	id, _, _ := strings.Cut(name, "_")
+	entries, err := s.fs.ReadDir(date)
+	if errors.Is(err, fs.ErrNotExist) {
+		return runDir, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), id+"_") {
+			return filepath.Join(date, e.Name()), nil
+		}
+	}
+	return runDir, nil
+}
+
 // Sweep empties tmp/ of what dead writers left. Callers hold
 // state/write.lock, so no live writer uses it.
 func (s *Store) Sweep() error {

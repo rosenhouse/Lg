@@ -5,8 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -43,10 +42,10 @@ func (s *Server) routes() http.Handler {
 		s.serveListing(w, r, run, "artifacts.json", "artifacts")
 	}))
 	handle("/actions/runs/{id}/attempts/{n}", s.ofRun(func(w http.ResponseWriter, r *http.Request, run *run) {
-		s.serveFile(w, r, run, filepath.Join("attempt-"+r.PathValue("n"), "attempt.json"))
+		s.serveFile(w, r, run, path.Join("attempt-"+r.PathValue("n"), "attempt.json"))
 	}))
 	handle("/actions/runs/{id}/attempts/{n}/jobs", s.ofRun(func(w http.ResponseWriter, r *http.Request, run *run) {
-		s.serveListing(w, r, run, filepath.Join("attempt-"+r.PathValue("n"), "jobs.json"), "jobs")
+		s.serveListing(w, r, run, path.Join("attempt-"+r.PathValue("n"), "jobs.json"), "jobs")
 	}))
 	handle("/actions/artifacts/{id}", s.serveArtifact)
 	handle("/actions/runs/{id}/attempts/{n}/logs", s.serveDownload)
@@ -83,7 +82,7 @@ func (s *Server) ofRun(h func(http.ResponseWriter, *http.Request, *run)) http.Ha
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, run *run, file string) {
-	body, err := served(filepath.Join(run.dir, file))
+	body, err := served(run.files, file)
 	if writeReadError(w, err) {
 		return
 	}
@@ -92,7 +91,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, run *run, fil
 
 // serveListing serves a page of the array field of a recorded listing.
 func (s *Server) serveListing(w http.ResponseWriter, r *http.Request, run *run, file, field string) {
-	body, err := served(filepath.Join(run.dir, file))
+	body, err := served(run.files, file)
 	if writeReadError(w, err) {
 		return
 	}
@@ -113,7 +112,7 @@ func (s *Server) serveListing(w http.ResponseWriter, r *http.Request, run *run, 
 // serveArtifact serves an artifact's element of its run's current listing.
 func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
 	for _, run := range s.loaded() {
-		body, err := served(filepath.Join(run.dir, "artifacts.json"))
+		body, err := served(run.files, "artifacts.json")
 		if err != nil {
 			continue
 		}
@@ -143,10 +142,10 @@ func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		if d.First == http.StatusFound {
 			blob := strings.Replace(s.blob.URL, "127.0.0.1", "localhost", 1)
-			http.Redirect(w, r, blob+"/"+id+"/"+filepath.ToSlash(d.file), http.StatusFound)
+			http.Redirect(w, r, blob+"/"+id+"/"+d.file, http.StatusFound)
 			return
 		}
-		body, err := served(filepath.Join(run.dir, d.file))
+		body, err := served(run.files, d.file)
 		if writeReadError(w, err) {
 			return
 		}
@@ -173,12 +172,12 @@ func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d, ok := run.blobs[filepath.FromSlash(file)]
+	d, ok := run.blobs[file]
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	body, err := os.ReadFile(filepath.Join(run.dir, d.file))
+	body, err := fs.ReadFile(run.files, d.file)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

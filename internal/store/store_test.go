@@ -349,3 +349,108 @@ func (f failingFile) Write(p []byte) (int, error) {
 func (f failingFile) Sync() error { return f.sync }
 
 func (f failingFile) Close() error { return nil }
+
+var _ = Describe("FindRunDir", Label("attempts"), func() {
+	var (
+		s    *store.Store
+		date string
+	)
+
+	BeforeEach(func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		var err error
+		s, err = store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
+		date = filepath.Join(s.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03")
+	})
+
+	It("finds the dir of the run's id in the date dir whatever its slugs", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "77_lg-fixture_main"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+
+		Expect(s.FindRunDir(filepath.Join(date, "7_new-name_other"))).To(Equal(filepath.Join(date, "7_old-name_main")))
+	})
+
+	It("gives the dir it is asked for when it exists, without reading the date dir", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "7_lg-fixture_main"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: date}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
+	It("gives the dir it is asked for when the date dir holds none of the run's id", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "77_lg-fixture_main"), 0o755)).To(Succeed())
+
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
+	It("gives the dir it is asked for when the date dir is missing", func() {
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
+	It("returns the error when the date dir cannot be read", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: date}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.FindRunDir(filepath.Join(date, "7_new-name_main"))).Error().To(MatchError(syscall.EIO))
+	})
+
+	It("returns the error when the run dir cannot be checked", func() {
+		Expect(os.MkdirAll(filepath.Dir(date), 0o755)).To(Succeed())
+		Expect(os.WriteFile(date, nil, 0o644)).To(Succeed())
+
+		Expect(s.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).Error().To(MatchError(syscall.ENOTDIR))
+	})
+})
+
+var _ = Describe("Names", Label("attempts"), func() {
+	var (
+		s   *store.Store
+		dir string
+	)
+
+	BeforeEach(func() {
+		root := filepath.Join(GinkgoT().TempDir(), "lg")
+		Expect(store.Init(root)).To(Succeed())
+		var err error
+		s, err = store.Open(root)
+		Expect(err).NotTo(HaveOccurred())
+		dir = filepath.Join(s.Data(), "run")
+	})
+
+	It("lists the names in a dir", func() {
+		Expect(os.MkdirAll(filepath.Join(dir, "attempt-1"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "x"), nil, 0o644)).To(Succeed())
+
+		Expect(s.Names(dir)).To(ConsistOf("attempt-1", "x"))
+	})
+
+	It("lists none in a missing dir", func() {
+		Expect(s.Names(dir)).To(BeEmpty())
+	})
+
+	It("returns the error when the dir cannot be read", func() {
+		Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: dir}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.Names(dir)).Error().To(MatchError(syscall.EIO))
+	})
+})
+
+// unreadableDir fails ReadDir of path.
+type unreadableDir struct {
+	store.OSFS
+	path string
+}
+
+func (u unreadableDir) ReadDir(path string) ([]fs.DirEntry, error) {
+	if filepath.Clean(path) == u.path {
+		return nil, syscall.EIO
+	}
+	return u.OSFS.ReadDir(path)
+}

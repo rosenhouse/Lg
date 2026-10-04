@@ -151,6 +151,19 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 	}, cycleTimeout)
 })
 
+// skipsLaterAttempts checks that a 404 at match in attempt 1 of a run with
+// three attempts publishes none and asks for no later attempt.
+func skipsLaterAttempts(ctx SpecContext, match string) {
+	GinkgoHelper()
+	env := harness.InProcess()
+	Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
+	env.Fake.Fail("api", match, fakegithub.Fault{Status: http.StatusNotFound})
+
+	Expect(env.Sync(ctx)).To(Succeed())
+	Expect(env.AttemptDirs(runID)).To(BeEmpty())
+	Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/attempts/[23]\b`))))
+}
+
 var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Label("failures"), func() {
 	It("skips that run without a tombstone and publishes the others", func(ctx SpecContext) {
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
@@ -161,6 +174,10 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 			Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring(strconv.FormatInt(failing, 10)))))
 		})
+	}, cycleTimeout)
+
+	It("skips the run's later attempts", Label("attempts"), func(ctx SpecContext) {
+		skipsLaterAttempts(ctx, fmt.Sprintf("runs/%d/attempts/1", runID))
 	}, cycleTimeout)
 })
 
@@ -184,6 +201,7 @@ var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run stil
 	Entry("an unparsable 200 on the attempt", "api", "runs/37129738159/attempts/1", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
 	Entry("an unparsable 200 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
 	Entry("a jobs listing short of its total_count", "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusOK, Body: `{"total_count":1,"jobs":[]}`}, "listed 0 of 1 jobs", cycleTimeout),
+	Entry("a jobs listing that repeats a job id", Label("attempts"), "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusOK, Body: `{"total_count":2,"jobs":[{"id":5,"name":"a","steps":[]},{"id":5,"name":"a","steps":[]}]}`}, "job 5 listed twice", cycleTimeout),
 )
 
 var unparsable = fakegithub.Fault{Status: http.StatusOK, Body: "<html>unicorn</html>"}
@@ -310,6 +328,10 @@ var _ = Describe("mirror.Cycle when the jobs of a listed run's attempt return 40
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
+	}, cycleTimeout)
+
+	It("skips the run's later attempts", Label("attempts"), func(ctx SpecContext) {
+		skipsLaterAttempts(ctx, fmt.Sprintf("runs/%d/attempts/1/jobs", runID))
 	}, cycleTimeout)
 })
 

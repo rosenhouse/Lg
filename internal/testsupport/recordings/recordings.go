@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -53,4 +55,11 @@ func parseLine(text string) (Line, error) {
 	}
 	line.Path = path
 	return line, nil
+}
+
+// Dir is the dir under testdata/recordings holding a run at a stage. It is
+// found from this source file, so it works from any package's test binary.
+func Dir(runID int64, stage string) string {
+	_, file, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "recordings", fmt.Sprintf("run-%d", runID), stage)
 }

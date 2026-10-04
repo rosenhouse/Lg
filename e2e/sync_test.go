@@ -16,6 +16,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
 const fixtureRun = 37129390741
@@ -33,7 +34,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 	BeforeEach(func() {
 		env = harness.New(lgPath)
 		fake = fakegithub.Start(fixtureRun, "after-attempt-1")
-		recording = fakegithub.Recording(fixtureRun, "after-attempt-1")
+		recording = recordings.Dir(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
 
 		Expect(env.Sync()).To(gexec.Exit(0))

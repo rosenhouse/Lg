@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,10 +34,10 @@ type Mirror struct {
 	LogGrace  time.Duration
 }
 
-// Cycle publishes attempt 1 of every listed run once it has completed. An
-// error that runScoped accepts aborts only its run's attempt; Cycle returns
-// these after trying every other run. Any other error stops the cycle, and
-// a local error that no retry fixes blocks it.
+// Cycle publishes each completed attempt of every listed run that is not on
+// disk. An error that runScoped accepts aborts only its attempt; Cycle
+// returns these after trying every other attempt. Any other error stops the
+// cycle, and a local error that no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	err := m.cycle(ctx)
 	var blocked failure.Blocked
@@ -68,24 +69,53 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
 			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)
-		target := layout.AttemptDir(runDir, 1)
-		published, err := m.Store.Has(target)
+		runDir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
 		if err != nil {
 			return err
 		}
-		if published {
-			continue
-		}
-		err = m.publishAttempt(ctx, gh, run, 1, target)
-		switch {
-		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
-		case err != nil:
+		runFailed, err := m.syncRun(ctx, gh, runDir, run)
+		if err != nil {
 			return err
 		}
+		failed = append(failed, runFailed...)
 	}
 	return errors.Join(failed...)
+}
+
+// syncRun publishes the run's planned attempts. It returns the errors that
+// runScoped accepts, and stops at any other.
+func (m *Mirror) syncRun(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
+	onDisk, err := m.attemptsOnDisk(runDir)
+	if err != nil {
+		return nil, err
+	}
+	var failed []error
+	for _, n := range Plan(run, onDisk) {
+		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
+		switch {
+		case errors.Is(err, errRunGone):
+			return failed, nil
+		case runScoped(err):
+			failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
+		case err != nil:
+			return nil, err
+		}
+	}
+	return failed, nil
+}
+
+func (m *Mirror) attemptsOnDisk(runDir string) ([]int, error) {
+	names, err := m.Store.Names(runDir)
+	if err != nil {
+		return nil, err
+	}
+	var onDisk []int
+	for _, name := range names {
+		if n, ok := layout.AttemptNumber(name); ok {
+			onDisk = append(onDisk, n)
+		}
+	}
+	return onDisk, nil
 }
 
 // getRepo gets the repo's full name, which names the repo dir as GitHub
@@ -116,10 +146,13 @@ func runScoped(err error) bool {
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
+// errRunGone is a 404 on an attempt or its jobs, which skips the run.
+var errRunGone = errors.New("run not found")
+
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil
+		return errRunGone
 	}
 	if err != nil {
 		return err
@@ -131,16 +164,20 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	}
 	jobs, jobsSource, err := gh.ListAttemptJobs(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil
+		return errRunGone
 	}
 	if err != nil {
 		return err
+	}
+	// A completed attempt can list jobs that are not yet completed.
+	if i := slices.IndexFunc(jobs, func(job github.Job) bool { return job.Status != "completed" }); i >= 0 {
+		return failure.Transient{Err: fmt.Errorf("job %d is %s", jobs[i].ID, jobs[i].Status)}
 	}
 	unit, err := m.Store.NewUnit()
 	if err != nil {
 		return err
 	}
-	s := &staged{unit: unit, sources: map[string]source{}}
+	s := &staged{unit: unit, sources: map[string]source{}, carriedForward: []int64{}}
 	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
 	if err == nil {
 		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
@@ -174,7 +211,11 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 	if err := s.unit.WriteJSON(filepath.Join(dir, "job.json"), job.Raw); err != nil {
 		return err
 	}
-	if model.Classify(job.Job) == model.NotApplicable {
+	switch model.Classify(job.Job, attempt.RunStartedAt) {
+	case model.CarriedForward:
+		s.carriedForward = append(s.carriedForward, job.ID)
+		return nil
+	case model.NotApplicable:
 		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
@@ -227,6 +268,8 @@ type fetch struct {
 	RunCreatedAt      time.Time         `json:"run_created_at"`
 	RunAttemptAtFetch int               `json:"run_attempt_at_fetch"`
 	Sources           map[string]source `json:"sources"`
+	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
+	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
 }
 
 type source struct {
@@ -239,23 +282,25 @@ type source struct {
 
 func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		LgFormat:          1,
-		LgVersion:         version.Version,
-		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
-		Host:              m.Host,
-		Repo:              run.Repository.FullName,
-		RunID:             run.ID,
-		Attempt:           attempt.RunAttempt,
-		RunCreatedAt:      run.CreatedAt,
-		RunAttemptAtFetch: run.RunAttempt,
-		Sources:           s.sources,
+		LgFormat:           1,
+		LgVersion:          version.Version,
+		FetchedAt:          m.Clock.Now().UTC().Truncate(time.Second),
+		Host:               m.Host,
+		Repo:               run.Repository.FullName,
+		RunID:              run.ID,
+		Attempt:            attempt.RunAttempt,
+		RunCreatedAt:       run.CreatedAt,
+		RunAttemptAtFetch:  run.RunAttempt,
+		Sources:            s.sources,
+		CarriedForwardJobs: s.carriedForward,
 	})
 }
 
 // staged is a unit being staged with the sources of its files.
 type staged struct {
-	unit    *store.Unit
-	sources map[string]source
+	unit           *store.Unit
+	sources        map[string]source
+	carriedForward []int64
 }
 
 func (s *staged) writeJSON(name string, raw []byte, from github.Source) error {

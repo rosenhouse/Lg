@@ -21,6 +21,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 // DefaultNow is the LG_TEST_NOW of each spec and the time fakegithub's clock starts at.
@@ -72,6 +73,15 @@ func InProcess() *InProcessEnv {
 		},
 		root: root,
 	}
+}
+
+// Sync runs one cycle and asserts that it left every earlier file under data/ unchanged.
+func (e *InProcessEnv) Sync(ctx context.Context) error {
+	ginkgo.GinkgoHelper()
+	before := treesnap.Snapshot(e.Data())
+	err := e.Mirror.Cycle(ctx)
+	gomega.Expect(treesnap.Snapshot(e.Data())).To(treesnap.BeAppendOnlyFrom(before))
+	return err
 }
 
 func (e *InProcessEnv) Data() string { return filepath.Join(e.root, "data") }

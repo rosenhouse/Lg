@@ -21,6 +21,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
 const runID = 37129390741
@@ -52,7 +53,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		s, err := store.Open(root)
 		Expect(err).NotTo(HaveOccurred())
 		recording = filepath.Join(GinkgoT().TempDir(), "recording")
-		Expect(os.CopyFS(recording, os.DirFS(fakegithub.Recording(runID, "after-attempt-1")))).To(Succeed())
+		Expect(os.CopyFS(recording, os.DirFS(recordings.Dir(runID, "after-attempt-1")))).To(Succeed())
 		fake = fakegithub.New()
 		DeferCleanup(fake.Close)
 		Expect(fake.LoadDir(runID, recording)).To(Succeed())

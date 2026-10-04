@@ -5,15 +5,17 @@ import "time"
 
 // Run is a workflow run, as listed or as of one attempt.
 type Run struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
-	Path       string     `json:"path"`
-	HeadBranch string     `json:"head_branch"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	Status     string     `json:"status"`
-	RunAttempt int        `json:"run_attempt"`
-	Repository Repository `json:"repository"`
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	HeadBranch string    `json:"head_branch"`
+	CreatedAt  time.Time `json:"created_at"`
+	// RunStartedAt is when the latest attempt, or the one fetched, started.
+	RunStartedAt time.Time  `json:"run_started_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	Status       string     `json:"status"`
+	RunAttempt   int        `json:"run_attempt"`
+	Repository   Repository `json:"repository"`
 }
 
 type Repository struct {
@@ -21,10 +23,12 @@ type Repository struct {
 }
 
 type Job struct {
-	ID         int64   `json:"id"`
-	Name       string  `json:"name"`
-	RunnerName *string `json:"runner_name"`
-	Steps      []Step  `json:"steps"`
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	StartedAt  *time.Time `json:"started_at"`
+	RunnerName *string    `json:"runner_name"`
+	Steps      []Step     `json:"steps"`
 }
 
 type Step struct {
@@ -35,13 +39,19 @@ type Step struct {
 type JobKind string
 
 const (
-	Ran           JobKind = "ran"
-	NotApplicable JobKind = "not_applicable"
+	Ran            JobKind = "ran"
+	NotApplicable  JobKind = "not_applicable"
+	CarriedForward JobKind = "carried_forward"
 )
 
-// Classify gives NotApplicable to a job with no steps and no runner, which
-// GitHub never produces a log for.
-func Classify(job Job) JobKind {
+// Classify gives CarriedForward to a job that started before its attempt,
+// which a rerun copies from the attempt that ran it. Otherwise it gives
+// NotApplicable to a job with no steps and no runner, which GitHub never
+// produces a log for.
+func Classify(job Job, runStartedAt time.Time) JobKind {
+	if job.StartedAt != nil && job.StartedAt.Before(runStartedAt) {
+		return CarriedForward
+	}
 	if len(job.Steps) == 0 && job.RunnerName == nil {
 		return NotApplicable
 	}
