@@ -35,6 +35,8 @@ type Mirror struct {
 	Clock            clock.Clock
 	LogGrace         time.Duration
 	ArtifactMaxBytes int64
+	Backfill         time.Duration
+	Retention        time.Duration
 }
 
 // Cycle publishes each listed artifact and completed attempt that is not on
@@ -116,7 +118,8 @@ func (l *artifactListing) candidates() []candidate {
 // listRuns lists the repo's runs, then each run with pending artifacts that
 // the listing does not name, which may be deleted.
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo, p *pending) ([]listedRun, error) {
-	runs, err := gh.ListRuns(ctx)
+	now := m.Clock.Now()
+	runs, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
 	if err != nil {
 		return nil, err
 	}

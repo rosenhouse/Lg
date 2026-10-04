@@ -22,7 +22,9 @@ var _ = Describe("Load", Label("sync"), func() {
 	It("reads host, repo and api_url", func() {
 		cfg, err := config.Load(write("host: ghe.corp.example\nrepo: platform/infra\napi_url: http://127.0.0.1:1/api/v3\n"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).To(Equal(config.Config{Host: "ghe.corp.example", Repo: "platform/infra", APIURL: "http://127.0.0.1:1/api/v3", LogGrace: config.Duration(time.Hour), ArtifactMaxBytes: 500_000_000}))
+		want := config.Defaults()
+		want.Host, want.Repo, want.APIURL = "ghe.corp.example", "platform/infra", "http://127.0.0.1:1/api/v3"
+		Expect(cfg).To(Equal(want))
 	})
 
 	It("defaults host to github.com", func() {

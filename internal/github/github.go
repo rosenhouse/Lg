@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -59,7 +60,7 @@ type Job struct {
 
 type Client interface {
 	GetRepo(ctx context.Context) (Repo, error)
-	ListRuns(ctx context.Context) ([]Run, error)
+	ListRuns(ctx context.Context, q RunQuery) ([]Run, int, error)
 	GetRun(ctx context.Context, runID int64) (Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
@@ -261,18 +262,50 @@ func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	return repo, nil
 }
 
-func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
-	raws, _, _, err := h.list(ctx, h.repoURL+"/actions/runs?per_page=100", "workflow_runs")
+// RunQuery filters a run listing: the runs created in [From, To], when
+// set, with Status, when set.
+type RunQuery struct {
+	From, To time.Time
+	Status   string
+	PerPage  int
+	Page     int
+}
+
+// Values encodes the query as GitHub reads it, leaving out what is unset.
+func (q RunQuery) Values() url.Values {
+	v := url.Values{}
+	if !q.From.IsZero() || !q.To.IsZero() {
+		v.Set("created", q.From.UTC().Format(time.RFC3339)+".."+q.To.UTC().Format(time.RFC3339))
+	}
+	if q.Status != "" {
+		v.Set("status", q.Status)
+	}
+	if q.PerPage > 0 {
+		v.Set("per_page", strconv.Itoa(q.PerPage))
+	}
+	if q.Page > 0 {
+		v.Set("page", strconv.Itoa(q.Page))
+	}
+	return v
+}
+
+// ListRuns lists the runs q selects, newest first, with the listing's
+// total_count. PerPage defaults to 100.
+func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) ([]Run, int, error) {
+	if q.PerPage == 0 {
+		q.PerPage = 100
+	}
+	raws, total, _, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	runs := make([]Run, len(raws))
 	for i, raw := range raws {
 		if err := json.Unmarshal(raw, &runs[i]); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
-	return runs, nil
+	return runs, total, nil
 }
 
 func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {

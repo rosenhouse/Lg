@@ -77,7 +77,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
 		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
-		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
+		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error {
+			_, _, err := c.ListRuns(ctx, github.RunQuery{})
+			return err
+		}),
 		Entry("GetRun", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRun(ctx, 1); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.GetAttempt(ctx, 1, 1); return err }),
 		Entry("ListAttemptJobs", func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListAttemptJobs(ctx, 1, 1); return err }),
@@ -87,7 +90,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	)
 
 	It("lists runs with their fields and the body served for each", func() {
-		runs, err := client.ListRuns(context.Background())
+		runs, _, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1))
 		Expect(runs[0].Run).To(Equal(model.Run{
@@ -229,7 +232,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	}, SpecTimeout(5*time.Second))
 
 	It("lists runs and jobs 100 per page", func() {
-		_, err := client.ListRuns(context.Background())
+		_, _, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
 		_, _, err = client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
@@ -243,7 +246,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(fake.Load(37129738159, "logs-deleted")).To(Succeed())
 		fake.SetPageCap(1)
 
-		runs, err := client.ListRuns(context.Background())
+		runs, _, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(2))
 		jobs, _, err := client.ListAttemptJobs(context.Background(), runID, 1)
@@ -291,7 +294,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "example.com", MinVersion: tls.VersionTLS12},
 			}
 
-			runs, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background())
+			runs, _, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
 
 			if onAPIHost {
 				Expect(err).NotTo(HaveOccurred())
@@ -332,7 +335,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		runs, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background())
+		runs, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(3))
 		Expect(requests).To(Equal([]string{
@@ -355,7 +358,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		DeferCleanup(cancel)
-		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(ctx)
+		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(ctx, github.RunQuery{})
 		Expect(err).To(MatchError(first + ": Link next " + first + " repeats an earlier page"))
 		Expect(requests).To(Equal(1))
 	})

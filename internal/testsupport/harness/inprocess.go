@@ -71,6 +71,8 @@ func InProcess() *InProcessEnv {
 			Clock:            clk,
 			LogGrace:         time.Duration(config.Defaults().LogGrace),
 			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
+			Backfill:         time.Duration(config.Defaults().Backfill),
+			Retention:        time.Duration(config.Defaults().Retention),
 		},
 		root: root,
 	}

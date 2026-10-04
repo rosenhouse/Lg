@@ -40,6 +40,7 @@ func RealDeps() Deps {
 }
 
 type commands struct {
+	Init    initCmd    `cmd:"" help:"Write config.yaml for one repository and initialize the store."`
 	Root    rootCmd    `cmd:"" help:"Print the data directory."`
 	Version versionCmd `cmd:"" help:"Print lg's version."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
