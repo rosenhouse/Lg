@@ -31,7 +31,7 @@ type Env struct {
 func New(lgPath string) *Env {
 	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
 	vars["HOME"] = ginkgo.GinkgoT().TempDir()
-	vars["LG_TEST_NOW"] = DefaultNow.Format(time.RFC3339)
+	vars["LG_TEST_NOW"] = DefaultNow().Format(time.RFC3339)
 	gh := fakegh.New(ginkgo.GinkgoT().TempDir())
 	vars["LG_GH"] = gh.Path
 	return &Env{lgPath: lgPath, vars: vars, gh: gh}

@@ -64,7 +64,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			Store:    s,
 			Host:     "github.com",
 			Repo:     "rosenhouse/lg",
-			Clock:    clock.NewFake(harness.DefaultNow),
+			Clock:    clock.NewFake(harness.DefaultNow()),
 			LogGrace: time.Hour,
 		}
 	})

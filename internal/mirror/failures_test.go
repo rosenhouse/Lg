@@ -181,7 +181,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		// The run listing says attempt 3; attempt 1's own run_attempt says 1.
 		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
 		env.Fake.SetPageCap(5)
-		env.Clock.Set(harness.DefaultNow.Add(500 * time.Millisecond))
+		env.Clock.Set(harness.DefaultNow().Add(500 * time.Millisecond))
 
 		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
 		attempt1 := env.AttemptDirs(runID)[0]

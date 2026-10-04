@@ -13,6 +13,7 @@ import (
 	"github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
@@ -21,10 +22,12 @@ import (
 )
 
 // DefaultNow is past log_grace for every recorded attempt.
-var DefaultNow = time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+func DefaultNow() time.Time { return time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC) }
 
-// ShortTimeouts let fault specs give up on a stalled fake within seconds.
-var ShortTimeouts = github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: time.Second, BodyIdle: time.Second}
+// shortTimeouts let fault specs give up on a stalled fake within seconds.
+func shortTimeouts() github.Timeouts {
+	return github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: time.Second, BodyIdle: time.Second}
+}
 
 // InProcessEnv drives mirror.Cycle against its own fake and store.
 type InProcessEnv struct {
@@ -46,8 +49,8 @@ func InProcess() *InProcessEnv {
 	ginkgo.DeferCleanup(fake.Close)
 	api, err := url.Parse(fake.URL())
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	clk := clock.NewFake(DefaultNow)
-	transport := github.NewTransport(ShortTimeouts)
+	clk := clock.NewFake(DefaultNow())
+	transport := github.NewTransport(shortTimeouts())
 	return &InProcessEnv{
 		Fake:  fake,
 		Clock: clk,
@@ -58,7 +61,7 @@ func InProcess() *InProcessEnv {
 			Host:      "github.com",
 			Repo:      "rosenhouse/lg",
 			Clock:     clk,
-			LogGrace:  time.Hour,
+			LogGrace:  time.Duration(config.Defaults().LogGrace),
 		},
 		root: root,
 	}
