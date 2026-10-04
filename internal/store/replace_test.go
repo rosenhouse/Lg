@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 )
 
@@ -23,7 +22,7 @@ var _ = Describe("ReplaceFile", Label("store"), func() {
 
 	It("writes and fsyncs a temp file, renames it over path and fsyncs the dir", func() {
 		fsys := faultfs.New()
-		Expect(store.ReplaceFile(fsys, path, []byte("new"))).To(Succeed())
+		Expect(openFS(fsys, newStore()).ReplaceFile(path, []byte("new"))).To(Succeed())
 
 		Expect(os.ReadFile(path)).To(Equal([]byte("new")))
 		tmp := path + ".tmp"
@@ -41,7 +40,7 @@ var _ = Describe("ReplaceFile", Label("store"), func() {
 	It("replaces a temp file that a killed writer left", func() {
 		Expect(os.WriteFile(path+".tmp", []byte("stale"), 0o644)).To(Succeed())
 
-		Expect(store.ReplaceFile(store.OSFS{}, path, []byte("new"))).To(Succeed())
+		Expect(open(newStore()).ReplaceFile(path, []byte("new"))).To(Succeed())
 		Expect(os.ReadFile(path)).To(Equal([]byte("new")))
 		Expect(path + ".tmp").NotTo(BeAnExistingFile())
 	})
@@ -50,7 +49,7 @@ var _ = Describe("ReplaceFile", Label("store"), func() {
 		fsys := faultfs.New()
 		fsys.FailOn("fsync", syscall.EIO)
 
-		Expect(store.ReplaceFile(fsys, path, []byte("new"))).To(MatchError(syscall.EIO))
+		Expect(openFS(fsys, newStore()).ReplaceFile(path, []byte("new"))).To(MatchError(syscall.EIO))
 		Expect(os.ReadFile(path)).To(Equal([]byte("old")))
 	})
 })
