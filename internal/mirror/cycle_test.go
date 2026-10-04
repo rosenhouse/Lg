@@ -21,6 +21,7 @@ import (
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
@@ -97,6 +98,29 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 
+	It("replaces state/pending-artifacts.json through the store's FS", Label("artifacts"), func() {
+		fsys := faultfs.New()
+		var err error
+		m.Store, err = store.OpenFS(fsys, root)
+		Expect(err).NotTo(HaveOccurred())
+		pending := filepath.Join(root, "state", "pending-artifacts.json")
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending + ".tmp", To: pending}))
+	})
+
+	It("moves an unparsable state/pending-artifacts.json aside through the store's FS", Label("artifacts"), func() {
+		fsys := faultfs.New()
+		var err error
+		m.Store, err = store.OpenFS(fsys, root)
+		Expect(err).NotTo(HaveOccurred())
+		pending := filepath.Join(root, "state", "pending-artifacts.json")
+		Expect(os.WriteFile(pending, []byte("<"), 0o644)).To(Succeed())
+
+		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring(pending)))
+		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending, To: pending + ".corrupt"}))
+	})
+
 	DescribeTable("refuses a run of another repository and writes nothing",
 		func(fullName string) {
 			editJSON(filepath.Join(recording, "run.json"), func(run map[string]any) {
@@ -113,16 +137,20 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the repo, the run listing and the run's artifacts listing, and leaves tmp/ empty, when the attempt and artifacts are already on disk", func() {
+	It("requests only the repo, the run listing and the run's artifacts listing, and writes nothing, when the attempt and artifacts are already on disk", func() {
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		before := len(fake.Requests())
+		fsys := faultfs.New()
+		var err error
+		m.Store, err = store.OpenFS(fsys, root)
+		Expect(err).NotTo(HaveOccurred())
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(fsys.Journal()).To(BeEmpty())
 		Expect(fake.Requests()[before:]).To(HaveExactElements(
 			HaveField("Path", "/repos/rosenhouse/lg"),
 			HaveField("Path", "/repos/rosenhouse/lg/actions/runs"),
 			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts")))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
 
 	It("removes its staged unit when a log download fails", Label("store"), func() {

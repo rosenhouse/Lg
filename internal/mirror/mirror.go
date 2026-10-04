@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -67,11 +68,15 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runs, err := m.listRuns(ctx, gh, repo)
+	p, discarded, err := m.loadPending(repo)
 	if err != nil {
 		return err
 	}
-	artifactsFailed, err := m.artifactPhase(ctx, gh, runs)
+	runs, err := m.listRuns(ctx, gh, repo, p)
+	if err != nil {
+		return err
+	}
+	artifactsFailed, err := m.artifactPhase(ctx, gh, runs, p)
 	if err != nil {
 		return err
 	}
@@ -79,26 +84,54 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(append(artifactsFailed, attemptsFailed...)...)
+	return errors.Join(slices.Concat([]error{discarded}, artifactsFailed, attemptsFailed)...)
 }
 
-// listedRun is a listed run with its dir. gone marks a run not found.
+// listedRun is a listed run with its dir, the attempts that Plan gives for
+// it, and this cycle's listing of its artifacts, which is nil when
+// ListArtifacts failed.
 type listedRun struct {
 	github.Run
-	dir  string
-	gone bool
+	dir       string
+	planned   []int
+	artifacts *artifactListing
 }
 
-func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
+// artifactListing is a run's artifacts as one listing gave them. Its
+// origin's RunAttempt and RunStatus are unknown unless runRead.
+type artifactListing struct {
+	artifacts []github.Artifact
+	origin    origin
+	runRead   bool
+}
+
+func (l *artifactListing) candidates() []candidate {
+	candidates := make([]candidate, len(l.artifacts))
+	for i, a := range l.artifacts {
+		candidates[i] = candidate{Artifact: a, Origin: l.origin}
+	}
+	return candidates
+}
+
+// listRuns lists the repo's runs, then each run with pending artifacts that
+// the listing does not name, which may be deleted.
+func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo, p *pending) ([]listedRun, error) {
 	runs, err := gh.ListRuns(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if i := slices.IndexFunc(runs, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
+		return nil, fmt.Errorf("run %d belongs to %q, not %q", runs[i].ID, runs[i].Repository.FullName, repo.FullName)
+	}
+	for _, id := range slices.Backward(slices.Sorted(maps.Keys(p.runs))) {
+		run := github.Run{Run: p.runs[id].Run}
+		listed := slices.ContainsFunc(runs, func(listed github.Run) bool { return listed.ID == id })
+		if !listed && ofRepo(run, repo) {
+			runs = append(runs, run)
+		}
+	}
 	listed := make([]listedRun, len(runs))
 	for i, run := range runs {
-		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
-			return nil, fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
-		}
 		dir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
 		if err != nil {
 			return nil, err
@@ -108,16 +141,17 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 	return listed, nil
 }
 
-// artifactPhase publishes every run's artifacts and marks the runs not found.
-// It returns the errors that runScoped accepts, and stops at any other.
-func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+func ofRepo(run github.Run, repo github.Repo) bool {
+	return strings.EqualFold(run.Repository.FullName, repo.FullName)
+}
+
+// artifactPhase publishes every run's artifacts. It returns the errors that
+// runScoped accepts, and stops at any other.
+func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
 	var failed []error
 	for i := range runs {
-		runFailed, err := m.syncArtifacts(ctx, gh, runs[i].dir, runs[i].Run)
-		switch {
-		case errors.Is(err, errRunGone):
-			runs[i].gone = true
-		case err != nil:
+		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i], p)
+		if err != nil {
 			return nil, err
 		}
 		failed = append(failed, runFailed...)
@@ -125,15 +159,16 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 	return failed, nil
 }
 
-// attemptPhase publishes the attempts of every run that is not gone. It
-// returns the errors that runScoped accepts, and stops at any other.
+// attemptPhase publishes the attempts of every run whose artifacts this cycle
+// listed, and whose run_attempt it read after that, since each attempt holds
+// both. It returns the errors that runScoped accepts, and stops at any other.
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for _, run := range runs {
-		if run.gone {
+		if run.artifacts == nil || !run.artifacts.runRead {
 			continue
 		}
-		runFailed, err := m.syncAttempts(ctx, gh, run.dir, run.Run)
+		runFailed, err := m.syncAttempts(ctx, gh, run)
 		if err != nil {
 			return nil, err
 		}
@@ -144,14 +179,10 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 
 // syncAttempts publishes the run's planned attempts. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
-	onDisk, err := m.attemptsOnDisk(runDir)
-	if err != nil {
-		return nil, err
-	}
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run listedRun) ([]error, error) {
 	var failed []error
-	for _, n := range Plan(run, onDisk) {
-		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
+	for _, n := range run.planned {
+		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(run.dir, n))
 		switch {
 		case errors.Is(err, errRunGone):
 			return failed, nil
@@ -203,13 +234,14 @@ func runScoped(err error) bool {
 	var transient failure.Transient
 	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
+	var corrupt *corruptFileError
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt)
 }
 
-// errRunGone is a 404 on a run's artifacts, an attempt or its jobs, which skips the run.
+// errRunGone is a 404 on an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
-func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
+func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run listedRun, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
 		return errRunGone
@@ -240,7 +272,10 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	s := &staged{unit: unit, sources: map[string]source{}, carriedForward: []int64{}}
 	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
 	if err == nil {
-		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
+		err = s.writeJSON("jobs.json", jsonArray(jobs, func(j github.Job) json.RawMessage { return j.Raw }), jobsSource)
+	}
+	if err == nil {
+		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.artifacts.origin.source())
 	}
 	if err == nil {
 		err = m.stageJobs(ctx, gh, s, attempt, jobs)
@@ -320,9 +355,11 @@ type unitFetch struct {
 	RunID             int64     `json:"run_id"`
 	RunCreatedAt      time.Time `json:"run_created_at"`
 	RunAttemptAtFetch int       `json:"run_attempt_at_fetch"`
+	RunStatusAtFetch  string    `json:"run_status_at_fetch"`
 }
 
-func (m *Mirror) unitFetch(run github.Run) unitFetch {
+// unitFetch gives the run's facts, and its run_attempt and status as o read them.
+func (m *Mirror) unitFetch(run github.Run, o origin) unitFetch {
 	return unitFetch{
 		LgFormat:          1,
 		LgVersion:         version.Version,
@@ -331,7 +368,8 @@ func (m *Mirror) unitFetch(run github.Run) unitFetch {
 		Repo:              run.Repository.FullName,
 		RunID:             run.ID,
 		RunCreatedAt:      run.CreatedAt,
-		RunAttemptAtFetch: run.RunAttempt,
+		RunAttemptAtFetch: o.RunAttempt,
+		RunStatusAtFetch:  o.RunStatus,
 	}
 }
 
@@ -343,9 +381,9 @@ type source struct {
 	SHA256 string `json:"sha256"`
 }
 
-func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
+func (m *Mirror) writeFetch(s *staged, run listedRun, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		unitFetch:          m.unitFetch(run),
+		unitFetch:          m.unitFetch(run.Run, run.artifacts.origin),
 		Attempt:            attempt.RunAttempt,
 		Sources:            s.sources,
 		CarriedForwardJobs: s.carriedForward,
@@ -399,11 +437,11 @@ func (s *staged) download(name, url string, maxBytes int64, get func(io.Writer) 
 	return writeTombstone(s.unit, filepath.Dir(name), ts)
 }
 
-// jsonArray joins the jobs as served into one array, as if GitHub had sent a single page.
-func jsonArray(jobs []github.Job) []byte {
-	raws := make([][]byte, len(jobs))
-	for i, job := range jobs {
-		raws[i] = job.Raw
+// jsonArray joins the elements as served into one array, as if GitHub had sent a single page.
+func jsonArray[T any](elements []T, raw func(T) json.RawMessage) []byte {
+	raws := make([][]byte, len(elements))
+	for i, e := range elements {
+		raws[i] = raw(e)
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
 }

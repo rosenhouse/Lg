@@ -51,6 +51,19 @@ var _ = Describe("Server controls", func() {
 		return resp.StatusCode
 	}
 
+	It("Remove deletes a run, so the run listing omits it and its routes and downloads 404", Label("artifacts"), func() {
+		fake.Remove(runID)
+
+		var listing struct {
+			TotalCount int `json:"total_count"`
+		}
+		Expect(json.Unmarshal(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs"), &listing)).To(Succeed())
+		Expect(listing.TotalCount).To(BeZero())
+		Expect(get("/repos/rosenhouse/lg/actions/runs/37129390741")).To(Equal(http.StatusNotFound))
+		Expect(get("/repos/rosenhouse/lg/actions/runs/37129390741/artifacts")).To(Equal(http.StatusNotFound))
+		Expect(get("/repos/rosenhouse/lg/actions/artifacts/11276401837/zip")).To(Equal(http.StatusNotFound))
+	})
+
 	It("Fail answers requests whose path ends in match with the fault's status, Times times", Label("store"), func() {
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 2})
 

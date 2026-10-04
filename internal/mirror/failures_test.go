@@ -46,11 +46,7 @@ func tombstonePath(attemptDir, jobID string) string {
 
 func readTombstone(attemptDir, jobID string) map[string]any {
 	GinkgoHelper()
-	raw, err := os.ReadFile(tombstonePath(attemptDir, jobID))
-	Expect(err).NotTo(HaveOccurred())
-	var tombstone map[string]any
-	Expect(json.Unmarshal(raw, &tombstone)).To(Succeed())
-	return tombstone
+	return readJSONFile(tombstonePath(attemptDir, jobID))
 }
 
 var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attempt within log_grace of the attempt's updated_at, and writes a deleted tombstone after it", Label("failures"),
@@ -300,9 +296,12 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		urls := map[string]string{}
 		for name, source := range fetch.Sources {
 			urls[name] = source.URL
-			if name == "jobs.json" {
+			switch name {
+			case "jobs.json":
 				Expect(fields.Sources[name]).To(HaveKeyWithValue("pages", 3.0))
-			} else {
+			case "artifacts.json":
+				Expect(fields.Sources[name]).To(HaveKeyWithValue("pages", 1.0))
+			default:
 				Expect(fields.Sources[name]).NotTo(HaveKey("pages"), name)
 			}
 			Expect(source.Status).To(Equal(http.StatusOK), name)
@@ -314,6 +313,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		}
 		Expect(urls).To(HaveKeyWithValue("attempt.json", api+"runs/37129390741/attempts/1"))
 		Expect(urls).To(HaveKeyWithValue("jobs.json", api+"runs/37129390741/attempts/1/jobs?per_page=100"))
+		Expect(urls).To(HaveKeyWithValue("artifacts.json", api+"runs/37129390741/artifacts?per_page=100"))
 		logs, err := filepath.Glob(filepath.Join(attempt1, "jobs", "*", "log.txt"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(logs).To(HaveLen(10))
@@ -323,7 +323,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 			jobID, _, _ := strings.Cut(filepath.Base(filepath.Dir(log)), "_")
 			Expect(urls).To(HaveKeyWithValue(name, api+"jobs/"+jobID+"/logs"))
 		}
-		Expect(urls).To(HaveLen(12))
+		Expect(urls).To(HaveLen(13))
 	}, cycleTimeout)
 })
 

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,20 @@ type Artifact struct {
 	Raw json.RawMessage
 }
 
+func (r *Run) UnmarshalJSON(raw []byte) error {
+	r.Raw = slices.Clone(raw)
+	return json.Unmarshal(raw, &r.Run)
+}
+
+func (r Run) MarshalJSON() ([]byte, error) { return r.Raw, nil }
+
+func (a *Artifact) UnmarshalJSON(raw []byte) error {
+	a.Raw = slices.Clone(raw)
+	return json.Unmarshal(raw, &a.Artifact)
+}
+
+func (a Artifact) MarshalJSON() ([]byte, error) { return a.Raw, nil }
+
 // Job is a job with the element GitHub served for it.
 type Job struct {
 	model.Job
@@ -45,6 +60,7 @@ type Job struct {
 type Client interface {
 	GetRepo(ctx context.Context) (Repo, error)
 	ListRuns(ctx context.Context) ([]Run, error)
+	GetRun(ctx context.Context, runID int64) (Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
@@ -252,12 +268,17 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 	}
 	runs := make([]Run, len(raws))
 	for i, raw := range raws {
-		runs[i].Raw = raw
-		if err := json.Unmarshal(raw, &runs[i].Run); err != nil {
+		if err := json.Unmarshal(raw, &runs[i]); err != nil {
 			return nil, err
 		}
 	}
 	return runs, nil
+}
+
+func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
+	var run Run
+	err := h.getJSON(ctx, h.repoURL+fmt.Sprintf("/actions/runs/%d", runID), &run)
+	return run, err
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
@@ -310,8 +331,8 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
 	return listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
-		artifact := Artifact{Raw: raw}
-		err := json.Unmarshal(raw, &artifact.Artifact)
+		var artifact Artifact
+		err := json.Unmarshal(raw, &artifact)
 		return artifact, artifact.ID, err
 	})
 }
@@ -332,6 +353,9 @@ func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, 
 		element, id, err := decode(raw)
 		if err != nil {
 			return nil, Source{}, malformed(listURL, "%w", err)
+		}
+		if id <= 0 {
+			return nil, Source{}, malformed(listURL, "%s #%d has no id", noun, i)
 		}
 		if listed[id] {
 			return nil, Source{}, malformed(listURL, "%s %d listed twice", noun, id)

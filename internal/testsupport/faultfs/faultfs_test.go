@@ -105,6 +105,17 @@ var _ = Describe("FS", Label("store"), func() {
 		Expect(journal).To(Equal([]string{"mkdir", "create", "create", "remove"}))
 	})
 
+	It("FailOnUnder fails only the ops of the given name whose path or rename target is under dir", Label("blocked"), func() {
+		Expect(os.Mkdir(filepath.Join(dir, "in"), 0o755)).To(Succeed())
+		f.FailOnUnder("rename", filepath.Join(dir, "in"), syscall.EXDEV)
+
+		Expect(writeFile()).To(Succeed())
+		Expect(f.Rename(filepath.Join(dir, "d"), filepath.Join(dir, "in", "d"))).To(MatchError(syscall.EXDEV))
+		Expect(f.Rename(filepath.Join(dir, "d"), filepath.Join(dir, "inside"))).To(Succeed())
+		Expect(f.Rename(filepath.Join(dir, "inside"), filepath.Join(dir, "in"))).To(MatchError(syscall.EXDEV))
+		Expect(f.Mkdir(filepath.Join(dir, "in", "e"))).To(Succeed())
+	})
+
 	It("reports the mount it was told for a path, and the inner FS's otherwise", func() {
 		Expect(os.Mkdir(filepath.Join(dir, "a"), 0o755)).To(Succeed())
 		real, err := store.OSFS{}.Mount(dir)

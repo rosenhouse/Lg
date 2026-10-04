@@ -89,6 +89,8 @@ func (e *InProcessEnv) Data() string { return filepath.Join(e.root, "data") }
 
 func (e *InProcessEnv) Tmp() string { return filepath.Join(e.root, "tmp") }
 
+func (e *InProcessEnv) State() string { return filepath.Join(e.root, "state") }
+
 // AttemptDirs lists the published attempt dirs of a run.
 func (e *InProcessEnv) AttemptDirs(runID int64) []string {
 	ginkgo.GinkgoHelper()

@@ -3,6 +3,7 @@ package mirror_test
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,11 +99,20 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		func(env *harness.InProcessEnv) { env.Fake.Close() },
 		SatisfyAll(blockedAs(failure.Unreachable, time.Time{}), HaveField("Detail", MatchRegexp(`127\.0\.0\.1:\d+`))), BeEmpty(), cycleTimeout),
 	Entry("ENOSPC writing a member: local_io",
-		func(env *harness.InProcessEnv) { env.FS.FailOn("write", syscall.ENOSPC) },
-		blockedAs(failure.LocalIO, time.Time{}), endWithOnly("/artifacts", http.StatusOK), cycleTimeout),
+		func(env *harness.InProcessEnv) { env.FS.FailOnUnder("write", env.Tmp(), syscall.ENOSPC) },
+		blockedAs(failure.LocalIO, time.Time{}), SatisfyAll(listedOneRunsArtifacts(), endWithOnly("/runs/37129738159", http.StatusOK)), cycleTimeout),
 	Entry("EXDEV publishing: local_io",
-		func(env *harness.InProcessEnv) { env.FS.FailOn("rename", syscall.EXDEV) },
+		func(env *harness.InProcessEnv) { env.FS.FailOnUnder("rename", env.Data(), syscall.EXDEV) },
 		blockedAs(failure.LocalIO, time.Time{}), SatisfyAll(listedOneRunsArtifacts(), endWithOnly(".zip", http.StatusOK)), cycleTimeout),
+	Entry("EXDEV replacing state/pending-artifacts.json, before any zip: local_io",
+		func(env *harness.InProcessEnv) {
+			Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte(`{"github.com":{}}`), 0o644)).To(Succeed())
+			env.FS.FailOnUnder("rename", env.State(), syscall.EXDEV)
+		},
+		blockedAs(failure.LocalIO, time.Time{}), SatisfyAll(listedOneRunsArtifacts(), endWithOnly("/runs/37129738159", http.StatusOK)), cycleTimeout),
+	Entry("EXDEV rebuilding a missing state/pending-artifacts.json, before any run listing: local_io",
+		func(env *harness.InProcessEnv) { env.FS.FailOnUnder("rename", env.State(), syscall.EXDEV) },
+		blockedAs(failure.LocalIO, time.Time{}), endWithOnly("/repos/rosenhouse/lg", http.StatusOK), cycleTimeout),
 )
 
 var _ = Describe("mirror.Cycle", Label("blocked"), func() {
