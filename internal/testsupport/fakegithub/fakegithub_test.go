@@ -311,17 +311,22 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		const added = 1050
 		for i := range added {
 			fake.AddRun(json.RawMessage(fmt.Sprintf(
-				`{"id":%d,"created_at":"2026-10-02T%02d:%02d:00Z","status":"completed","repository":{"full_name":"rosenhouse/Lg"}}`,
+				`{"id":%d,"created_at":"2026-10-02T%02d:%02d:00Z","status":"completed","conclusion":"success","repository":{"full_name":"rosenhouse/Lg"}}`,
 				i+1, i/60, i%60)))
+		}
+		const unmatched = 5
+		for i := range unmatched {
+			fake.AddRun(json.RawMessage(fmt.Sprintf(
+				`{"id":%d,"created_at":"2026-10-03T00:%02d:00Z","status":"in_progress","repository":{"full_name":"rosenhouse/Lg"}}`,
+				added+i+1, i)))
 		}
 		runs := fake.URL() + "/repos/rosenhouse/lg/actions/runs?per_page=100"
 
 		all, _ := listing(runs, "workflow_runs")
-		Expect(all).To(HaveLen(added))
-		for _, filter := range []string{"created=2026-10-02", "status=completed"} {
+		Expect(all).To(HaveLen(unmatched + added))
+		for _, filter := range []string{"created=2026-10-02", "status=completed", "status=success"} {
 			filtered, _ := listing(runs+"&"+filter, "workflow_runs")
-			Expect(filtered).To(HaveLen(1000), filter)
-			Expect(filtered).To(Equal(all[:1000]), filter)
+			Expect(filtered).To(Equal(all[unmatched:unmatched+1000]), filter)
 		}
 	})
 })
