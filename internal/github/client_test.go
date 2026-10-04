@@ -65,7 +65,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				headers = r.Header
-				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`))
+				_, _ = w.Write([]byte(`{"full_name":"o/r","total_count":0,"workflow_runs":[],"jobs":[],"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_started_at":"2026-10-03T14:22:54Z","run_attempt":1}`))
 			}))
 			DeferCleanup(server.Close)
 

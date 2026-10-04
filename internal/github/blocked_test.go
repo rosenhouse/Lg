@@ -36,7 +36,7 @@ func counting(h http.HandlerFunc) (*httptest.Server, *atomic.Int32) {
 	return server, &served
 }
 
-const attemptBody = `{"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`
+const attemptBody = `{"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_started_at":"2026-10-03T14:22:54Z","run_attempt":1}`
 
 var _ = Describe("HTTP errors that block the cycle", Label("blocked"), func() {
 	It("give the API URL, status and message of an API response that refuses the token", func(ctx SpecContext) {

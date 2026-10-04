@@ -265,6 +265,8 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 		return Run{}, Source{}, malformed(source.URL, "no status")
 	case run.UpdatedAt.IsZero():
 		return Run{}, Source{}, malformed(source.URL, "no updated_at")
+	case run.RunStartedAt.IsZero():
+		return Run{}, Source{}, malformed(source.URL, "no run_started_at")
 	case run.RunAttempt != attempt:
 		return Run{}, Source{}, malformed(source.URL, "run_attempt is %d", run.RunAttempt)
 	}
