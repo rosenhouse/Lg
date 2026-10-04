@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # record.sh RUN_ID LABEL — snapshot Actions API responses for a run.
+# GITHUB_API_URL points it at a fakegithub.
 set -euo pipefail
 run=$1 label=$2
-api=https://api.github.com/repos/rosenhouse/lg/actions
+api=${GITHUB_API_URL:-https://api.github.com}/repos/rosenhouse/lg/actions
+accept='Accept: application/vnd.github+json'
 out=$(dirname "$0")/run-$run/$label
-mkdir -p "$out"
-cd "$out"
 
 get() { # get PATH FILE — JSON GET, records status
   local code
-  code=$(curl -sS -o "$2" -w '%{http_code}' -H 'Accept: application/vnd.github+json' "$api/$1")
+  code=$(curl -sS -o "$2" -w '%{http_code}' -H "$accept" "$api/$1")
   echo "$code $1" >> status.txt
 }
 fetch() { # fetch PATH FILE — follows redirect, records first-hop status and final status
@@ -19,9 +19,16 @@ fetch() { # fetch PATH FILE — follows redirect, records first-hop status and f
   echo "$first->$final $1" >> status.txt
 }
 
-: > status.txt
-curl -sS -o /dev/null -D - "$api/runs/$run" | grep -i '^date:' | cut -d' ' -f2- | tr -d '\r' > recorded_at.txt
-get "runs/$run" run.json
+# Nothing is written until the run GET succeeds. Its Date header dates the recording.
+tmp=$(mktemp -d)
+code=$(curl -sS -o "$tmp/run.json" -D "$tmp/headers" -w '%{http_code}' -H "$accept" "$api/runs/$run")
+[ "$code" = 200 ] || { echo "record.sh: $code runs/$run: $(jq -r .message "$tmp/run.json")" >&2; exit 1; }
+mkdir -p "$out"
+cd "$out"
+echo "$code runs/$run" > status.txt
+mv "$tmp/run.json" run.json
+grep -i '^date:' "$tmp/headers" | cut -d' ' -f2- | tr -d '\r' > recorded_at.txt
+rm -r "$tmp"
 get "runs/$run/jobs?filter=all&per_page=100" jobs-all.json
 get "runs/$run/jobs?filter=latest&per_page=100" jobs-latest.json
 get "runs/$run/artifacts?per_page=100" artifacts.json
