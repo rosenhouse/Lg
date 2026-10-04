@@ -32,8 +32,8 @@ var (
 	ErrFormat = errors.New("unsupported store format")
 )
 
-// fsOps is the filesystem seam that faultfs wraps.
-type fsOps interface {
+// FS is the filesystem seam that faultfs wraps.
+type FS interface {
 	Mkdir(path string) error
 	Create(path string) (File, error)
 	Rename(oldpath, newpath string) error
@@ -56,16 +56,17 @@ type File interface {
 }
 
 type Store struct {
-	fs        fsOps
+	fs        FS
 	data, tmp string
 }
 
 // Init makes root a store, finishing one that an earlier Init left part
 // way. Callers hold state/write.lock. FORMAT is published last, so a store
 // with one is complete.
-func Init(root string) error { return initFS(OSFS{}, root) }
+func Init(root string) error { return InitFS(OSFS{}, root) }
 
-func initFS(fsys fsOps, root string) error {
+// InitFS is Init through fsys.
+func InitFS(fsys FS, root string) error {
 	if err := check(fsys, root); err != nil {
 		return err
 	}
@@ -113,7 +114,7 @@ func (s *Store) placeFormat(unit *Unit, root string) error {
 // what Init writes before FORMAT.
 func Check(root string) error { return check(OSFS{}, root) }
 
-func check(fsys fsOps, root string) error {
+func check(fsys FS, root string) error {
 	err := checkFormat(root)
 	if !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -140,7 +141,7 @@ func check(fsys fsOps, root string) error {
 // isOwn reports whether name, in a root without FORMAT, is what Init, a
 // writer waiting on state/write.lock, mkfs or Finder left there, or lg's
 // config when LG_CONFIG points there.
-func isOwn(fsys fsOps, root, name string) (bool, error) {
+func isOwn(fsys FS, root, name string) (bool, error) {
 	var ownChild func(string) bool
 	switch name {
 	case ".rgignore", ".DS_Store", "config.yaml":
@@ -170,7 +171,7 @@ func Open(root string) (*Store, error) { return OpenFS(OSFS{}, root) }
 
 // OpenFS opens the store at root through fsys, which specs fault. It refuses
 // a FORMAT other than lg-store 1, and a tmp/ that cannot be renamed into data/.
-func OpenFS(fsys fsOps, root string) (*Store, error) {
+func OpenFS(fsys FS, root string) (*Store, error) {
 	if err := checkFormat(root); err != nil {
 		return nil, err
 	}
@@ -221,7 +222,7 @@ func checkFormat(root string) error {
 	return nil
 }
 
-func newStore(fsys fsOps, root string) *Store {
+func newStore(fsys FS, root string) *Store {
 	return &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
 }
 
@@ -253,7 +254,7 @@ func (s *Store) Sweep() error {
 
 // Unit is a directory staged under tmp/ until Publish renames it into data/.
 type Unit struct {
-	fs       fsOps
+	fs       FS
 	dir      string
 	dirs     []string // created under dir, parents first
 	unclosed map[string]bool
@@ -293,7 +294,7 @@ func (s *Store) Publish(u *Unit, target string) error {
 	return s.fs.SyncDir(parent)
 }
 
-func mkdirAll(fsys fsOps, dir string) error {
+func mkdirAll(fsys FS, dir string) error {
 	_, err := mkdirBelow(fsys, "", dir, true)
 	return err
 }
@@ -301,7 +302,7 @@ func mkdirAll(fsys fsOps, dir string) error {
 // mkdirBelow makes path and any missing parents below base, returning those
 // it made, parents first. With syncParents, it fsyncs each new dir's parent.
 // It never makes base, so it fails once base is gone.
-func mkdirBelow(fsys fsOps, base, path string, syncParents bool) ([]string, error) {
+func mkdirBelow(fsys FS, base, path string, syncParents bool) ([]string, error) {
 	var missing []string
 	for dir := path; dir != base; dir = filepath.Dir(dir) {
 		_, err := fsys.Lstat(dir)

@@ -3,13 +3,11 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
-	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
@@ -39,7 +37,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps.Clock, deps.Stderr)
+	s, release, err := openForWriting(roots, deps)
 	if err != nil {
 		return err
 	}
@@ -63,18 +61,18 @@ const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
 // holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots, clk clock.Clock, stderr io.Writer) (*store.Store, func(), error) {
+func openForWriting(roots config.Roots, deps *Deps) (*store.Store, func(), error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")
-	held, err := lock.Wait(writeLock, writeLockWait, clk, func(holder string) {
-		_, _ = fmt.Fprintf(stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
+	held, err := lock.Wait(writeLock, writeLockWait, deps.Clock, func(holder string) {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := initAndSweep(roots.Store)
+	s, err := initAndSweep(deps.StoreFS, roots.Store)
 	if err != nil {
 		_ = held.Release()
 		return nil, nil, err
@@ -82,11 +80,11 @@ func openForWriting(roots config.Roots, clk clock.Clock, stderr io.Writer) (*sto
 	return s, func() { _ = held.Release() }, nil
 }
 
-func initAndSweep(root string) (*store.Store, error) {
-	if err := store.Init(root); err != nil {
+func initAndSweep(fsys store.FS, root string) (*store.Store, error) {
+	if err := store.InitFS(fsys, root); err != nil {
 		return nil, err
 	}
-	s, err := store.Open(root)
+	s, err := store.OpenFS(fsys, root)
 	if err != nil {
 		return nil, err
 	}
