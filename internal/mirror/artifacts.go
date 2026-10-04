@@ -14,12 +14,12 @@ import (
 )
 
 // syncArtifacts publishes the run's listed artifacts that are not on disk.
-// It skips a run that is not found. It returns the errors that runScoped
-// accepts, and stops at any other.
+// It returns errRunGone for a run that is not found, and the errors that
+// runScoped accepts, and stops at any other.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
 	artifacts, listing, err := gh.ListArtifacts(ctx, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
-		return nil, nil
+		return nil, errRunGone
 	}
 	if runScoped(err) {
 		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil

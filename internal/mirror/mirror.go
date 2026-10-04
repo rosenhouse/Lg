@@ -80,14 +80,21 @@ func (m *Mirror) cycle(ctx context.Context) error {
 		}
 	}
 	var failed []error
+	gone := make([]bool, len(runs))
 	for _, i := range newestFirst(runs) {
 		runFailed, err := m.syncArtifacts(ctx, gh, dirs[i], runs[i])
-		if err != nil {
+		switch {
+		case errors.Is(err, errRunGone):
+			gone[i] = true
+		case err != nil:
 			return err
 		}
 		failed = append(failed, runFailed...)
 	}
 	for i, run := range runs {
+		if gone[i] {
+			continue
+		}
 		runFailed, err := m.syncRun(ctx, gh, dirs[i], run)
 		if err != nil {
 			return err
@@ -171,7 +178,7 @@ func runScoped(err error) bool {
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
-// errRunGone is a 404 on an attempt or its jobs, which skips the run.
+// errRunGone is a 404 on a run's artifacts, an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
