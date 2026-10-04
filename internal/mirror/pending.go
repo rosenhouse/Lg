@@ -14,13 +14,16 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// pending is state/pending-artifacts.json: each run's listed artifacts that
-// have no dir yet, with their origins. A re-run of all jobs deletes a run's
-// artifacts, so the next listing may not name one that failed.
+// pending is state/pending-artifacts.json: by host and run id, each run's
+// listed artifacts that have no dir yet, with their origins. A re-run of all
+// jobs deletes a run's artifacts, so the next listing may not name one that
+// failed.
 type pending struct {
 	store *store.Store
 	path  string
-	runs  map[int64]pendingRun
+	hosts map[string]map[int64]pendingRun
+	// runs are the host's runs.
+	runs map[int64]pendingRun
 }
 
 // pendingRun is a run as last listed, with its pending artifacts.
@@ -29,42 +32,55 @@ type pendingRun struct {
 	Artifacts []candidate `json:"artifacts"`
 }
 
-// loadPending reads the file. One that does not parse is moved aside, since
-// snapshots still name the artifacts of published attempts, and loadPending
-// gives an empty pending and the parse error as discarded.
-func loadPending(s *store.Store) (p *pending, discarded, err error) {
-	p = &pending{store: s, path: filepath.Join(s.State(), "pending-artifacts.json"), runs: map[int64]pendingRun{}}
-	raw, err := os.ReadFile(p.path)
+// loadPending reads the file and gives the host's runs. One that does not
+// parse is moved aside, since snapshots still name the artifacts of published
+// attempts, and loadPending gives an empty pending and the parse error as
+// discarded.
+func loadPending(s *store.Store, host string) (p *pending, discarded, err error) {
+	path := filepath.Join(s.State(), "pending-artifacts.json")
+	hosts, discarded, err := readPending(s, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if hosts == nil {
+		hosts = map[string]map[int64]pendingRun{}
+	}
+	if hosts[host] == nil {
+		hosts[host] = map[int64]pendingRun{}
+	}
+	return &pending{store: s, path: path, hosts: hosts, runs: hosts[host]}, discarded, nil
+}
+
+func readPending(s *store.Store, path string) (hosts map[string]map[int64]pendingRun, discarded, err error) {
+	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return p, nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	var runs map[int64]pendingRun
-	if err := decodePending(raw, &runs); err != nil {
-		aside := p.path + ".corrupt"
-		if err := s.Rename(p.path, aside); err != nil {
+	if err := decodePending(raw, &hosts); err != nil {
+		aside := path + ".corrupt"
+		if err := s.Rename(path, aside); err != nil {
 			return nil, nil, err
 		}
-		return p, &corruptFileError{Path: p.path, Err: fmt.Errorf("moved to %s: %w", aside, err)}, nil
+		return nil, &corruptFileError{Path: path, Err: fmt.Errorf("moved to %s: %w", aside, err)}, nil
 	}
-	if runs != nil {
-		p.runs = runs
-	}
-	return p, nil, nil
+	return hosts, nil, nil
 }
 
-func decodePending(raw []byte, runs *map[int64]pendingRun) error {
-	if err := json.Unmarshal(raw, runs); err != nil {
+func decodePending(raw []byte, hosts *map[string]map[int64]pendingRun) error {
+	if err := json.Unmarshal(raw, hosts); err != nil {
 		return err
 	}
-	for runID, r := range *runs {
-		if r.Run.ID != runID {
-			return fmt.Errorf("run %d has run id %d", runID, r.Run.ID)
-		}
-		if i := slices.IndexFunc(r.Artifacts, func(c candidate) bool { return c.Artifact.ID == 0 }); i >= 0 {
-			return fmt.Errorf("run %d artifact %d has no id", runID, i)
+	for host, runs := range *hosts {
+		for runID, r := range runs {
+			if r.Run.ID != runID {
+				return fmt.Errorf("%s run %d has run id %d", host, runID, r.Run.ID)
+			}
+			if i := slices.IndexFunc(r.Artifacts, func(c candidate) bool { return c.Artifact.ID == 0 }); i >= 0 {
+				return fmt.Errorf("%s run %d: artifact #%d has no id", host, runID, i)
+			}
 		}
 	}
 	return nil
@@ -96,7 +112,7 @@ func (p *pending) save() error {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(p.runs); err != nil {
+	if err := enc.Encode(p.hosts); err != nil {
 		return err
 	}
 	return p.store.ReplaceFile(p.path, buf.Bytes())

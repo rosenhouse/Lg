@@ -116,19 +116,21 @@ var _ = Describe("the retry set", Label("artifacts"), func() {
 	})
 })
 
-// readPending reads state/pending-artifacts.json as run id -> artifact objects.
+// readPending reads state/pending-artifacts.json as host/run id -> artifact objects.
 func readPending(env *harness.InProcessEnv) map[string][]json.RawMessage {
 	GinkgoHelper()
 	raw, err := os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
-	var pending map[string]struct {
+	var pending map[string]map[string]struct {
 		Artifacts []struct{ Artifact json.RawMessage }
 	}
 	Expect(json.Unmarshal(raw, &pending)).To(Succeed())
 	artifacts := map[string][]json.RawMessage{}
-	for runID, run := range pending {
-		for _, c := range run.Artifacts {
-			artifacts[runID] = append(artifacts[runID], c.Artifact)
+	for host, runs := range pending {
+		for runID, run := range runs {
+			for _, c := range run.Artifacts {
+				artifacts[host+"/"+runID] = append(artifacts[host+"/"+runID], c.Artifact)
+			}
 		}
 	}
 	return artifacts
@@ -155,7 +157,7 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
 
 		Expect(env.Sync(ctx)).To(BeTransient())
-		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(MatchJSON(servedArtifactsByID(env)[flakyReport]))))
+		Expect(readPending(env)).To(HaveKeyWithValue("github.com/37129390741", ConsistOf(MatchJSON(servedArtifactsByID(env)[flakyReport]))))
 
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(readPending(env)).To(BeEmpty())
@@ -171,7 +173,7 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 		for _, raw := range servedArtifactsByID(env) {
 			listed = append(listed, MatchJSON(raw))
 		}
-		Expect(readPending(env)).To(HaveKeyWithValue("37129390741", ConsistOf(listed...)))
+		Expect(readPending(env)).To(HaveKeyWithValue("github.com/37129390741", ConsistOf(listed...)))
 	}, cycleTimeout)
 })
 
@@ -228,12 +230,13 @@ var _ = Describe("mirror.Cycle when state/pending-artifacts.json does not parse"
 		},
 		Entry("empty", "", cycleTimeout),
 		Entry("an array", "[]", cycleTimeout),
-		Entry("a run id that is not a number", `{"abc":[]}`, cycleTimeout),
-		Entry("a run that is an array", `{"1":[]}`, cycleTimeout),
-		Entry("a run whose id is not its key", `{"1":{"run":{"id":2},"artifacts":[]}}`, cycleTimeout),
-		Entry("an artifact id that is not a number", `{"1":{"run":{"id":1},"artifacts":[{"artifact":{"id":"x"}}]}}`, cycleTimeout),
-		Entry("an entry with no artifact", `{"1":{"run":{"id":1},"artifacts":[{}]}}`, cycleTimeout),
-		Entry("an entry with a null artifact", `{"1":{"run":{"id":1},"artifacts":[{"artifact":null}]}}`, cycleTimeout),
+		Entry("a host that is an array", `{"github.com":[]}`, cycleTimeout),
+		Entry("a run id that is not a number", `{"github.com":{"abc":[]}}`, cycleTimeout),
+		Entry("a run that is an array", `{"github.com":{"1":[]}}`, cycleTimeout),
+		Entry("a run whose id is not its key", `{"github.com":{"1":{"run":{"id":2},"artifacts":[]}}}`, cycleTimeout),
+		Entry("an artifact id that is not a number", `{"github.com":{"1":{"run":{"id":1},"artifacts":[{"artifact":{"id":"x"}}]}}}`, cycleTimeout),
+		Entry("an entry with no artifact", `{"github.com":{"1":{"run":{"id":1},"artifacts":[{}]}}}`, cycleTimeout),
+		Entry("an entry with a null artifact", `{"github.com":{"1":{"run":{"id":1},"artifacts":[{"artifact":null}]}}}`, cycleTimeout),
 	)
 
 	It("syncs a null file as an empty one", func(ctx SpecContext) {
@@ -299,11 +302,24 @@ var _ = Describe("an artifact pending for a run of another repo", Label("artifac
 	It("stays pending and untouched while lg syncs this repo", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		other := `{"5":{"run":{"id":5,"repository":{"full_name":"other/repo"}},"artifacts":[{"artifact":{"id":9,"name":"a"}}]}}`
+		other := `{"github.com":{"5":{"run":{"id":5,"repository":{"full_name":"other/repo"}},"artifacts":[{"artifact":{"id":9,"name":"a"}}]}}}`
 		Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte(other), 0o644)).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(readPending(env)).To(HaveKeyWithValue("5", ConsistOf(MatchJSON(`{"id":9,"name":"a"}`))))
+		Expect(readPending(env)).To(HaveKeyWithValue("github.com/5", ConsistOf(MatchJSON(`{"id":9,"name":"a"}`))))
+		Expect(requestedZip(env, "9")).To(BeFalse())
+	}, cycleTimeout)
+})
+
+var _ = Describe("an artifact pending for a run of another host", Label("artifacts"), func() {
+	It("stays pending and untouched while lg syncs this host, though the run ids are equal", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		other := `{"ghes.example.com":{"37129390741":{"run":{"id":37129390741,"repository":{"full_name":"rosenhouse/Lg"}},"artifacts":[{"artifact":{"id":9,"name":"a"}}]}}}`
+		Expect(os.WriteFile(filepath.Join(env.State(), "pending-artifacts.json"), []byte(other), 0o644)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readPending(env)).To(HaveKeyWithValue("ghes.example.com/37129390741", ConsistOf(MatchJSON(`{"id":9,"name":"a"}`))))
 		Expect(requestedZip(env, "9")).To(BeFalse())
 	}, cycleTimeout)
 })
