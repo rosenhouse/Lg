@@ -2,13 +2,16 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 func readJSONFile(path string) map[string]any {
@@ -32,5 +35,19 @@ var _ = Describe("an attempt's fetch.json", Label("artifacts"), func() {
 				HaveKeyWithValue("pages", BeEquivalentTo(1)),
 			)),
 		))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when a run's artifact listing fails transiently", Label("artifacts"), func() {
+	It("publishes no attempt of that run, since it would lack its snapshot, and the next cycle publishes it", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129390741/artifacts", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.AttemptDirs(runID)).To(BeEmpty())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(filepath.Join(attemptDir(env, runID, 1), "artifacts.json")).To(BeARegularFile())
 	}, cycleTimeout)
 })
