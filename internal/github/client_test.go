@@ -348,6 +348,22 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: listed 1 of 2 jobs"))
 	})
 
+	DescribeTable("refuses an artifacts listing as malformed", Label("artifacts"),
+		func(body, reason string) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			DeferCleanup(server.Close)
+
+			_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListArtifacts(context.Background(), 1)
+			var malformed *github.MalformedError
+			Expect(errors.As(err, &malformed)).To(BeTrue())
+			Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/artifacts?per_page=100: " + reason))
+		},
+		Entry("when total_count exceeds the artifacts on its pages", `{"total_count":2,"artifacts":[{"id":1}]}`, "listed 1 of 2 artifacts"),
+		Entry("when it repeats an artifact id", `{"total_count":2,"artifacts":[{"id":5},{"id":5}]}`, "artifact 5 listed twice"),
+	)
+
 	It("calls an artifacts listing with an unparsable element malformed, naming its URL", Label("artifacts"), func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"total_count":1,"artifacts":[{"id":"1"}]}`))

@@ -325,16 +325,24 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)}
-	raws, _, pages, err := h.list(ctx, source.URL, "artifacts")
+	raws, total, pages, err := h.list(ctx, source.URL, "artifacts")
 	if err != nil {
 		return nil, Source{}, err
 	}
+	if total > len(raws) {
+		return nil, Source{}, malformed(source.URL, "listed %d of %d artifacts", len(raws), total)
+	}
 	artifacts := make([]Artifact, len(raws))
+	listed := map[int64]bool{}
 	for i, raw := range raws {
 		artifacts[i].Raw = raw
 		if err := json.Unmarshal(raw, &artifacts[i].Artifact); err != nil {
 			return nil, Source{}, malformed(source.URL, "%w", err)
 		}
+		if listed[artifacts[i].ID] {
+			return nil, Source{}, malformed(source.URL, "artifact %d listed twice", artifacts[i].ID)
+		}
+		listed[artifacts[i].ID] = true
 	}
 	source.Pages = pages
 	return artifacts, source, nil
