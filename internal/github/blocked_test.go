@@ -118,13 +118,17 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		reset = start.Add(17 * time.Minute)
 	})
 
-	// withRemaining answers as a server whose clock reads start minus behind.
+	// setRemaining sets the rate-limit headers of a server whose clock reads start minus behind.
+	setRemaining := func(header http.Header, remaining string, behind time.Duration) {
+		header.Set("Date", start.Add(-behind).Format(http.TimeFormat))
+		header.Set("X-RateLimit-Limit", "100")
+		header.Set("X-RateLimit-Remaining", remaining)
+		header.Set("X-RateLimit-Reset", strconv.FormatInt(reset.Add(-behind).Unix(), 10))
+	}
+
 	withRemaining := func(remaining string, behind time.Duration) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Date", start.Add(-behind).Format(http.TimeFormat))
-			w.Header().Set("X-RateLimit-Limit", "100")
-			w.Header().Set("X-RateLimit-Remaining", remaining)
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Add(-behind).Unix(), 10))
+			setRemaining(w.Header(), remaining, behind)
 			_, _ = w.Write([]byte(attemptBody))
 		}
 	}
@@ -160,6 +164,19 @@ var _ = Describe("HTTP rate-limit reserve", Label("blocked"), func() {
 		clk.Set(reset)
 		Expect(getAttempt(ctx, client)).To(Succeed())
 		Expect(served.Load()).To(BeEquivalentTo(2))
+	}, hopTimeout)
+
+	It("counts only API responses, not a redirected log's blob response", func(ctx SpecContext) {
+		blob, _ := counting(answer(http.StatusOK, "log"))
+		api, served := counting(func(w http.ResponseWriter, r *http.Request) {
+			setRemaining(w.Header(), "9", 0)
+			http.Redirect(w, r, blob.URL+"/log", http.StatusFound)
+		})
+		client := github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token", clock.NewFake(start))
+
+		Expect(client.DownloadJobLog(ctx, 1, &bytes.Buffer{})).To(Succeed())
+		Expect(blockedOf(getAttempt(ctx, client))).To(HaveField("RetryAt", reset))
+		Expect(served.Load()).To(BeEquivalentTo(1))
 	}, hopTimeout)
 
 	It("keeps sending while 10% remain", func(ctx SpecContext) {
