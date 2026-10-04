@@ -166,6 +166,24 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(foreign).To(BeEmpty())
 	})
 
+	It("refuses a Link next that repeats an earlier page without requesting it again", Label("transport"), func() {
+		var requests int
+		var server *httptest.Server
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+			w.Header().Set("Link", "<"+server.URL+r.URL.String()+`>; rel="next"`)
+			_, _ = w.Write([]byte(`{"total_count":0,"workflow_runs":[]}`))
+		}))
+		DeferCleanup(server.Close)
+		first := server.URL + "/repos/o/r/actions/runs?per_page=100"
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		DeferCleanup(cancel)
+		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").ListRuns(ctx)
+		Expect(err).To(MatchError(first + ": Link next " + first + " repeats an earlier page"))
+		Expect(requests).To(Equal(1))
+	})
+
 	It("refuses a jobs listing whose total_count exceeds the jobs on its pages", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"total_count":2,"jobs":[{"id":1}]}`))

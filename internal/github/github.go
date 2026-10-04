@@ -133,7 +133,9 @@ func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) err
 func (h *HTTP) list(ctx context.Context, path, field string) ([]json.RawMessage, int, error) {
 	var elements []json.RawMessage
 	var total int
+	followed := map[string]bool{}
 	for pageURL := h.repoURL + path; pageURL != ""; {
+		followed[pageURL] = true
 		var page map[string]json.RawMessage
 		var items []json.RawMessage
 		var next string
@@ -150,6 +152,9 @@ func (h *HTTP) list(ctx context.Context, path, field string) ([]json.RawMessage,
 		if next != "" {
 			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
 				return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", pageURL, next)
+			}
+			if followed[next] {
+				return nil, 0, fmt.Errorf("%s: Link next %s repeats an earlier page", pageURL, next)
 			}
 		}
 		elements = append(elements, items...)
