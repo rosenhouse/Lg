@@ -102,17 +102,21 @@ func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
 	return ArtifactDownload
 }
 
-var sha256Digest = regexp.MustCompile(`^(?i:sha256):([0-9a-fA-F]{64})$`)
+var digest = regexp.MustCompile(`^([a-zA-Z0-9]+):([0-9a-fA-F]+)$`)
 
 // SHA256 gives the hex SHA-256 that the artifact's digest names, "" for a
-// missing digest, and an error for any other.
+// missing digest or one of another algorithm, and an error for a malformed one.
 func (a Artifact) SHA256() (string, error) {
 	if a.Digest == "" {
 		return "", nil
 	}
-	m := sha256Digest.FindStringSubmatch(a.Digest)
-	if m == nil {
-		return "", fmt.Errorf("unrecognized digest %q", a.Digest)
+	m := digest.FindStringSubmatch(a.Digest)
+	switch {
+	case m == nil:
+	case !strings.EqualFold(m[1], "sha256"):
+		return "", nil
+	case len(m[2]) == 64:
+		return strings.ToLower(m[2]), nil
 	}
-	return strings.ToLower(m[1]), nil
+	return "", fmt.Errorf("unrecognized digest %q", a.Digest)
 }

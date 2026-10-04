@@ -31,16 +31,20 @@ var _ = DescribeTable("Artifact.SHA256 parses a sha256:<hex> digest", Label("art
 	Entry("upper case algorithm", "SHA256:"+recordedSum),
 )
 
-var _ = It("Artifact.SHA256 gives no sum to verify against for a missing digest", Label("artifacts"), func() {
-	Expect(model.Artifact{}.SHA256()).To(BeEmpty())
-})
+var _ = DescribeTable("Artifact.SHA256 gives no sum to verify against", Label("artifacts"),
+	func(digest string) {
+		Expect(model.Artifact{Digest: digest}.SHA256()).To(BeEmpty())
+	},
+	Entry("for a missing digest", ""),
+	Entry("for a digest of another algorithm", "sha512:"+recordedSum+recordedSum),
+)
 
 var _ = DescribeTable("Artifact.SHA256 refuses any other digest", Label("artifacts"),
 	func(digest string) {
 		_, err := model.Artifact{Digest: digest}.SHA256()
 		Expect(err).To(MatchError(fmt.Sprintf("unrecognized digest %q", digest)))
 	},
-	Entry("another algorithm", "sha512:"+recordedSum),
+	Entry("another algorithm, not hex", "sha512:zz"),
 	Entry("too short", "sha256:d9df"),
 	Entry("not hex", "sha256:z9df8b557651cd5b643604d89ba20ea3cb8d7e3636d28a1377c2a38254865f6e"),
 	Entry("no algorithm", recordedSum),

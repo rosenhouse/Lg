@@ -211,12 +211,23 @@ var _ = Describe("mirror.Cycle when the listing gives an artifact no digest", La
 	}, cycleTimeout)
 })
 
-var _ = Describe("mirror.Cycle when the listing gives an artifact a digest lg does not recognize", Label("artifacts"), func() {
+var _ = Describe("mirror.Cycle when the listing gives an artifact a sha512 digest", Label("artifacts"), func() {
+	It("publishes its zip unverified", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.WithDigest(scenario.Recorded(runID, "after-attempt-1"), 11276401837, "sha512:"+strings.Repeat("ab", 64)))).To(Succeed())
+		env.Fake.Fail("blob", flakyReportBlob, fakegithub.Fault{Status: http.StatusOK, Body: "not the recorded zip"})
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip"))).To(BeEquivalentTo("not the recorded zip"))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when the listing gives an artifact a malformed sha256 digest", Label("artifacts"), func() {
 	It("publishes no artifact dir, requests no zip for it, and returns the failure, naming the artifact", func(ctx SpecContext) {
 		env := harness.InProcess()
-		Expect(env.Fake.AddRun(scenario.WithDigest(scenario.Recorded(runID, "after-attempt-1"), 11276401837, "sha512:abcd"))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.WithDigest(scenario.Recorded(runID, "after-attempt-1"), 11276401837, "sha256:ZZ"))).To(Succeed())
 
-		Expect(env.Sync(ctx)).To(MatchError(`run 37129390741 artifact 11276401837: unrecognized digest "sha512:abcd"`))
+		Expect(env.Sync(ctx)).To(MatchError(`run 37129390741 artifact 11276401837: unrecognized digest "sha256:ZZ"`))
 		Expect(env.ArtifactDirs(runID)).To(HaveLen(3))
 		Expect(env.ArtifactDirs(runID)).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
 		Expect(requestedZip(env, flakyReport)).To(BeFalse())
