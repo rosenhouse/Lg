@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -242,9 +243,10 @@ func (s *Store) Sweep() error {
 
 // Unit is a directory staged under tmp/ until Publish renames it into data/.
 type Unit struct {
-	fs   fsOps
-	dir  string
-	dirs []string // created under dir, parents first
+	fs       fsOps
+	dir      string
+	dirs     []string // created under dir, parents first
+	unclosed map[string]bool
 }
 
 func (s *Store) NewUnit() (*Unit, error) {
@@ -252,13 +254,16 @@ func (s *Store) NewUnit() (*Unit, error) {
 	if err := s.fs.Mkdir(dir); err != nil {
 		return nil, err
 	}
-	return &Unit{fs: s.fs, dir: dir}, nil
+	return &Unit{fs: s.fs, dir: dir, unclosed: map[string]bool{}}, nil
 }
 
 func isUnit(name string) bool { return strings.HasPrefix(name, unitPrefix) }
 
 // Publish makes the unit durable, then renames it to target, which must not exist.
 func (s *Store) Publish(u *Unit, target string) error {
+	if len(u.unclosed) > 0 {
+		return fmt.Errorf("member %q is still open", slices.Sorted(maps.Keys(u.unclosed))[0])
+	}
 	for _, dir := range slices.Backward(append([]string{u.dir}, u.dirs...)) {
 		if err := s.fs.SyncDir(dir); err != nil {
 			return err
@@ -339,8 +344,7 @@ func (u *Unit) place(name, content, dir string) error {
 func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
 
 // Create opens a new member file, creating its parent dirs within the unit.
-// It fails once the unit's dir is gone.
-// Closing it fsyncs it.
+// It fails once the unit's dir is gone. Closing it fsyncs it.
 func (u *Unit) Create(name string) (io.WriteCloser, error) {
 	if !filepath.IsLocal(name) || slices.Contains(strings.Split(filepath.ToSlash(name), "/"), "..") {
 		return nil, fmt.Errorf("member name %q is absolute or contains \"..\"", name)
@@ -355,17 +359,24 @@ func (u *Unit) Create(name string) (io.WriteCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return syncOnClose{f}, nil
+	u.unclosed[name] = true
+	return &member{File: f, unit: u, name: name}, nil
 }
 
-type syncOnClose struct{ File }
+// member fsyncs its file on Close, which Publish requires first.
+type member struct {
+	File
+	unit *Unit
+	name string
+}
 
-func (f syncOnClose) Close() error {
-	if err := f.Sync(); err != nil {
-		_ = f.File.Close()
+func (m *member) Close() error {
+	delete(m.unit.unclosed, m.name)
+	if err := m.Sync(); err != nil {
+		_ = m.File.Close()
 		return err
 	}
-	return f.File.Close()
+	return m.File.Close()
 }
 
 // WriteJSON stores raw indented two spaces, plus a newline, so each key sits

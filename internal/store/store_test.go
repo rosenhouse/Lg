@@ -241,6 +241,23 @@ var _ = Describe("Sweep", Label("store"), func() {
 })
 
 var _ = Describe("Publish", Label("store"), func() {
+	It("refuses a unit with an unclosed member, whose writes are not yet fsynced", func() {
+		root := newStore()
+		s := open(root)
+		unit, err := s.NewUnit()
+		Expect(err).NotTo(HaveOccurred())
+		closed, err := unit.Create("jobs/1_build/job.json")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(closed.Close()).To(Succeed())
+		unclosed, err := unit.Create("jobs/1_build/log.txt")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(unclosed.Close)
+
+		err = s.Publish(unit, filepath.Join(root, attemptPath))
+		Expect(err).To(MatchError(`member "jobs/1_build/log.txt" is still open`))
+		Expect(filepath.Join(root, attemptPath)).NotTo(BeAnExistingFile())
+	})
+
 	It("maps EEXIST from renaming onto a non-empty dir to ErrExists", func() {
 		root := newStore()
 		Expect(publishAttempt(open(root), "{}")).To(Succeed())
