@@ -2,7 +2,6 @@ package mirror
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"slices"
 	"time"
@@ -26,7 +25,6 @@ type watch struct {
 }
 
 type watchedRun struct {
-	ID        int64     `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -37,13 +35,6 @@ func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 		var decoded map[string]map[int64]watchedRun
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
-		}
-		for host, runs := range decoded {
-			for id, run := range runs {
-				if run.ID != id {
-					return fmt.Errorf("%s run %d has run id %d", host, id, run.ID)
-				}
-			}
 		}
 		if decoded != nil {
 			hosts = decoded
@@ -62,7 +53,7 @@ func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 
 // add watches the run.
 func (w *watch) add(run model.Run) {
-	w.runs[run.ID] = watchedRun{ID: run.ID, CreatedAt: run.CreatedAt}
+	w.runs[run.ID] = watchedRun{CreatedAt: run.CreatedAt}
 }
 
 // prune drops the runs that retention would evict.

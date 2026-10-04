@@ -296,7 +296,7 @@ var _ = Describe("mirror.Cycle", Label("discovery"), func() {
 })
 
 var _ = Describe("the watch list", Label("discovery"), func() {
-	It("holds each watched run's id and created_at", func(ctx SpecContext) {
+	It("holds each watched run's created_at under its id", func(ctx SpecContext) {
 		env := harness.InProcess()
 		created := harness.DefaultNow().Add(-30 * day)
 		Expect(env.Fake.AddRun(scenario.InProgress(cloneAt(1, "after-attempt-2", created), 2))).To(Succeed())
@@ -304,7 +304,7 @@ var _ = Describe("the watch list", Label("discovery"), func() {
 		Expect(env.Sync(ctx)).To(Succeed())
 		raw, err := os.ReadFile(filepath.Join(env.State(), "watch.json"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(raw).To(MatchJSON(fmt.Sprintf(`{"github.com":{"1":{"id":1,"created_at":%q}}}`, created.Format(time.RFC3339))))
+		Expect(raw).To(MatchJSON(fmt.Sprintf(`{"github.com":{"1":{"created_at":%q}}}`, created.Format(time.RFC3339))))
 	}, cycleTimeout)
 
 	It("drops a run that is complete on disk after one GET /actions/runs/{id}, and a run older than retention without fetching it", func(ctx SpecContext) {
