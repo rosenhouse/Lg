@@ -1,7 +1,10 @@
 // Package failure says what a sync cycle does after an error.
 package failure
 
-import "time"
+import (
+	"net/http"
+	"time"
+)
 
 // Transient aborts only the unit it happened in. The next cycle retries the unit.
 type Transient struct{ Err error }
@@ -27,3 +30,11 @@ type Blocked struct {
 }
 
 func (b Blocked) Error() string { return "" }
+
+func FromStatus(status int, header http.Header, message string, now time.Time) (Blocked, bool) {
+	return Blocked{}, false
+}
+
+func FromErrno(err error) error { return err }
+
+func Reserve(header http.Header, now time.Time) (Blocked, bool) { return Blocked{}, false }
