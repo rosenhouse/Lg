@@ -56,7 +56,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		target := layout.AttemptDir(runDir, 1)
 		published, err := m.Store.Has(target)
 		if err != nil {
-			return errors.Join(append(failed, err)...)
+			return err
 		}
 		if published {
 			continue
@@ -66,7 +66,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
 		case err != nil:
-			return errors.Join(append(failed, err)...)
+			return err
 		}
 	}
 	return errors.Join(failed...)
