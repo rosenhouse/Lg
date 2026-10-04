@@ -111,7 +111,7 @@ func addJob(ctx context.Context, gh github.Client, unit *store.Unit, job github.
 		return err
 	}
 	if model.Classify(job.Job) == model.NotApplicable {
-		ts, err := json.Marshal(tombstone.New("log.txt", tombstone.NotApplicable))
+		ts, err := json.Marshal(tombstone.New("log.txt", "not_applicable"))
 		if err != nil {
 			return err
 		}
