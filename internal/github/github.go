@@ -276,7 +276,16 @@ func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
 }
 
 func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
-	return Run{}, nil
+	runURL := h.repoURL + fmt.Sprintf("/actions/runs/%d", runID)
+	var raw json.RawMessage
+	if err := h.getJSON(ctx, runURL, &raw); err != nil {
+		return Run{}, err
+	}
+	var run Run
+	if err := json.Unmarshal(raw, &run); err != nil {
+		return Run{}, malformed(runURL, "%w", err)
+	}
+	return run, nil
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
