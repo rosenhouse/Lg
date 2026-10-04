@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -34,10 +33,10 @@ type Mirror struct {
 	LogGrace  time.Duration
 }
 
-// Cycle publishes attempt 1 of every listed run once it has completed. An
-// error that runScoped accepts aborts only its run's attempt; Cycle returns
-// these after trying every other run. Any other error stops the cycle, and
-// a local error that no retry fixes blocks it.
+// Cycle publishes each completed attempt of every listed run that is not on
+// disk. An error that runScoped accepts aborts only its attempt; Cycle
+// returns these after trying every other attempt. Any other error stops the
+// cycle, and a local error that no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	err := m.cycle(ctx)
 	var blocked failure.Blocked
@@ -305,15 +304,4 @@ func jsonArray(jobs []github.Job) []byte {
 		raws[i] = job.Raw
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
-}
-
-// PlanAttempts lists the attempts up to runAttempt that are not on disk, oldest first.
-func PlanAttempts(runAttempt int, onDisk []int) []int {
-	var missing []int
-	for n := 1; n <= runAttempt; n++ {
-		if !slices.Contains(onDisk, n) {
-			missing = append(missing, n)
-		}
-	}
-	return missing
 }
