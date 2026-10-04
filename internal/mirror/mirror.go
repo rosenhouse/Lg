@@ -66,47 +66,84 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runs, err := gh.ListRuns(ctx)
+	runs, err := m.listRuns(ctx, gh, repo)
 	if err != nil {
 		return err
 	}
-	dirs := make([]string, len(runs))
-	for i, run := range runs {
-		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
-			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
-		}
-		if dirs[i], err = m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)); err != nil {
-			return err
-		}
+	artifactsFailed, err := m.artifactPhase(ctx, gh, runs)
+	if err != nil {
+		return err
 	}
-	var failed []error
-	gone := make([]bool, len(runs))
-	for i, run := range runs {
-		runFailed, err := m.syncArtifacts(ctx, gh, dirs[i], run)
-		switch {
-		case errors.Is(err, errRunGone):
-			gone[i] = true
-		case err != nil:
-			return err
-		}
-		failed = append(failed, runFailed...)
+	attemptsFailed, err := m.attemptPhase(ctx, gh, runs)
+	if err != nil {
+		return err
 	}
-	for i, run := range runs {
-		if gone[i] {
-			continue
-		}
-		runFailed, err := m.syncRun(ctx, gh, dirs[i], run)
-		if err != nil {
-			return err
-		}
-		failed = append(failed, runFailed...)
-	}
-	return errors.Join(failed...)
+	return errors.Join(append(artifactsFailed, attemptsFailed...)...)
 }
 
-// syncRun publishes the run's planned attempts. It returns the errors that
+// listedRun is a listed run with its dir. gone marks a run not found.
+type listedRun struct {
+	github.Run
+	dir  string
+	gone bool
+}
+
+func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
+	runs, err := gh.ListRuns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	listed := make([]listedRun, len(runs))
+	for i, run := range runs {
+		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
+			return nil, fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
+		}
+		dir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
+		if err != nil {
+			return nil, err
+		}
+		listed[i] = listedRun{Run: run, dir: dir}
+	}
+	return listed, nil
+}
+
+// artifactPhase publishes every run's artifacts and marks the runs not found.
+// It returns the errors that runScoped accepts, and stops at any other.
+func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+	var failed []error
+	for i := range runs {
+		runFailed, err := m.syncArtifacts(ctx, gh, runs[i].dir, runs[i].Run)
+		switch {
+		case errors.Is(err, errRunGone):
+			runs[i].gone = true
+		case err != nil:
+			return nil, err
+		}
+		failed = append(failed, runFailed...)
+	}
+	return failed, nil
+}
+
+// attemptPhase publishes the attempts of every run that is not gone. It
+// returns the errors that runScoped accepts, and stops at any other.
+func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+	var failed []error
+	for _, run := range runs {
+		if run.gone {
+			continue
+		}
+		runFailed, err := m.syncAttempts(ctx, gh, run.dir, run.Run)
+		if err != nil {
+			return nil, err
+		}
+		failed = append(failed, runFailed...)
+	}
+	return failed, nil
+}
+
+// syncAttempts publishes the run's planned attempts. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) syncRun(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
 	onDisk, err := m.attemptsOnDisk(runDir)
 	if err != nil {
 		return nil, err
