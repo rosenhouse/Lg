@@ -97,6 +97,15 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("a sequence", "[1MB]", "want a size such as 500MB, not !!seq", Label("artifacts")),
 	)
 
+	DescribeTable("rejects an artifact_max_bytes of 0",
+		func(zero string) {
+			_, err := config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + zero + "\n"))
+			Expect(err).To(MatchError(config.Error("artifact_max_bytes must be at least 1B")))
+		},
+		Entry("bare", "0", Label("artifacts")),
+		Entry("with a unit", "0GB", Label("artifacts")),
+	)
+
 	DescribeTable("rejects a repo that is not owner/name",
 		func(repo string) {
 			_, err := config.Load(write("repo: '" + repo + "'\n"))

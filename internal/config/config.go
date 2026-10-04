@@ -100,6 +100,9 @@ func Load(path string) (Config, error) {
 	if cfg.LogGrace < 0 {
 		return Config{}, Error(fmt.Sprintf("log_grace must not be negative: %q", time.Duration(cfg.LogGrace)))
 	}
+	if cfg.ArtifactMaxBytes < 1 {
+		return Config{}, Error("artifact_max_bytes must be at least 1B")
+	}
 	if cfg.APIURL != "" {
 		if err := checkAPIURL(cfg.APIURL, cfg.Host); err != nil {
 			return Config{}, err
