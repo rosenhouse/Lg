@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,9 +91,17 @@ func Start(runID int64, stage string) *Server {
 	return s
 }
 
-func New() *Server {
+func New() *Server { return Listen(nil) }
+
+// Listen serves the API on l, or on a free port of 127.0.0.1 when l is nil.
+func Listen(l net.Listener) *Server {
 	s := &Server{runs: map[string]*run{}}
-	s.api = httptest.NewServer(s.record("api", s.routes()))
+	s.api = httptest.NewUnstartedServer(s.record("api", s.routes()))
+	if l != nil {
+		_ = s.api.Listener.Close()
+		s.api.Listener = l
+	}
+	s.api.Start()
 	s.blob = httptest.NewServer(s.record("blob", http.HandlerFunc(s.serveBlob)))
 	return s
 }
