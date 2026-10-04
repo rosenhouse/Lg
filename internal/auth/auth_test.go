@@ -105,11 +105,14 @@ var _ = Describe("GhTokenSource's timeout", Label("blocked"), func() {
 	It("is 30s by default", func() {
 		runner := &deadlineRunner{}
 
+		before := clock.Real{}.Now()
 		_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+		after := clock.Real{}.Now()
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.ok).To(BeTrue())
-		Expect(runner.deadline).To(BeTemporally("~", clock.Real{}.Now().Add(30*time.Second), 5*time.Second))
+		Expect(runner.deadline).To(BeTemporally(">=", before.Add(30*time.Second)))
+		Expect(runner.deadline).To(BeTemporally("<=", after.Add(30*time.Second)))
 	})
 
 	It("kills a gh that has not exited, and blocks as auth naming the timeout and `--insecure-storage`", func(ctx SpecContext) {
