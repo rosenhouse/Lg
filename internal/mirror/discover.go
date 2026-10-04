@@ -35,12 +35,12 @@ func (e *cappedError) Error() string {
 // listRange lists the runs q selects, halving its created range while GitHub
 // caps the listing.
 func listRange(ctx context.Context, gh github.Client, q github.RunQuery) (runs []github.Run, capped, err error) {
-	runs, total, err := gh.ListRuns(ctx, q)
-	if err != nil || total < github.ListingCap {
-		return runs, nil, err
+	l, err := gh.ListRuns(ctx, q)
+	if err != nil || !l.Capped {
+		return l.Runs, nil, err
 	}
 	if !q.Narrowable() {
-		return runs, &cappedError{total: total, from: q.From, to: q.To}, nil
+		return l.Runs, &cappedError{total: l.Total, from: q.From, to: q.To}, nil
 	}
 	mid := q.From.Add(q.To.Sub(q.From) / 2).Truncate(time.Second)
 	newer, newerCapped, err := listRange(ctx, gh, created(q, mid.Add(time.Second), q.To))
@@ -164,9 +164,9 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 // lists them over retention by created range instead, since the cycle
 // leaves out older runs anyway.
 func (m *Mirror) listStatus(ctx context.Context, gh github.Client, status string, now time.Time) (runs []github.Run, capped, err error) {
-	runs, total, err := gh.ListRuns(ctx, github.RunQuery{Status: status})
-	if err != nil || total < github.ListingCap {
-		return runs, nil, err
+	l, err := gh.ListRuns(ctx, github.RunQuery{Status: status})
+	if err != nil || !l.Capped {
+		return l.Runs, nil, err
 	}
 	return listRange(ctx, gh, github.RunQuery{Status: status, From: now.Add(-m.Retention), To: now, PerPage: 100})
 }

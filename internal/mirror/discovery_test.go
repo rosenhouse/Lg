@@ -100,6 +100,19 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 		Expect(ids).To(HaveLen(1001))
 	}, cycleTimeout)
 
+	It("lists a range once when GitHub serves a complete listing whose total_count reaches 1,000", func(ctx SpecContext) {
+		env := harness.InProcess()
+		to := harness.DefaultNow()
+		body := fmt.Sprintf(`{"total_count":%d,"workflow_runs":[%s]}`, github.ListingCap, scenario.ListedRun(1, to.Add(-day)))
+		env.Fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusOK, Body: body})
+
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), to.Add(-7*day), to)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capped).NotTo(HaveOccurred())
+		Expect(runs).To(HaveLen(1))
+		Expect(env.Fake.Requests()).To(HaveLen(1))
+	}, cycleTimeout)
+
 	It("gives the 1,000 runs GitHub lists of a second holding 1,001, and reports the rest as a run-scoped error", func(ctx SpecContext) {
 		env := harness.InProcess()
 		burst := harness.DefaultNow().Add(-day)

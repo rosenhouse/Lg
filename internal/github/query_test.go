@@ -2,6 +2,7 @@ package github_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -54,19 +55,22 @@ var _ = Describe("RunQuery", Label("discovery"), func() {
 var at = time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
 
 var _ = Describe("ListRuns", Label("discovery"), func() {
+	newClient := func(fake *fakegithub.Server) *github.HTTP {
+		return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
+	}
+
 	It("stops after the first page when total_count reaches ListingCap, since GitHub serves no more than that of a filtered listing", func() {
 		fake := fakegithub.New()
 		DeferCleanup(fake.Close)
-		from := time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
 		for i := range int64(github.ListingCap) {
-			fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*time.Minute)))
+			fake.AddListed(scenario.ListedRun(i+1, at.Add(time.Duration(i)*time.Minute)))
 		}
-		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
 
-		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: from, To: from.Add(day)})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(total).To(Equal(github.ListingCap))
-		Expect(runs).To(HaveLen(100))
+		Expect(listing).To(HaveField("Total", github.ListingCap))
+		Expect(listing).To(HaveField("Capped", true))
+		Expect(listing.Runs).To(HaveLen(100))
 		Expect(fake.Requests()).To(HaveLen(1))
 	})
 
@@ -76,28 +80,39 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 		for i := range int64(github.ListingCap + 1) {
 			fake.AddListed(scenario.ListedRun(i+1, at))
 		}
-		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
 
-		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: at, To: at})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(total).To(Equal(github.ListingCap + 1))
-		Expect(runs).To(HaveLen(github.ListingCap))
+		Expect(listing).To(HaveField("Total", github.ListingCap+1))
+		Expect(listing).To(HaveField("Capped", true))
+		Expect(listing.Runs).To(HaveLen(github.ListingCap))
 		Expect(fake.Requests()).To(HaveLen(10))
 	})
 
 	It("follows every page of a listing under ListingCap", func() {
 		fake := fakegithub.New()
 		DeferCleanup(fake.Close)
-		from := time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
 		for i := range int64(github.ListingCap - 1) {
-			fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*time.Minute)))
+			fake.AddListed(scenario.ListedRun(i+1, at.Add(time.Duration(i)*time.Minute)))
 		}
-		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
 
-		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: from, To: from.Add(day)})
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(total).To(Equal(github.ListingCap - 1))
-		Expect(runs).To(HaveLen(github.ListingCap - 1))
+		Expect(listing).To(HaveField("Total", github.ListingCap-1))
+		Expect(listing).To(HaveField("Capped", false))
+		Expect(listing.Runs).To(HaveLen(github.ListingCap - 1))
 		Expect(fake.Requests()).To(HaveLen(10))
+	})
+
+	It("reports a listing whose last page has no Link next as complete, whatever its total_count", func() {
+		fake := fakegithub.New()
+		DeferCleanup(fake.Close)
+		body := fmt.Sprintf(`{"total_count":%d,"workflow_runs":[%s]}`, github.ListingCap, scenario.ListedRun(1, at))
+		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusOK, Body: body})
+
+		listing, err := newClient(fake).ListRuns(context.Background(), github.RunQuery{From: at, To: at.Add(day)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(listing).To(HaveField("Capped", false))
+		Expect(listing.Runs).To(HaveLen(1))
 	})
 })

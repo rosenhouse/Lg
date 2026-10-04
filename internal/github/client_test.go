@@ -78,7 +78,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		},
 		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error {
-			_, _, err := c.ListRuns(ctx, github.RunQuery{})
+			_, err := c.ListRuns(ctx, github.RunQuery{})
 			return err
 		}),
 		Entry("GetRun", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRun(ctx, 1); return err }),
@@ -90,10 +90,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	)
 
 	It("lists runs with their fields and the body served for each", func() {
-		runs, _, err := client.ListRuns(context.Background(), github.RunQuery{})
+		listing, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(runs).To(HaveLen(1))
-		Expect(runs[0].Run).To(Equal(model.Run{
+		Expect(listing.Runs).To(HaveLen(1))
+		Expect(listing.Runs[0].Run).To(Equal(model.Run{
 			ID:           runID,
 			Name:         "lg-fixture",
 			Path:         ".github/workflows/lg-fixture.yml",
@@ -109,7 +109,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			PullRequests: []model.PullRequest{},
 			DisplayTitle: "Add lg-fixture workflow for recording Actions API shapes",
 		}))
-		Expect(runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
+		Expect(listing.Runs[0].Raw).To(MatchJSON(fake.Served("run.json")))
 	})
 
 	It("gets a run with its fields and the body served", Label("artifacts"), func() {
@@ -232,7 +232,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 	}, SpecTimeout(5*time.Second))
 
 	It("lists runs and jobs 100 per page", func() {
-		_, _, err := client.ListRuns(context.Background(), github.RunQuery{})
+		_, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
 		_, _, err = client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
@@ -246,9 +246,9 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Expect(fake.Load(37129738159, "logs-deleted")).To(Succeed())
 		fake.SetPageCap(1)
 
-		runs, _, err := client.ListRuns(context.Background(), github.RunQuery{})
+		listing, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(runs).To(HaveLen(2))
+		Expect(listing.Runs).To(HaveLen(2))
 		jobs, _, err := client.ListAttemptJobs(context.Background(), runID, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(jobs).To(HaveLen(12))
@@ -294,11 +294,11 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "example.com", MinVersion: tls.VersionTLS12},
 			}
 
-			runs, _, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
+			listing, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
 
 			if onAPIHost {
 				Expect(err).NotTo(HaveOccurred())
-				Expect(runs).To(HaveLen(2))
+				Expect(listing.Runs).To(HaveLen(2))
 				Expect(requests).To(Equal([]string{"/repos/o/r/actions/runs?per_page=100", "/repositories/1/actions/runs?page=2"}))
 			} else {
 				Expect(err).To(MatchError(apiURL + "/repos/o/r/actions/runs?per_page=100: Link next " + next + " is not on the API host"))
@@ -335,9 +335,9 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		runs, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
+		listing, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(runs).To(HaveLen(3))
+		Expect(listing.Runs).To(HaveLen(3))
 		Expect(requests).To(Equal([]string{
 			"/repos/o/r/actions/runs?per_page=100",
 			"/repositories/1/actions/runs?page=2",
@@ -358,7 +358,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		DeferCleanup(cancel)
-		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(ctx, github.RunQuery{})
+		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(ctx, github.RunQuery{})
 		Expect(err).To(MatchError(first + ": Link next " + first + " repeats an earlier page"))
 		Expect(requests).To(Equal(1))
 	})
