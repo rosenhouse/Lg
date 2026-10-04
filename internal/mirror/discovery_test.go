@@ -90,13 +90,43 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 			env.Fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*10*time.Minute)))
 		}
 
-		runs, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), from, to)
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), from, to)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(capped).NotTo(HaveOccurred())
 		ids := map[int64]bool{}
 		for _, run := range runs {
 			ids[run.ID] = true
 		}
 		Expect(ids).To(HaveLen(1001))
+	}, cycleTimeout)
+
+	It("gives the 1,000 runs GitHub lists of a second holding 1,001, and reports the rest as a run-scoped error", func(ctx SpecContext) {
+		env := harness.InProcess()
+		burst := harness.DefaultNow().Add(-day)
+		for i := range int64(1001) {
+			env.Fake.AddListed(scenario.ListedRun(i+1, burst))
+		}
+
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), burst.Add(-7*day), burst.Add(day))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(HaveLen(1000))
+		Expect(capped).To(MatchError(MatchRegexp(`^1001 runs were created in \[[0-9TZ:-]+, ` + burst.Format(time.RFC3339) + `\], and GitHub lists at most 1000$`)))
+		Expect(mirror.RunScoped(capped)).To(BeTrue())
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when over 1,000 runs were created in one second", Label("discovery"), func() {
+	It("syncs every other run, watches the 1,000 listed, and reports the rest", func(ctx SpecContext) {
+		env := harness.InProcess()
+		now := harness.DefaultNow()
+		for i := range int64(1001) {
+			env.Fake.AddListed(scenario.ListedRun(i+1, now.Add(-day)))
+		}
+		Expect(env.Fake.AddRun(cloneAt(2000, "after-attempt-1", now.Add(-2*day)))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(MatchError(ContainSubstring("1001 runs were created in")))
+		Expect(env.AttemptDirs(2000)).To(ConsistOf(HaveSuffix("/attempt-1")))
+		Expect(readWatch(env)["github.com"]).To(HaveLen(1000))
 	}, cycleTimeout)
 })
 

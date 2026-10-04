@@ -38,7 +38,20 @@ var _ = Describe("RunQuery", Label("discovery"), func() {
 	It("omits what is unset", func() {
 		Expect(github.RunQuery{Status: "in_progress"}.Values()).To(Equal(url.Values{"status": {"in_progress"}}))
 	})
+
+	DescribeTable("is narrowable with no created range, or with one of two seconds or more",
+		func(q github.RunQuery, narrowable bool) {
+			Expect(q.Narrowable()).To(Equal(narrowable))
+		},
+		Entry("a status alone", github.RunQuery{Status: "queued"}, true),
+		Entry("a day", github.RunQuery{From: at, To: at.Add(day)}, true),
+		Entry("two seconds", github.RunQuery{From: at, To: at.Add(2 * time.Second)}, true),
+		Entry("one second", github.RunQuery{From: at, To: at.Add(time.Second)}, false),
+		Entry("an instant", github.RunQuery{From: at, To: at}, false),
+	)
 })
+
+var at = time.Date(2026, 9, 26, 18, 0, 0, 0, time.UTC)
 
 var _ = Describe("ListRuns", Label("discovery"), func() {
 	It("stops after the first page when total_count reaches ListingCap, since GitHub serves no more than that of a filtered listing", func() {
@@ -55,6 +68,21 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 		Expect(total).To(Equal(github.ListingCap))
 		Expect(runs).To(HaveLen(100))
 		Expect(fake.Requests()).To(HaveLen(1))
+	})
+
+	It("follows every page of a capped listing that cannot be narrowed", func() {
+		fake := fakegithub.New()
+		DeferCleanup(fake.Close)
+		for i := range int64(github.ListingCap + 1) {
+			fake.AddListed(scenario.ListedRun(i+1, at))
+		}
+		client := github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
+
+		runs, total, err := client.ListRuns(context.Background(), github.RunQuery{From: at, To: at})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(total).To(Equal(github.ListingCap + 1))
+		Expect(runs).To(HaveLen(github.ListingCap))
+		Expect(fake.Requests()).To(HaveLen(10))
 	})
 
 	It("follows every page of a listing under ListingCap", func() {

@@ -289,18 +289,30 @@ func (q RunQuery) Values() url.Values {
 	return v
 }
 
+// Narrowable reports whether a capped listing of q can be narrowed: by a
+// created range when it has none, and by halving one of two seconds or
+// more, since GitHub filters created at whole seconds.
+func (q RunQuery) Narrowable() bool {
+	return q.From.IsZero() && q.To.IsZero() || q.To.Sub(q.From) >= 2*time.Second
+}
+
 // ListingCap is the most results GitHub serves for a filtered run listing.
 const ListingCap = 1000
 
 // ListRuns lists the runs q selects, newest first, with the listing's
 // total_count. PerPage defaults to 100. A listing whose total_count reaches
-// ListingCap stops after its first page, since GitHub serves no more of it;
-// the caller narrows q.
+// ListingCap stops after its first page when q is Narrowable, since GitHub
+// serves no more of it and the caller narrows q; otherwise it pages through
+// what GitHub serves.
 func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) ([]Run, int, error) {
 	if q.PerPage == 0 {
 		q.PerPage = 100
 	}
-	raws, total, _, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", ListingCap)
+	limit := 0
+	if q.Narrowable() {
+		limit = ListingCap
+	}
+	raws, total, _, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", limit)
 	if err != nil {
 		return nil, 0, err
 	}

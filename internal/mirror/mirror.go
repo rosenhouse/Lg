@@ -94,7 +94,7 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err := m.recordRescan(d.rescannedAt); err != nil {
 		return err
 	}
-	return errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.discarded}, d.failed, artifactsFailed, attemptsFailed)...)
+	return errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.failed}, artifactsFailed, attemptsFailed)...)
 }
 
 // saveWatch watches the runs the cycle left incomplete on disk.
@@ -228,7 +228,8 @@ func runScoped(err error) bool {
 	var statusErr *github.StatusError
 	var malformed *github.MalformedError
 	var corrupt *corruptFileError
-	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt)
+	var capped *cappedError
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt) || errors.As(err, &capped)
 }
 
 // errRunGone is a 404 on an attempt or its jobs, which skips the run.

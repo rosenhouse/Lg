@@ -16,31 +16,42 @@ import (
 )
 
 // Discover lists the runs created in [from, to], newest first, halving the
-// range while GitHub caps its listing.
-func Discover(ctx context.Context, gh github.Client, from, to time.Time) ([]github.Run, error) {
+// range while GitHub caps its listing. A one-second range that GitHub still
+// caps gives the runs GitHub lists and a cappedError, which runScoped accepts.
+func Discover(ctx context.Context, gh github.Client, from, to time.Time) (runs []github.Run, capped, err error) {
 	return listRange(ctx, gh, github.RunQuery{From: from, To: to, PerPage: 100})
+}
+
+// cappedError is a second in which more runs were created than GitHub lists.
+type cappedError struct {
+	total    int
+	from, to time.Time
+}
+
+func (e *cappedError) Error() string {
+	return fmt.Sprintf("%d runs were created in [%s, %s], and GitHub lists at most %d", e.total, e.from.UTC().Format(time.RFC3339), e.to.UTC().Format(time.RFC3339), github.ListingCap)
 }
 
 // listRange lists the runs q selects, halving its created range while GitHub
 // caps the listing.
-func listRange(ctx context.Context, gh github.Client, q github.RunQuery) ([]github.Run, error) {
+func listRange(ctx context.Context, gh github.Client, q github.RunQuery) (runs []github.Run, capped, err error) {
 	runs, total, err := gh.ListRuns(ctx, q)
 	if err != nil || total < github.ListingCap {
-		return runs, err
+		return runs, nil, err
 	}
-	if q.To.Sub(q.From) < 2*time.Second {
-		return nil, fmt.Errorf("%d runs were created in [%s, %s], and GitHub lists at most %d", total, q.From.UTC().Format(time.RFC3339), q.To.UTC().Format(time.RFC3339), github.ListingCap)
+	if !q.Narrowable() {
+		return runs, &cappedError{total: total, from: q.From, to: q.To}, nil
 	}
 	mid := q.From.Add(q.To.Sub(q.From) / 2).Truncate(time.Second)
-	newer, err := listRange(ctx, gh, created(q, mid.Add(time.Second), q.To))
+	newer, newerCapped, err := listRange(ctx, gh, created(q, mid.Add(time.Second), q.To))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	older, err := listRange(ctx, gh, created(q, q.From, mid))
+	older, olderCapped, err := listRange(ctx, gh, created(q, q.From, mid))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return append(newer, older...), nil
+	return append(newer, older...), errors.Join(newerCapped, olderCapped), nil
 }
 
 func created(q github.RunQuery, from, to time.Time) github.RunQuery {
@@ -97,9 +108,8 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
-	// failed holds the errors that runScoped accepts.
-	failed    []error
-	discarded error
+	// failed joins the errors that runScoped accepts.
+	failed error
 }
 
 // discover lists the runs the cycle syncs: those created in the backfill
@@ -109,33 +119,37 @@ type discovery struct {
 // would evict.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
-	listed, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
+	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
 	if err != nil {
 		return discovery{}, err
 	}
+	d := discovery{failed: capped}
 	for _, status := range nonTerminal {
-		runs, err := m.listStatus(ctx, gh, status, now)
+		runs, capped, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {
 			return discovery{}, err
 		}
 		listed = append(listed, runs...)
+		d.failed = errors.Join(d.failed, capped)
 	}
 	listed = slices.DeleteFunc(listed, func(run github.Run) bool { return pastRetention(run.CreatedAt, now, m.Retention) })
-	rescanned, rescannedAt, discarded, err := m.rescan(ctx, gh, repo, now)
+	rescanned, rescannedAt, reported, err := m.rescan(ctx, gh, repo, now)
 	if err != nil {
 		return discovery{}, err
 	}
 	listed = append(listed, rescanned...)
+	d.rescannedAt = rescannedAt
+	d.failed = errors.Join(d.failed, reported)
 	w.prune(now, m.Retention)
 	watched, failed, err := m.fetchWatched(ctx, gh, w, listed)
 	if err != nil {
 		return discovery{}, err
 	}
 	listed = append(listed, watched...)
+	d.failed = errors.Join(d.failed, failed)
 	if i := slices.IndexFunc(listed, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
 		return discovery{}, fmt.Errorf("run %d belongs to %q, not %q", listed[i].ID, listed[i].Repository.FullName, repo.FullName)
 	}
-	d := discovery{rescannedAt: rescannedAt, failed: failed, discarded: discarded}
 	for _, run := range merge(listed, p.unlisted(listed, repo)) {
 		dir, err := m.Store.FindRunDir(m.runDir(repo, run))
 		if err != nil {
@@ -149,10 +163,10 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 // listStatus lists the runs in status. When GitHub caps the listing, it
 // lists them over retention by created range instead, since the cycle
 // leaves out older runs anyway.
-func (m *Mirror) listStatus(ctx context.Context, gh github.Client, status string, now time.Time) ([]github.Run, error) {
+func (m *Mirror) listStatus(ctx context.Context, gh github.Client, status string, now time.Time) (runs []github.Run, capped, err error) {
 	runs, total, err := gh.ListRuns(ctx, github.RunQuery{Status: status})
 	if err != nil || total < github.ListingCap {
-		return runs, err
+		return runs, nil, err
 	}
 	return listRange(ctx, gh, github.RunQuery{Status: status, From: now.Add(-m.Retention), To: now, PerPage: 100})
 }
@@ -170,35 +184,36 @@ func ofRepo(run github.Run, repo github.Repo) bool {
 // that started and finished between two cycles gets its new attempts. A
 // record from the future, after a clock step, does not delay it. Runs not
 // on disk are left alone. The cycle records the rescan once it finishes.
-func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo, now time.Time) (onDisk []github.Run, rescannedAt time.Time, discarded, err error) {
+func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo, now time.Time) (onDisk []github.Run, rescannedAt time.Time, reported, err error) {
 	from, to, ok := rescanWindow(now, m.Backfill, m.Retention)
 	if !ok {
 		return nil, time.Time{}, nil, nil
 	}
 	var last rescan
-	discarded, err = newStateFile(m.Store, "rescan.json").read(func(raw []byte) error { return json.Unmarshal(raw, &last) })
+	discarded, err := newStateFile(m.Store, "rescan.json").read(func(raw []byte) error { return json.Unmarshal(raw, &last) })
 	since := now.Sub(last.RescannedAt)
 	if err != nil || (since >= 0 && since < rescanEvery) {
 		return nil, time.Time{}, discarded, err
 	}
-	runs, err := Discover(ctx, gh, from, to)
+	runs, capped, err := Discover(ctx, gh, from, to)
 	if err != nil {
 		return nil, time.Time{}, discarded, err
 	}
+	reported = errors.Join(discarded, capped)
 	for _, run := range runs {
 		dir, err := m.Store.FindRunDir(m.runDir(repo, run))
 		if err != nil {
-			return nil, time.Time{}, discarded, err
+			return nil, time.Time{}, reported, err
 		}
 		has, err := m.Store.Has(dir)
 		if err != nil {
-			return nil, time.Time{}, discarded, err
+			return nil, time.Time{}, reported, err
 		}
 		if has {
 			onDisk = append(onDisk, run)
 		}
 	}
-	return onDisk, now, discarded, nil
+	return onDisk, now, reported, nil
 }
 
 // recordRescan writes state/rescan.json when the cycle rescanned.
@@ -211,9 +226,9 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 
 // fetchWatched gets each watched run that no listing named, since a run
 // created before the backfill window appears in no listing once it
-// completes. A run GitHub no longer has leaves the watch list. It returns
+// completes. A run GitHub no longer has leaves the watch list. It joins
 // the errors that runScoped accepts, leaving their runs watched.
-func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed []error, err error) {
+func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed, err error) {
 	for _, id := range slices.Sorted(maps.Keys(w.runs)) {
 		if slices.ContainsFunc(listed, func(run github.Run) bool { return run.ID == id }) {
 			delete(w.runs, id)
@@ -224,7 +239,7 @@ func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, l
 		case errors.Is(err, github.ErrNotFound):
 			delete(w.runs, id)
 		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d: %w", id, err))
+			failed = errors.Join(failed, fmt.Errorf("run %d: %w", id, err))
 		case err != nil:
 			return nil, nil, err
 		default:
