@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
@@ -188,9 +189,43 @@ var _ = Describe("mirror.Cycle when a zip does not match its digest", Label("art
 		Expect(env.ArtifactDirs(runID)).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		recorded, err := os.ReadFile(filepath.Join(recordings.Dir(runID, "after-attempt-1"), "artifacts", flakyReport+".zip"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip"))).To(Equal(recorded))
+		Expect(os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip"))).To(Equal(recordedZip(flakyReport)))
+	}, cycleTimeout)
+})
+
+func recordedZip(artifactID string) []byte {
+	GinkgoHelper()
+	recorded, err := os.ReadFile(filepath.Join(recordings.Dir(runID, "after-attempt-1"), "artifacts", artifactID+".zip"))
+	Expect(err).NotTo(HaveOccurred())
+	return recorded
+}
+
+var _ = DescribeTable("mirror.Cycle when a zip fails transiently publishes no artifact dir and no tombstone for it, and the next cycle downloads it", Label("artifacts"),
+	func(ctx SpecContext, host, match string, status int) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail(host, match, fakegithub.Fault{Status: status, Times: 1})
+
+		Expect(env.Sync(ctx)).To(BeTransient())
+		Expect(env.ArtifactDirs(runID)).To(HaveLen(3))
+		Expect(env.Tombstones()).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(os.ReadFile(filepath.Join(artifactDir(env, runID, flakyReport), "artifact.zip"))).To(Equal(recordedZip(flakyReport)))
+	},
+	Entry("API 500", "api", "artifacts/"+flakyReport+"/zip", http.StatusInternalServerError, cycleTimeout),
+	Entry("blob 500", "blob", flakyReportBlob, http.StatusInternalServerError, cycleTimeout),
+	Entry("blob 403", "blob", flakyReportBlob, http.StatusForbidden, cycleTimeout),
+)
+
+var _ = Describe("mirror.Cycle when a zip is rate limited", Label("artifacts"), func() {
+	It("blocks the cycle and writes no tombstone for it", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "30"}})
+
+		Expect(env.Sync(ctx)).To(BeBlocked(failure.RateLimit))
+		Expect(env.Tombstones()).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
 	}, cycleTimeout)
 })
 
