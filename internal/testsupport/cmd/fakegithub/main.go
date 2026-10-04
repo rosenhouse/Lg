@@ -50,7 +50,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		stages[runID] = stage
 	}
 
-	l, err := net.Listen("tcp", *addr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	l, err := (&net.ListenConfig{}).Listen(ctx, "tcp", *addr)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "fakegithub: %s\n", err)
 		return 1
@@ -65,8 +67,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	server.SetPageCap(*pageCap)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	_, _ = fmt.Fprintf(stdout, "fakegithub: serving %s\n", server.URL())
 	<-ctx.Done()
 	return 0

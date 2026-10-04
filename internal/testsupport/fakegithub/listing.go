@@ -33,9 +33,9 @@ func (s *Server) serveRuns(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	status := query.Get("status")
 	var matched []json.RawMessage
 	for _, run := range runs {
-		status := query.Get("status")
 		if created.Contains(run.CreatedAt) && (status == "" || status == run.Status || status == run.Conclusion) {
 			matched = append(matched, run.body)
 		}

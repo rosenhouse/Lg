@@ -38,7 +38,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 	}
 
 	It("serves each -run at its stage on -addr, paging at -page-cap", func() {
-		free, err := net.Listen("tcp", "127.0.0.1:0")
+		free, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
 		addr := free.Addr().String()
 		Expect(free.Close()).To(Succeed())
@@ -48,7 +48,9 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Eventually(session.Out, "5s").Should(gbytes.Say("serving " + regexp.QuoteMeta(url) + "\n"))
 
 		_, body := get(url + "/repos/rosenhouse/lg/actions/runs?per_page=100")
-		var runs struct{ WorkflowRuns []struct{ ID int64 } `json:"workflow_runs"` }
+		var runs struct {
+			WorkflowRuns []struct{ ID int64 } `json:"workflow_runs"`
+		}
 		Expect(json.Unmarshal(body, &runs)).To(Succeed())
 		Expect(runs.WorkflowRuns).To(HaveExactElements(HaveField("ID", int64(37129738159)), HaveField("ID", int64(37129390741))))
 

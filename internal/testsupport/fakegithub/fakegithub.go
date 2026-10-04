@@ -50,8 +50,8 @@ type Server struct {
 // run is a recorded run at one stage.
 type run struct {
 	dir string
-	// downloads holds each status.txt line by its path, and blobs by the
-	// file record.sh wrote its body to.
+	// downloads holds each download in status.txt by its path, and blobs
+	// by the file record.sh wrote its body to.
 	downloads map[string]download
 	blobs     map[string]download
 }
@@ -124,10 +124,9 @@ func (s *Server) LoadDir(runID int64, dir string) error {
 	}
 	r := &run{dir: dir, downloads: map[string]download{}, blobs: map[string]download{}}
 	for _, line := range lines {
-		d := download{Line: line, file: downloadFile(dir, line.Path)}
-		r.downloads[line.Path] = d
-		if d.file != "" {
-			r.blobs[d.file] = d
+		if file := downloadFile(dir, line.Path); file != "" {
+			r.downloads[line.Path] = download{Line: line, file: file}
+			r.blobs[file] = r.downloads[line.Path]
 		}
 	}
 	id := strconv.FormatInt(runID, 10)

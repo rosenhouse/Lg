@@ -136,9 +136,9 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
 // host, or the recorded body with the recorded status.
 func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 	_, path, _ := strings.Cut(r.URL.Path, "/actions/")
-	for id, run := range s.loadedByID() {
+	for id, run := range s.loaded() {
 		d, ok := run.downloads[path]
-		if !ok || d.file == "" {
+		if !ok {
 			continue
 		}
 		if d.First == http.StatusFound {
@@ -189,15 +189,7 @@ func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func (s *Server) loaded() []*run {
-	var runs []*run
-	for _, run := range s.loadedByID() {
-		runs = append(runs, run)
-	}
-	return runs
-}
-
-func (s *Server) loadedByID() map[string]*run {
+func (s *Server) loaded() map[string]*run {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	runs := make(map[string]*run, len(s.runs))
