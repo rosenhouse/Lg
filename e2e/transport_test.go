@@ -38,6 +38,13 @@ var _ = Describe("lg sync", Label("transport"), func() {
 		}
 	})
 
+	It("asks gh for the token of the configured host", func() {
+		env.WriteConfig(fake.URL(), "host: ghe.corp.example")
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		Expect(env.GH().Calls()).To(Equal([]string{"auth token --hostname ghe.corp.example"}))
+	})
+
 	It("never sends Authorization to the blob host", func() {
 		Expect(env.Sync()).To(gexec.Exit(0))
 		Expect(fake.Requests()).To(ContainElement(HaveField("Host", "blob")))

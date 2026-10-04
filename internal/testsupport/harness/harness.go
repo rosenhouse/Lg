@@ -60,12 +60,15 @@ func (e *Env) Sh(script string) *gexec.Session {
 	return e.start(exec.CommandContext(ginkgo.GinkgoT().Context(), "sh", "-c", script))
 }
 
-// WriteConfig writes config.yaml for rosenhouse/lg served at apiURL.
-func (e *Env) WriteConfig(apiURL string) {
+// WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
+func (e *Env) WriteConfig(apiURL string, lines ...string) {
 	path, err := config.File(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(gomega.Succeed())
 	yaml := fmt.Sprintf("repo: rosenhouse/lg\napi_url: %s\n", apiURL)
+	for _, line := range lines {
+		yaml += line + "\n"
+	}
 	gomega.Expect(os.WriteFile(path, []byte(yaml), 0o644)).To(gomega.Succeed())
 }
 
