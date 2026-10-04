@@ -32,6 +32,8 @@ type Mirror struct {
 	Repo      string
 	Clock     clock.Clock
 	LogGrace  time.Duration
+
+	ArtifactMaxBytes int64
 }
 
 // Cycle publishes each completed attempt of every listed run that is not on

@@ -169,6 +169,11 @@ func QueueJob(r Run, attempt int, name string) Run {
 	return out
 }
 
+// Expire lists the artifact as expired.
+func Expire(r Run, artifactID int64) Run {
+	return r.copy()
+}
+
 // WithoutRunAttempt drops run_attempt from the listed run.
 func WithoutRunAttempt(r Run) Run {
 	out := r.copy()

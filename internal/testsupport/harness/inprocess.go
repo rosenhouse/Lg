@@ -96,6 +96,14 @@ func (e *InProcessEnv) AttemptDirs(runID int64) []string {
 	return dirs
 }
 
+// ArtifactDirs lists the published artifact dirs of a run.
+func (e *InProcessEnv) ArtifactDirs(runID int64) []string {
+	ginkgo.GinkgoHelper()
+	dirs, err := filepath.Glob(filepath.Join(e.Data(), "*", "*", "*", "runs", "*", fmt.Sprintf("%d_*", runID), "artifacts", "*"))
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	return dirs
+}
+
 // Tombstones lists every tombstone under data/.
 func (e *InProcessEnv) Tombstones() []string {
 	ginkgo.GinkgoHelper()
