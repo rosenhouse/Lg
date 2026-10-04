@@ -113,6 +113,20 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 		Expect(env.Fake.Requests()).To(HaveLen(1))
 	}, cycleTimeout)
 
+	It("narrows a range with sub-second bounds down to the whole second GitHub caps", func(ctx SpecContext) {
+		env := harness.InProcess()
+		burst := harness.DefaultNow().Add(-day)
+		for i := range int64(1001) {
+			env.Fake.AddListed(scenario.ListedRun(i+1, burst))
+		}
+
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), burst.Add(-900*time.Millisecond), burst.Add(time.Second))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(HaveLen(1000))
+		second := burst.Format(time.RFC3339)
+		Expect(capped).To(MatchError(ContainSubstring("[" + second + ", " + second + "]")))
+	}, cycleTimeout)
+
 	It("gives the 1,000 runs GitHub lists of a second holding 1,001, and reports the rest as a run-scoped error", func(ctx SpecContext) {
 		env := harness.InProcess()
 		burst := harness.DefaultNow().Add(-day)

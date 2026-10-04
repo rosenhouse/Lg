@@ -16,10 +16,10 @@ import (
 )
 
 // Discover lists the runs created in [from, to], newest first, halving the
-// range while GitHub caps its listing. A one-second range that GitHub still
+// range while GitHub caps its listing. A single second that GitHub still
 // caps gives the runs GitHub lists and a cappedError, which runScoped accepts.
 func Discover(ctx context.Context, gh github.Client, from, to time.Time) (runs []github.Run, capped, err error) {
-	return listRange(ctx, gh, github.RunQuery{From: from, To: to, PerPage: 100})
+	return listRange(ctx, gh, created(github.RunQuery{}, from, to))
 }
 
 // cappedError is a second in which more runs were created than GitHub lists.
@@ -54,8 +54,9 @@ func listRange(ctx context.Context, gh github.Client, q github.RunQuery) (runs [
 	return append(newer, older...), errors.Join(newerCapped, olderCapped), nil
 }
 
+// created bounds q by whole seconds, which is how GitHub filters created.
 func created(q github.RunQuery, from, to time.Time) github.RunQuery {
-	q.From, q.To = from, to
+	q.From, q.To = from.Truncate(time.Second), to.Truncate(time.Second)
 	return q
 }
 
@@ -168,7 +169,7 @@ func (m *Mirror) listStatus(ctx context.Context, gh github.Client, status string
 	if err != nil || !l.Capped {
 		return l.Runs, nil, err
 	}
-	return listRange(ctx, gh, github.RunQuery{Status: status, From: now.Add(-m.Retention), To: now, PerPage: 100})
+	return listRange(ctx, gh, created(github.RunQuery{Status: status}, now.Add(-m.Retention), now))
 }
 
 func (m *Mirror) runDir(repo github.Repo, run github.Run) string {

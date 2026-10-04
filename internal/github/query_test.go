@@ -40,14 +40,14 @@ var _ = Describe("RunQuery", Label("discovery"), func() {
 		Expect(github.RunQuery{Status: "in_progress"}.Values()).To(Equal(url.Values{"status": {"in_progress"}}))
 	})
 
-	DescribeTable("is narrowable with no created range, or with one of two seconds or more",
+	DescribeTable("is narrowable with no created range, or with one whose bounds are different seconds",
 		func(q github.RunQuery, narrowable bool) {
 			Expect(q.Narrowable()).To(Equal(narrowable))
 		},
 		Entry("a status alone", github.RunQuery{Status: "queued"}, true),
 		Entry("a day", github.RunQuery{From: at, To: at.Add(day)}, true),
 		Entry("two seconds", github.RunQuery{From: at, To: at.Add(2 * time.Second)}, true),
-		Entry("one second", github.RunQuery{From: at, To: at.Add(time.Second)}, false),
+		Entry("one second", github.RunQuery{From: at, To: at.Add(time.Second)}, true),
 		Entry("an instant", github.RunQuery{From: at, To: at}, false),
 	)
 })

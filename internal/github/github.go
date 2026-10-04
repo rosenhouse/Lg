@@ -290,10 +290,10 @@ func (q RunQuery) Values() url.Values {
 }
 
 // Narrowable reports whether a capped listing of q can be narrowed: by a
-// created range when it has none, and by halving one of two seconds or
-// more, since GitHub filters created at whole seconds.
+// created range when it has none, and by halving one whose bounds are
+// different seconds, since GitHub filters created at whole seconds.
 func (q RunQuery) Narrowable() bool {
-	return q.From.IsZero() && q.To.IsZero() || q.To.Sub(q.From) >= 2*time.Second
+	return q.From.IsZero() && q.To.IsZero() || q.To.After(q.From)
 }
 
 // ListingCap is the most results GitHub serves for a filtered run listing.
