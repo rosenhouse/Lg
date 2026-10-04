@@ -181,6 +181,22 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 	}, cycleTimeout)
 })
 
+var _ = Describe("mirror.Cycle when a listed run's artifacts listing returns 404", Label("artifacts"), func() {
+	It("skips that run without a tombstone and publishes the others", func(ctx SpecContext) {
+		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
+			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusNotFound})
+			env.Fake.Fail("api", fmt.Sprintf("runs/%d/attempts/1", failing), fakegithub.Fault{Status: http.StatusNotFound})
+
+			Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+			Expect(env.ArtifactDirs(other)).NotTo(BeEmpty())
+			Expect(env.AttemptDirs(other)).To(HaveLen(1))
+			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
+			Expect(env.AttemptDirs(failing)).To(BeEmpty())
+			Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring(strconv.FormatInt(failing, 10)))))
+		})
+	}, cycleTimeout)
+})
+
 var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run still publishes the other run and returns the failure, naming its run", Label("failures"),
 	func(ctx SpecContext, host, match string, fault fakegithub.Fault, failure string) {
 		env := harness.InProcess()
