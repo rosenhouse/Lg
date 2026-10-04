@@ -91,6 +91,21 @@ var _ = Describe("lg sync at after-attempt-1, then -2, then -3", Label("artifact
 	})
 })
 
+var _ = Describe("lg sync with artifact_max_bytes in config.yaml", Label("artifacts"), func() {
+	It("tombstones a larger artifact as too_large without requesting its zip", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL(), "artifact_max_bytes: 700")
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		artifacts := filepath.Join(env.Data(), fixtureRunDir, "artifacts")
+		Expect(readJSON(filepath.Join(artifacts, "11276272069_pass-artifact", "artifact.zip.tombstone"))).To(HaveKeyWithValue("reason", "too_large"))
+		Expect(filepath.Join(artifacts, "11276272069_pass-artifact", "artifact.zip")).NotTo(BeAnExistingFile())
+		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", HaveSuffix("/artifacts/11276272069/zip"))))
+		Expect(filepath.Join(artifacts, "11276401837_flaky-report", "artifact.zip")).To(BeARegularFile())
+	})
+})
+
 func readJSON(path string) map[string]any {
 	GinkgoHelper()
 	raw, err := os.ReadFile(path)
