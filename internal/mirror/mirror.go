@@ -33,8 +33,8 @@ type Mirror struct {
 }
 
 // Cycle publishes attempt 1 of every listed run once it has completed. A
-// Transient error aborts only its run's attempt; Cycle returns it after
-// trying every other run.
+// Transient error or an error status aborts only its run's attempt; Cycle
+// returns these after trying every other run. Any other error stops the cycle.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
@@ -45,7 +45,7 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var pending []error
+	var failed []error
 	for _, run := range runs {
 		// The API's spelling names the repo dir, so it must be the configured repo.
 		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
@@ -55,27 +55,28 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		target := layout.AttemptDir(runDir, 1)
 		published, err := m.Store.Has(target)
 		if err != nil {
-			return err
+			return errors.Join(append(failed, err)...)
 		}
 		if published {
 			continue
 		}
 		err = m.publishAttempt(ctx, gh, run, 1, target)
 		var transient failure.Transient
+		var statusErr *github.StatusError
 		switch {
-		case errors.As(err, &transient):
-			pending = append(pending, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
+		case errors.As(err, &transient), errors.As(err, &statusErr):
+			failed = append(failed, fmt.Errorf("run %d attempt 1: %w", run.ID, err))
 		case err != nil:
-			return err
+			return errors.Join(append(failed, err)...)
 		}
 	}
-	return errors.Join(pending...)
+	return errors.Join(failed...)
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
-	if errors.Is(err, github.ErrNotFound) {
-		return nil // The run is gone.
+	if runGone(err) {
+		return nil
 	}
 	if err != nil {
 		return err
@@ -86,7 +87,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return nil
 	}
 	jobs, jobsSource, err := gh.ListAttemptJobs(ctx, run.ID, n)
-	if errors.Is(err, github.ErrNotFound) {
+	if runGone(err) {
 		return nil
 	}
 	if err != nil {
@@ -105,6 +106,10 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 		return errors.Join(err, unit.Abort())
 	}
 	return nil
+}
+
+func runGone(err error) bool {
+	return errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrGone)
 }
 
 func (m *Mirror) stageAttempt(ctx context.Context, gh github.Client, s *staged, run, attempt github.Run, attemptSource github.Source, jobs []github.Job, jobsSource github.Source) error {

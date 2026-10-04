@@ -133,6 +133,37 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 	}, cycleTimeout)
 })
 
+var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 410", Label("failures"), func() {
+	It("skips that run without a tombstone and publishes the others", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusGone})
+
+		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
+		Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring("37129738159"))))
+	}, cycleTimeout)
+})
+
+var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run still publishes the other run and returns the failure, naming its run", Label("failures"),
+	func(ctx SpecContext, host, match string) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail(host, match, fakegithub.Fault{Status: http.StatusBadRequest})
+
+		err := env.Mirror.Cycle(ctx)
+		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: 400 Bad Request$`)))
+		Expect(err).NotTo(BeTransient())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
+	},
+	Entry("an API 400 on the attempt", "api", "runs/37129738159/attempts/1", cycleTimeout),
+	Entry("an API 400 on a log", "api", "jobs/111222299886/logs", cycleTimeout),
+)
+
 var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 	It("records lg_format, lg_version, fetched_at, host, repo, run_id, attempt, run_created_at, run_attempt_at_fetch and sources with the API URL, status, bytes and sha256, and never a blob URL", func(ctx SpecContext) {
 		env := harness.InProcess()
