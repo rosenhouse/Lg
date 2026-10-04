@@ -164,7 +164,7 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		s.mu.Lock()
 		s.requests = append(s.requests, Request{Host: host, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
 		holds := s.holdsOf(r.URL.Path)
-		status := s.faultStatus(host, r.URL.Path)
+		status := s.takeFault(host, r.URL.Path)
 		s.mu.Unlock()
 		for _, held := range holds {
 			select {
@@ -193,8 +193,9 @@ func (s *Server) holdsOf(path string) []*hold {
 	return holds
 }
 
-// faultStatus is the status of the first fault matching the request, or 0.
-func (s *Server) faultStatus(host, path string) int {
+// takeFault returns the status of the first matching fault with answers
+// left, or 0, and counts this answer.
+func (s *Server) takeFault(host, path string) int {
 	for _, f := range s.faults {
 		if f.host == host && strings.HasSuffix(path, f.match) && (f.Times == 0 || f.answered < f.Times) {
 			f.answered++
