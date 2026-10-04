@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
@@ -80,5 +81,19 @@ var _ = Describe("lg sync with LG_TEST_NOW", Label("failures"), func() {
 		}
 		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
 		Expect(fetch.FetchedAt).To(BeTemporally("~", time.Date(2026, 10, 3, 15, 31, 0, 0, time.UTC), harness.ExitTimeout))
+	})
+})
+
+var _ = Describe("lg sync with log_grace in config.yaml", Label("failures"), func() {
+	It("waits that long after an attempt's updated_at before tombstoning its missing logs", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(37129738159, "logs-deleted")
+		// updated_at is 14:30:22, so the default LG_TEST_NOW of 18:00 is within 4h.
+		env.WriteConfig(fake.URL(), "log_grace: 4h")
+
+		session := env.Sync()
+		Expect(session).To(gexec.Exit(1))
+		Expect(session.Err).To(gbytes.Say("within log_grace"))
+		Expect(os.ReadDir(env.Data())).To(BeEmpty())
 	})
 })
