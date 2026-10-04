@@ -14,10 +14,10 @@ import (
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
-// syncArtifacts publishes the run's listed artifacts that are not on disk.
-// It returns errRunGone for a run that is not found, and the errors that
-// runScoped accepts, and stops at any other.
-func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
+// syncArtifacts lists the run's artifacts into run and publishes those not
+// on disk. It returns errRunGone for a run that is not found, and the errors
+// that runScoped accepts, and stops at any other.
+func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
 	artifacts, listing, err := gh.ListArtifacts(ctx, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
 		return nil, errRunGone
@@ -28,12 +28,13 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, runDir str
 	if err != nil {
 		return nil, err
 	}
+	run.artifacts, run.listing = artifacts, listing
 	var failed []error
 	for _, artifact := range artifacts {
-		target := layout.ArtifactDir(runDir, artifact.ID, artifact.Name)
+		target := layout.ArtifactDir(run.dir, artifact.ID, artifact.Name)
 		done, err := m.Store.Has(target)
 		if err == nil && !done {
-			err = m.publishArtifact(ctx, gh, run, listing, artifact, target)
+			err = m.publishArtifact(ctx, gh, run.Run, listing, artifact, target)
 		}
 		switch {
 		case runScoped(err):

@@ -82,11 +82,14 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	return errors.Join(append(artifactsFailed, attemptsFailed...)...)
 }
 
-// listedRun is a listed run with its dir. gone marks a run not found.
+// listedRun is a listed run with its dir and this cycle's listing of its
+// artifacts. gone marks a run not found.
 type listedRun struct {
 	github.Run
-	dir  string
-	gone bool
+	dir       string
+	gone      bool
+	artifacts []github.Artifact
+	listing   github.Source
 }
 
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
@@ -113,7 +116,7 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for i := range runs {
-		runFailed, err := m.syncArtifacts(ctx, gh, runs[i].dir, runs[i].Run)
+		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i])
 		switch {
 		case errors.Is(err, errRunGone):
 			runs[i].gone = true
@@ -133,7 +136,7 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 		if run.gone {
 			continue
 		}
-		runFailed, err := m.syncAttempts(ctx, gh, run.dir, run.Run)
+		runFailed, err := m.syncAttempts(ctx, gh, run)
 		if err != nil {
 			return nil, err
 		}
@@ -144,14 +147,14 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 
 // syncAttempts publishes the run's planned attempts. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
-	onDisk, err := m.attemptsOnDisk(runDir)
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run listedRun) ([]error, error) {
+	onDisk, err := m.attemptsOnDisk(run.dir)
 	if err != nil {
 		return nil, err
 	}
 	var failed []error
-	for _, n := range Plan(run, onDisk) {
-		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(runDir, n))
+	for _, n := range Plan(run.Run, onDisk) {
+		err := m.publishAttempt(ctx, gh, run, n, layout.AttemptDir(run.dir, n))
 		switch {
 		case errors.Is(err, errRunGone):
 			return failed, nil
@@ -209,7 +212,7 @@ func runScoped(err error) bool {
 // errRunGone is a 404 on a run's artifacts, an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
-func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
+func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run listedRun, n int, target string) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
 		return errRunGone
@@ -240,13 +243,16 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run githu
 	s := &staged{unit: unit, sources: map[string]source{}, carriedForward: []int64{}}
 	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
 	if err == nil {
-		err = s.writeJSON("jobs.json", jsonArray(jobs), jobsSource)
+		err = s.writeJSON("jobs.json", jsonArray(jobs, func(j github.Job) json.RawMessage { return j.Raw }), jobsSource)
+	}
+	if err == nil {
+		err = s.writeJSON("artifacts.json", jsonArray(run.artifacts, func(a github.Artifact) json.RawMessage { return a.Raw }), run.listing)
 	}
 	if err == nil {
 		err = m.stageJobs(ctx, gh, s, attempt, jobs)
 	}
 	if err == nil {
-		err = m.writeFetch(s, run, attempt)
+		err = m.writeFetch(s, run.Run, attempt)
 	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
@@ -399,11 +405,11 @@ func (s *staged) download(name, url string, maxBytes int64, get func(io.Writer) 
 	return writeTombstone(s.unit, filepath.Dir(name), ts)
 }
 
-// jsonArray joins the jobs as served into one array, as if GitHub had sent a single page.
-func jsonArray(jobs []github.Job) []byte {
-	raws := make([][]byte, len(jobs))
-	for i, job := range jobs {
-		raws[i] = job.Raw
+// jsonArray joins the elements as served into one array, as if GitHub had sent a single page.
+func jsonArray[T any](elements []T, raw func(T) json.RawMessage) []byte {
+	raws := make([][]byte, len(elements))
+	for i, e := range elements {
+		raws[i] = raw(e)
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
 }
