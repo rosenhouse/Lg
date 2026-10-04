@@ -74,7 +74,7 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 			}
 		}
 		Expect(files).To(Equal(map[string]int{
-			"attempt.json": 1, "jobs.json": 1, "job.json": 12, "log.txt": 10, "log.txt.tombstone": 2,
+			"attempt.json": 1, "jobs.json": 1, "fetch.json": 1, "job.json": 12, "log.txt": 10, "log.txt.tombstone": 2,
 		}))
 		recorded, err := os.ReadFile(filepath.Join(fakegithub.Recording(fixtureRun, "after-attempt-1"), "attempt-1/logs/111221289888.txt"))
 		Expect(err).NotTo(HaveOccurred())
