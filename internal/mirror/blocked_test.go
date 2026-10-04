@@ -30,7 +30,7 @@ func blockedAs(kind failure.Kind, retryAt time.Time) types.GomegaMatcher {
 	return SatisfyAll(HaveField("Kind", kind), HaveField("RetryAt", BeTemporally("==", retryAt)))
 }
 
-// failAttempts answers the first request for any run's attempt 1 with f.
+// failAttempts answers every request for a run's attempt 1 with f.
 func failAttempts(f fakegithub.Fault) func(*harness.InProcessEnv) {
 	return func(env *harness.InProcessEnv) { env.Fake.Fail("api", "/attempts/1", f) }
 }
@@ -44,8 +44,6 @@ func requestsEndingIn(env *harness.InProcessEnv, suffix string) []fakegithub.Req
 	}
 	return matched
 }
-
-var secondaryLimit = `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits","status":"403"}`
 
 var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request", Label("blocked"),
 	func(ctx SpecContext, inject func(*harness.InProcessEnv), want types.GomegaMatcher) {
@@ -81,7 +79,7 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		failAttempts(fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "30"}}),
 		blockedAs(failure.RateLimit, harness.DefaultNow().Add(30*time.Second)), cycleTimeout),
 	Entry("secondary-limit 403 with X-RateLimit-Remaining above 0, no Retry-After and 'secondary rate limit' in its message: rate_limit 60s later",
-		failAttempts(fakegithub.Fault{Status: http.StatusForbidden, Headers: map[string]string{"X-RateLimit-Remaining": "4321"}, Body: secondaryLimit}),
+		failAttempts(fakegithub.Fault{Status: http.StatusForbidden, Headers: map[string]string{"X-RateLimit-Remaining": "4321"}, Body: fakegithub.SecondaryLimitBody}),
 		blockedAs(failure.RateLimit, harness.DefaultNow().Add(time.Minute)), cycleTimeout),
 	Entry("429 on a log, once its unit is staged: rate_limit",
 		func(env *harness.InProcessEnv) {
