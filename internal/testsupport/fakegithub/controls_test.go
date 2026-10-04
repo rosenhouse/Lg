@@ -119,4 +119,66 @@ var _ = Describe("Server controls", func() {
 			SatisfyAll(HaveField("Status", http.StatusFound), HaveField("Authorization", true)),
 		))
 	})
+
+	Describe("faults that break the connection", Label("failures"), func() {
+		// download follows the redirect and reads the whole body, giving up after a second.
+		download := func(ctx context.Context) ([]byte, error) {
+			ctx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return io.ReadAll(resp.Body)
+		}
+		recorded := func() []byte { return fake.Served("attempt-1/logs/111221289888.txt") }
+
+		It("Drop closes the connection without a response", func(ctx SpecContext) {
+			fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Drop: true})
+
+			_, err := download(ctx)
+			Expect(err).To(MatchError(io.EOF))
+		}, SpecTimeout(5*time.Second))
+
+		It("Truncate declares the whole body's Content-Length and sends half of it", func(ctx SpecContext) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true})
+
+			body, err := download(ctx)
+			Expect(err).To(MatchError(io.ErrUnexpectedEOF))
+			Expect(body).To(Equal(recorded()[:len(recorded())/2]))
+		}, SpecTimeout(5*time.Second))
+
+		It("Stall sends nothing until the client gives up", func(ctx SpecContext) {
+			fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Stall: true})
+
+			_, err := download(ctx)
+			Expect(err).To(MatchError(context.DeadlineExceeded))
+		}, SpecTimeout(5*time.Second))
+
+		It("Truncate with Stall sends half the body, then nothing until the client gives up", func(ctx SpecContext) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true, Stall: true})
+
+			body, err := download(ctx)
+			Expect(err).To(MatchError(context.DeadlineExceeded))
+			Expect(body).To(Equal(recorded()[:len(recorded())/2]))
+		}, SpecTimeout(5*time.Second))
+	})
+
+	DescribeTable("Fail on the blob host answers with blob storage's XML error", Label("failures"),
+		func(status int, code string) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Status: status})
+
+			redirect := fetch(fake.URL() + logPath)
+			blob := fetch(redirect.header.Get("Location"))
+			Expect(blob.status).To(Equal(status))
+			Expect(blob.header.Get("Content-Type")).To(Equal("application/xml"))
+			Expect(string(blob.body)).To(ContainSubstring("<Code>" + code + "</Code>"))
+		},
+		Entry("404", http.StatusNotFound, "BlobNotFound"),
+		Entry("403", http.StatusForbidden, "AuthenticationFailed"),
+		Entry("503", http.StatusServiceUnavailable, "ServerBusy"),
+	)
 })
