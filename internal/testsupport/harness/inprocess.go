@@ -66,6 +66,7 @@ func InProcess() *InProcessEnv {
 			Tokens:           staticToken(fakegh.Token),
 			NewGitHub:        func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token, clk) },
 			Store:            s,
+			State:            filepath.Join(root, "state"),
 			Host:             "github.com",
 			Repo:             "rosenhouse/lg",
 			Clock:            clk,

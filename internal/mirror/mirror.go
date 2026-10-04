@@ -29,6 +29,7 @@ type Mirror struct {
 	Tokens           auth.TokenSource
 	NewGitHub        func(token string) github.Client
 	Store            *store.Store
+	State            string
 	Host             string
 	Repo             string
 	Clock            clock.Clock
@@ -71,7 +72,11 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	artifactsFailed, err := m.artifactPhase(ctx, gh, runs)
+	p, err := loadPending(m.State)
+	if err != nil {
+		return err
+	}
+	artifactsFailed, err := m.artifactPhase(ctx, gh, runs, p)
 	if err != nil {
 		return err
 	}
@@ -113,10 +118,10 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 
 // artifactPhase publishes every run's artifacts. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
 	var failed []error
 	for i := range runs {
-		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i])
+		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i], p)
 		if err != nil {
 			return nil, err
 		}

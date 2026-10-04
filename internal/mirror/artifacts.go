@@ -21,7 +21,7 @@ import (
 // syncArtifacts lists the run's artifacts into run and publishes its retry
 // set. It returns the errors that runScoped accepts, and stops at any other.
 // A run not found is skipped.
-func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
+func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
 	artifacts, listing, err := gh.ListArtifacts(ctx, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
 		return nil, nil
@@ -33,21 +33,26 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 		return nil, err
 	}
 	run.artifactsListed, run.artifacts, run.listing = true, artifacts, listing
-	retry, err := m.retrySet(*run, nil)
+	retry, err := m.retrySet(*run, p.runs[run.ID])
+	if err == nil {
+		err = p.set(run.ID, retry)
+	}
 	if err != nil {
 		return nil, err
 	}
 	var failed []error
+	var unpublished []github.Artifact
 	for _, artifact := range retry {
 		err := m.publishArtifact(ctx, gh, run.Run, listing, artifact, layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
 		switch {
 		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, artifact.ID, err))
+			unpublished = append(unpublished, artifact)
 		case err != nil:
 			return nil, err
 		}
 	}
-	return failed, nil
+	return failed, p.set(run.ID, unpublished)
 }
 
 func (m *Mirror) publishArtifact(ctx context.Context, gh github.Client, run github.Run, listing github.Source, artifact github.Artifact, target string) error {
@@ -191,14 +196,23 @@ func readArtifacts(path string) ([]github.Artifact, error) {
 		return nil, err
 	}
 	var raws []json.RawMessage
-	if err := json.Unmarshal(raw, &raws); err != nil {
+	err = json.Unmarshal(raw, &raws)
+	var artifacts []github.Artifact
+	if err == nil {
+		artifacts, err = decodeArtifacts(raws)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	return artifacts, nil
+}
+
+func decodeArtifacts(raws []json.RawMessage) ([]github.Artifact, error) {
 	artifacts := make([]github.Artifact, len(raws))
 	for i, raw := range raws {
 		artifacts[i].Raw = raw
 		if err := json.Unmarshal(raw, &artifacts[i].Artifact); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			return nil, err
 		}
 	}
 	return artifacts, nil

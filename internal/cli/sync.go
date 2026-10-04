@@ -51,6 +51,7 @@ func (syncCmd) Run(deps *Deps) error {
 			return deps.NewGitHub(api, cfg.Repo, token, deps.Clock)
 		},
 		Store:            s,
+		State:            roots.State,
 		Host:             cfg.Host,
 		Repo:             cfg.Repo,
 		Clock:            deps.Clock,

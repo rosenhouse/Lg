@@ -65,6 +65,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock)
 			},
 			Store:            s,
+			State:            filepath.Join(root, "state"),
 			Host:             "github.com",
 			Repo:             "rosenhouse/lg",
 			Clock:            clock.NewFake(harness.DefaultNow()),
