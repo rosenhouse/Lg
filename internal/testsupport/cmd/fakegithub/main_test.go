@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -95,11 +96,71 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(err).To(MatchError(context.DeadlineExceeded))
 	})
 
+	// fetch GETs url, whatever its status.
+	fetch := func(url string) (int, http.Header, string) {
+		GinkgoHelper()
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+		Expect(err).NotTo(HaveOccurred())
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		return resp.StatusCode, resp.Header, string(body)
+	}
+
+	It("sets the rate limit from -rate-limit and the clock from -now", Label("blocked"), func() {
+		now := time.Date(2027, 1, 2, 3, 4, 5, 0, time.UTC)
+		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-rate-limit", "100,12", "-now", now.Format(time.RFC3339))
+		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
+
+		header, _ := get(url + "/repos/rosenhouse/lg")
+		Expect(header).To(SatisfyAll(
+			HaveKeyWithValue("X-Ratelimit-Limit", []string{"100"}),
+			HaveKeyWithValue("X-Ratelimit-Remaining", []string{"11"}),
+			HaveKeyWithValue("X-Ratelimit-Reset", []string{strconv.FormatInt(now.Add(time.Hour).Unix(), 10)}),
+			HaveKeyWithValue("Date", []string{now.Format(http.TimeFormat)}),
+		))
+	})
+
+	It("injects each rate-limit -fail kind", Label("blocked"), func() {
+		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0",
+			"-fail", "api,/repos/rosenhouse/lg,ratelimit,1",
+			"-fail", "api,/repos/rosenhouse/lg,secondary,1",
+			"-fail", "api,/repos/rosenhouse/lg,retry-after=30,1")
+		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+		repo := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents())) + "/repos/rosenhouse/lg"
+
+		status, header, _ := fetch(repo)
+		Expect(status).To(Equal(http.StatusForbidden))
+		Expect(header.Get("X-RateLimit-Remaining")).To(Equal("0"))
+		status, header, body := fetch(repo)
+		Expect(status).To(Equal(http.StatusForbidden))
+		Expect(header.Get("X-RateLimit-Remaining")).NotTo(Equal("0"))
+		Expect(body).To(ContainSubstring("You have exceeded a secondary rate limit"))
+		status, header, _ = fetch(repo)
+		Expect(status).To(Equal(http.StatusTooManyRequests))
+		Expect(header.Get("Retry-After")).To(Equal("30"))
+	})
+
+	DescribeTable("exits 2 naming a bad -rate-limit or -now",
+		func(flag, value, message string) {
+			session := start("-run", "37129390741=after-attempt-1", flag, value, "-addr", "127.0.0.1:0")
+			Eventually(session, "5s").Should(gexec.Exit(2))
+			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(message)))
+		},
+		Entry("one field", "-rate-limit", "100", `-rate-limit "100": want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT`, Label("blocked")),
+		Entry("more remaining than the limit", "-rate-limit", "100,101", `-rate-limit "100,101": want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT`, Label("blocked")),
+		Entry("a negative remaining", "-rate-limit", "100,-1", `-rate-limit "100,-1": want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT`, Label("blocked")),
+		Entry("a -now that is not RFC 3339", "-now", "yesterday", `-now "yesterday": want an RFC 3339 time`, Label("blocked")),
+	)
+
 	DescribeTable("exits 2 naming a -fail that is not HOST,MATCH,KIND[,TIMES]",
 		func(fail string) {
 			session := start("-run", "37129390741=after-attempt-1", "-fail", fail, "-addr", "127.0.0.1:0")
 			Eventually(session, "5s").Should(gexec.Exit(2))
-			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(`-fail "` + fail + `": want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall or truncate+stall`)))
+			Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(`-fail "` + fail + `": want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall, truncate+stall, ratelimit, secondary or retry-after=SECONDS`)))
 		},
 		Entry("too few fields", "api,jobs/1/logs", Label("failures")),
 		Entry("too many fields", "api,jobs/1/logs,502,1,2", Label("failures")),
@@ -107,6 +168,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Entry("an unknown kind", "api,jobs/1/logs,slow", Label("failures")),
 		Entry("a status that is not one", "api,jobs/1/logs,99", Label("failures")),
 		Entry("TIMES that is not a count", "api,jobs/1/logs,502,-1", Label("failures")),
+		Entry("a Retry-After that is not a count", "api,jobs/1/logs,retry-after=-1", Label("blocked")),
 	)
 
 	It("exits 1 naming an -addr already in use", func() {
