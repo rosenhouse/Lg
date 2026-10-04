@@ -24,7 +24,7 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if p.Null {
 		sep = "\x00"
 	}
-	if err := store.CheckFormat(roots.Store); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := store.Check(roots.Store); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {

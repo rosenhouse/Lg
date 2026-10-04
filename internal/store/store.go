@@ -17,7 +17,11 @@ import (
 	"syscall"
 )
 
-const format = "lg-store 1"
+const (
+	format     = "lg-store 1"
+	rgignore   = "state/\ntmp/\n"
+	unitPrefix = "unit-"
+)
 
 var (
 	ErrExists = errors.New("unit already exists")
@@ -47,38 +51,96 @@ type Store struct {
 	data, tmp string
 }
 
-// Init creates a store at root unless root already has a FORMAT. FORMAT is
-// written last, so a store with one is complete.
-func Init(root string) error {
-	formatFile := filepath.Join(root, "FORMAT")
-	if _, err := os.Lstat(formatFile); !errors.Is(err, fs.ErrNotExist) {
+// Init makes root a store, finishing one that an earlier Init left part
+// way. Callers hold state/write.lock. FORMAT is published last, so a store
+// with one is complete.
+func Init(root string) error { return initFS(OSFS{}, root) }
+
+func initFS(fsys fsOps, root string) error {
+	if err := check(fsys, root); err != nil {
 		return err
 	}
-	for _, dir := range []string{"data", "state", "tmp"} {
-		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
+	for _, dir := range []string{s.data, filepath.Join(root, "state"), s.tmp} {
+		if _, err := mkdirAll(fsys, dir, true); err != nil {
 			return err
 		}
 	}
-	if err := writeNew(filepath.Join(root, ".rgignore"), "state/\ntmp/\n"); err != nil {
+	formatFile := filepath.Join(root, "FORMAT")
+	if done, err := s.Has(formatFile); done || err != nil {
 		return err
 	}
-	return writeNew(formatFile, format+"\n")
+	unit, err := s.NewUnit()
+	if err != nil {
+		return err
+	}
+	if has, err := s.Has(filepath.Join(root, ".rgignore")); err != nil {
+		return err
+	} else if !has {
+		if err := unit.place(".rgignore", rgignore, root); err != nil {
+			return err
+		}
+	}
+	if err := unit.place("FORMAT", format+"\n", root); err != nil {
+		return err
+	}
+	return unit.Abort()
 }
 
-// writeNew writes content to path unless path exists.
-func writeNew(path, content string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if errors.Is(err, fs.ErrExist) {
+// Check returns an error unless root is an lg-store 1 store, or holds only
+// what Init writes before FORMAT.
+func Check(root string) error { return check(OSFS{}, root) }
+
+func check(fsys fsOps, root string) error {
+	err := checkFormat(root)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	entries, err := fsys.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := f.WriteString(content); err != nil {
-		_ = f.Close()
-		return err
+	for _, e := range entries {
+		own, err := isOwn(fsys, root, e.Name())
+		if err != nil {
+			return err
+		}
+		if !own {
+			return fmt.Errorf("%s has no FORMAT and holds files lg did not write; point LG_HOME at an empty or new dir", root)
+		}
 	}
-	return f.Close()
+	return nil
+}
+
+// isOwn reports whether name, in a root without FORMAT, is what Init or a
+// writer waiting on state/write.lock left there.
+func isOwn(fsys fsOps, root, name string) (bool, error) {
+	var ownChild func(string) bool
+	switch name {
+	case ".rgignore":
+		return true, nil
+	case "data":
+		ownChild = func(string) bool { return false }
+	case "state":
+		ownChild = func(child string) bool { return child == "write.lock" }
+	case "tmp":
+		ownChild = isUnit
+	default:
+		return false, nil
+	}
+	children, err := fsys.ReadDir(filepath.Join(root, name))
+	if err != nil {
+		return false, err
+	}
+	for _, child := range children {
+		if !ownChild(child.Name()) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func Open(root string) (*Store, error) { return openFS(OSFS{}, root) }
@@ -86,7 +148,7 @@ func Open(root string) (*Store, error) { return openFS(OSFS{}, root) }
 // openFS opens the store at root through fsys. It refuses a FORMAT other than
 // lg-store 1, and a tmp/ that cannot be renamed into data/.
 func openFS(fsys fsOps, root string) (*Store, error) {
-	if err := CheckFormat(root); err != nil {
+	if err := checkFormat(root); err != nil {
 		return nil, err
 	}
 	s := &Store{fs: fsys, data: filepath.Join(root, "data"), tmp: filepath.Join(root, "tmp")}
@@ -104,9 +166,9 @@ func openFS(fsys fsOps, root string) (*Store, error) {
 	return s, nil
 }
 
-// CheckFormat returns ErrFormat unless root's FORMAT is lg-store 1, and
+// checkFormat returns ErrFormat unless root's FORMAT is lg-store 1, and
 // fs.ErrNotExist when root has no FORMAT.
-func CheckFormat(root string) error {
+func checkFormat(root string) error {
 	formatFile := filepath.Join(root, "FORMAT")
 	got, err := os.ReadFile(formatFile)
 	if err != nil {
@@ -129,7 +191,7 @@ func (s *Store) Has(target string) (bool, error) {
 	return err == nil, err
 }
 
-// Sweep removes everything in tmp/: units that a dead process left behind.
+// Sweep removes the units in tmp/, which a dead process left behind.
 // Callers hold state/write.lock, so no live unit is there.
 func (s *Store) Sweep() error {
 	entries, err := s.fs.ReadDir(s.tmp)
@@ -137,6 +199,9 @@ func (s *Store) Sweep() error {
 		return err
 	}
 	for _, e := range entries {
+		if !isUnit(e.Name()) {
+			continue
+		}
 		if err := s.fs.RemoveAll(filepath.Join(s.tmp, e.Name())); err != nil {
 			return err
 		}
@@ -152,12 +217,14 @@ type Unit struct {
 }
 
 func (s *Store) NewUnit() (*Unit, error) {
-	dir := filepath.Join(s.tmp, "unit-"+strconv.FormatUint(rand.Uint64(), 36))
+	dir := filepath.Join(s.tmp, unitPrefix+strconv.FormatUint(rand.Uint64(), 36))
 	if err := s.fs.Mkdir(dir); err != nil {
 		return nil, err
 	}
 	return &Unit{fs: s.fs, dir: dir}, nil
 }
+
+func isUnit(name string) bool { return strings.HasPrefix(name, unitPrefix) }
 
 // Publish makes the unit durable, then renames it to target, which must not exist.
 func (s *Store) Publish(u *Unit, target string) error {
@@ -205,6 +272,26 @@ func mkdirAll(fsys fsOps, path string, syncParents bool) ([]string, error) {
 		}
 	}
 	return missing, nil
+}
+
+// place writes name in the unit, then renames it into dir, which must not
+// have one, so a reader sees no file or the whole of it.
+func (u *Unit) place(name, content, dir string) error {
+	w, err := u.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, content); err != nil {
+		_ = w.Close()
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	if err := u.fs.Rename(filepath.Join(u.dir, name), filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	return u.fs.SyncDir(dir)
 }
 
 // Abort removes the staged unit.

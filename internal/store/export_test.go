@@ -2,4 +2,7 @@ package store
 
 type FS = fsOps
 
-var OpenFS = openFS
+var (
+	OpenFS = openFS
+	InitFS = initFS
+)
