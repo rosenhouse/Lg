@@ -115,14 +115,14 @@ func check(fsys fsOps, root string) error {
 	return nil
 }
 
-// isOwn reports whether name, in a root without FORMAT, is what Init or a
-// writer waiting on state/write.lock left there.
+// isOwn reports whether name, in a root without FORMAT, is what Init, a
+// writer waiting on state/write.lock, mkfs or Finder left there.
 func isOwn(fsys fsOps, root, name string) (bool, error) {
 	var ownChild func(string) bool
 	switch name {
-	case ".rgignore":
+	case ".rgignore", ".DS_Store":
 		return true, nil
-	case "data":
+	case "data", "lost+found":
 		ownChild = func(string) bool { return false }
 	case "state":
 		ownChild = func(child string) bool { return child == "write.lock" }

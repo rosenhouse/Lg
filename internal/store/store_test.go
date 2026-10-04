@@ -71,6 +71,8 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "state", "write.lock"), []byte("1\n"), 0o644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, ".rgignore"), []byte("state/\n"), 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(root, "lost+found"), 0o700)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(root, ".DS_Store"), []byte("finder"), 0o644)).To(Succeed())
 
 		Expect(store.Check(root)).To(Succeed())
 		Expect(store.Init(root)).To(Succeed())
@@ -93,6 +95,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Entry("a file in data/", "data/notes.txt"),
 		Entry("a file in state/ other than write.lock", "state/notes.txt"),
 		Entry("a file in tmp/ that is not a unit", "tmp/project/notes.txt"),
+		Entry("a file in lost+found/", "lost+found/#12"),
 	)
 
 	It("leaves no FORMAT or .rgignore, or a complete one, when filesystem op k and every later op fail, for every k, and a later Init and Open succeed", func() {
