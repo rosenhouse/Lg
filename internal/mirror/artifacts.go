@@ -53,9 +53,9 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run listed
 		return nil, nil, err
 	}
 	run.artifacts = listing
-	retry, err := m.retrySet(run, p.runs[run.ID].Artifacts)
-	if runScoped(err) {
-		return listing, append(failed, fmt.Errorf("run %d artifacts: %w", run.ID, err)), nil
+	retry, unreadable, err := m.retrySet(run, p.runs[run.ID].Artifacts)
+	if unreadable != nil {
+		failed = append(failed, fmt.Errorf("run %d artifacts: %w", run.ID, unreadable))
 	}
 	if err == nil {
 		err = p.set(run.Run, retry)
@@ -210,19 +210,17 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run, o origin) error {
 }
 
 // retrySet is the run's artifacts that have no dir on disk: those in this
-// cycle's listing, then in pending, then in each attempt's snapshot. A
-// re-run of all jobs deletes artifacts, so one that failed transiently may
-// be in no later listing.
-func (m *Mirror) retrySet(run listedRun, pending []candidate) ([]candidate, error) {
-	snapshots, err := m.snapshots(run.dir)
+// cycle's listing, then in pending, then in each attempt's snapshot. It skips
+// the snapshots that do not parse and gives their errors as unreadable.
+func (m *Mirror) retrySet(run listedRun, pending []candidate) (retry []candidate, unreadable, err error) {
+	snapshots, unreadable, err := m.snapshots(run.dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var listed []candidate
 	if run.artifacts != nil {
 		listed = run.artifacts.candidates()
 	}
-	var retry []candidate
 	seen := map[int64]bool{}
 	for _, c := range slices.Concat(listed, pending, snapshots) {
 		if seen[c.Artifact.ID] {
@@ -231,35 +229,38 @@ func (m *Mirror) retrySet(run listedRun, pending []candidate) ([]candidate, erro
 		seen[c.Artifact.ID] = true
 		done, err := m.Store.Has(layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !done {
 			retry = append(retry, c)
 		}
 	}
-	return retry, nil
+	return retry, unreadable, nil
 }
 
 // snapshots gives the artifacts in each attempt's artifacts.json, oldest
-// attempt first. An attempt that lg published before it kept snapshots has none.
-func (m *Mirror) snapshots(runDir string) ([]candidate, error) {
+// attempt first. It skips the snapshots that do not parse and gives their
+// errors as unreadable.
+func (m *Mirror) snapshots(runDir string) (all []candidate, unreadable, err error) {
 	attempts, err := m.attemptsOnDisk(runDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	slices.Sort(attempts)
-	var all []candidate
 	for _, n := range attempts {
 		snapshot, err := readSnapshot(layout.AttemptDir(runDir, n))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
+		var corrupt *corruptFileError
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case errors.As(err, &corrupt):
+			unreadable = errors.Join(unreadable, err)
+		case err != nil:
+			return nil, nil, err
+		default:
+			all = append(all, snapshot.candidates()...)
 		}
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, snapshot.candidates()...)
 	}
-	return all, nil
+	return all, unreadable, nil
 }
 
 // readSnapshot reads an attempt's artifacts.json, with its origin from fetch.json.

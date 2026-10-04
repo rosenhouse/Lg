@@ -177,12 +177,11 @@ var _ = Describe("state/pending-artifacts.json", Label("artifacts"), func() {
 	}, cycleTimeout)
 })
 
-var _ = Describe("mirror.Cycle when an attempt's artifacts.json is not JSON", Label("artifacts"), func() {
+var _ = Describe("mirror.Cycle when an attempt's snapshot does not parse", Label("artifacts"), func() {
 	It("fails only that run and publishes the others", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(os.Chmod(attemptDir(env, runID, 1), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(attemptDir(env, runID, 1), "artifacts.json"), []byte("<"), 0o644)).To(Succeed())
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 
@@ -192,6 +191,25 @@ var _ = Describe("mirror.Cycle when an attempt's artifacts.json is not JSON", La
 		Expect(errors.As(err, new(*github.MalformedError))).To(BeFalse(), "a local file is not a GitHub response")
 		Expect(env.AttemptDirs(deletedRun)).To(HaveLen(1))
 	}, cycleTimeout)
+
+	DescribeTable("still retries the run's pending artifacts and publishes its later attempts",
+		func(ctx SpecContext, file string) {
+			env := harness.InProcess()
+			Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+			env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+			Expect(env.Sync(ctx)).To(BeTransient())
+			Expect(os.WriteFile(filepath.Join(attemptDir(env, runID, 1), file), []byte("<"), 0o644)).To(Succeed())
+			Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
+
+			err := env.Sync(ctx)
+			Expect(err).To(MatchError(ContainSubstring(file)))
+			Expect(mirror.RunScoped(err)).To(BeTrue())
+			Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "deleted"))
+			Expect(env.AttemptDirs(runID)).To(HaveLen(3))
+		},
+		Entry("artifacts.json", "artifacts.json", cycleTimeout),
+		Entry("fetch.json", "fetch.json", cycleTimeout),
+	)
 })
 
 var _ = Describe("an artifact published from state/pending-artifacts.json", Label("artifacts"), func() {
