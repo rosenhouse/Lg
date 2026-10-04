@@ -88,3 +88,7 @@ func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
 	}
 	return ArtifactDownload
 }
+
+func (a Artifact) SHA256() (string, bool) {
+	return "", false
+}
