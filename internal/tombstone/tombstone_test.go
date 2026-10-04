@@ -161,7 +161,7 @@ var _ = Describe("FromZipError over the after-expiry recording of run 3712939074
 		artifact := recordedArtifact(run, "after-attempt-1", 11275917910)
 		Expect(artifact.ExpiresAt).To(BeTemporally("<", recordedAt))
 
-		t, err := tombstone.FromZipError(recordedZipError(run, "after-expiry", 11275917910), artifact.ExpiresAt, recordedAt)
+		t, err := tombstone.FromZipError(recordedZipError(run, "after-expiry", 11275917910), artifact, grace, recordedAt)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(t.Reason).To(Equal(tombstone.Deleted))
 		Expect(t.HTTPStatus).To(HaveValue(Equal(http.StatusNotFound)))
@@ -171,7 +171,7 @@ var _ = Describe("FromZipError over the after-expiry recording of run 3712939074
 	It("tombstones 11276327411 as expired on its 410", func() {
 		artifact := recordedArtifact(run, "after-attempt-3", 11276327411)
 
-		t, err := tombstone.FromZipError(recordedZipError(run, "after-expiry", 11276327411), artifact.ExpiresAt, recordedAt)
+		t, err := tombstone.FromZipError(recordedZipError(run, "after-expiry", 11276327411), artifact, grace, recordedAt)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(t.Reason).To(Equal(tombstone.Expired))
 		Expect(t.HTTPStatus).To(HaveValue(Equal(http.StatusGone)))
@@ -180,13 +180,22 @@ var _ = Describe("FromZipError over the after-expiry recording of run 3712939074
 })
 
 var _ = Describe("FromZipError", Label("artifacts"), func() {
-	const zipURL = "https://api.github.com/repos/o/r/actions/artifacts/1/zip"
-	expiresAt := time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
+	const zipURL = "https://api.github.com/repos/o/r/actions/artifacts/11275917910/zip"
+	// expiresIn1Day is artifact 11275917910 as listed at after-attempt-1.
+	expiresIn1Day := model.Artifact{
+		ID:        11275917910,
+		CreatedAt: time.Date(2026, 10, 3, 14, 23, 2, 0, time.UTC),
+		ExpiresAt: time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC),
+	}
+	graceEnd := expiresIn1Day.CreatedAt.Add(grace)
+	blobMissing := func() *github.StatusError {
+		return &github.StatusError{URL: zipURL, Status: 404, Message: "The specified blob does not exist.", Blob: true}
+	}
 
 	DescribeTable("tombstones artifact.zip with the failed hop's status and message",
 		func(lost *github.StatusError, now time.Time, reason tombstone.Reason) {
 			lost.URL = zipURL
-			t, err := tombstone.FromZipError(lost, expiresAt, now)
+			t, err := tombstone.FromZipError(lost, expiresIn1Day, grace, now)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(asJSON(t)).To(Equal(map[string]any{
 				"lg_format":     1.0,
@@ -198,16 +207,27 @@ var _ = Describe("FromZipError", Label("artifacts"), func() {
 				"message":       lost.Message,
 			}))
 		},
-		Entry("410 is expired", &github.StatusError{Status: 410, Message: "Gone"}, expiresAt.Add(-time.Hour), tombstone.Expired),
-		Entry("404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(-time.Second), tombstone.Deleted),
-		Entry("404 at expires_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt, tombstone.Deleted),
-		Entry("404 once expires_at has passed is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(time.Second), tombstone.Deleted),
-		Entry("blob 404 is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, expiresAt.Add(-time.Second), tombstone.Deleted),
+		Entry("410 is expired", &github.StatusError{Status: 410, Message: "Gone"}, expiresIn1Day.CreatedAt, tombstone.Expired),
+		Entry("API 404 is deleted at once", &github.StatusError{Status: 404, Message: "Not Found"}, expiresIn1Day.CreatedAt, tombstone.Deleted),
+		Entry("API 404 once expires_at has passed is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresIn1Day.ExpiresAt.Add(time.Second), tombstone.Deleted),
+		Entry("blob 404 after log_grace is deleted", blobMissing(), graceEnd.Add(time.Second), tombstone.Deleted),
+	)
+
+	DescribeTable("calls a blob 404 within log_grace of created_at Transient",
+		func(now time.Time) {
+			lost := blobMissing()
+			_, err := tombstone.FromZipError(lost, expiresIn1Day, grace, now)
+			Expect(err).To(BeTransient())
+			Expect(err).To(MatchError(lost))
+			Expect(err).To(MatchError(ContainSubstring("within log_grace")))
+		},
+		Entry("at created_at", expiresIn1Day.CreatedAt),
+		Entry("at log_grace", graceEnd),
 	)
 
 	DescribeTable("gives back any other error",
 		func(other error) {
-			_, err := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
+			_, err := tombstone.FromZipError(other, expiresIn1Day, grace, graceEnd.Add(time.Hour))
 			Expect(err).To(Equal(other))
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 500}}),

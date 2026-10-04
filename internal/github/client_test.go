@@ -188,6 +188,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			ID:          11276272069,
 			Name:        "pass-artifact",
 			SizeInBytes: 751,
+			CreatedAt:   time.Date(2026, 10, 3, 14, 23, 1, 0, time.UTC),
 			ExpiresAt:   time.Date(2027, 1, 1, 14, 22, 54, 0, time.UTC),
 			Digest:      "sha256:9b47ee49e71ab033f37453c4d1ffb4cb5c1608046721a8bcb15f5d1d70508a61",
 		}))
