@@ -240,6 +240,20 @@ func (s *Store) Has(target string) (bool, error) {
 // FindRunDir gives the dir beside runDir that holds the same run, named
 // <id>_<slugs> with slugs that may differ, or runDir when there is none.
 func (s *Store) FindRunDir(runDir string) (string, error) {
+	date, name := filepath.Split(runDir)
+	id, _, _ := strings.Cut(name, "_")
+	entries, err := s.fs.ReadDir(date)
+	if errors.Is(err, fs.ErrNotExist) {
+		return runDir, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), id+"_") {
+			return filepath.Join(date, e.Name()), nil
+		}
+	}
 	return runDir, nil
 }
 
