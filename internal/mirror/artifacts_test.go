@@ -297,30 +297,3 @@ var _ = Describe("an artifact's fetch.json", Label("artifacts"), func() {
 		Expect(fetch.PRNumbers).To(Equal([]int{42, 7}))
 	}, cycleTimeout)
 })
-
-var _ = Describe("mirror.Cycle when a zip's blob 404s", Label("artifacts"), func() {
-	flakyReportCreatedAt := time.Date(2026, 10, 3, 14, 22, 59, 0, time.UTC)
-
-	It("publishes no artifact dir within log_grace of the artifact's created_at", func(ctx SpecContext) {
-		env := harness.InProcess()
-		env.Clock.Set(flakyReportCreatedAt.Add(30 * time.Minute))
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		env.Fake.Fail("blob", flakyReportBlob, fakegithub.Fault{Status: http.StatusNotFound})
-
-		Expect(env.Sync(ctx)).To(BeTransient())
-		Expect(env.ArtifactDirs(runID)).NotTo(ContainElement(ContainSubstring("/" + flakyReport + "_")))
-	}, cycleTimeout)
-
-	It("writes a deleted tombstone past log_grace", func(ctx SpecContext) {
-		env := harness.InProcess()
-		env.Clock.Set(flakyReportCreatedAt.Add(time.Hour + time.Second))
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
-		env.Fake.Fail("blob", flakyReportBlob, fakegithub.Fault{Status: http.StatusNotFound})
-
-		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(readZipTombstone(env, runID, flakyReport)).To(SatisfyAll(
-			HaveKeyWithValue("reason", "deleted"),
-			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
-		))
-	}, cycleTimeout)
-})

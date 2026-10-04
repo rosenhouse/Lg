@@ -10,7 +10,6 @@ import (
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
-	"github.com/rosenhouse/lg/internal/model"
 	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
@@ -115,14 +114,12 @@ var _ = Describe("FromError", Label("failures"), func() {
 
 var _ = Describe("FromZipError", Label("artifacts"), func() {
 	const zipURL = "https://api.github.com/repos/o/r/actions/artifacts/1/zip"
-	createdAt := time.Date(2026, 10, 3, 14, 23, 2, 0, time.UTC)
 	expiresAt := time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
-	artifact := model.Artifact{CreatedAt: createdAt, ExpiresAt: expiresAt}
 
 	DescribeTable("tombstones artifact.zip with the failed hop's status and message",
 		func(lost *github.StatusError, now time.Time, reason tombstone.Reason) {
 			lost.URL = zipURL
-			t, err := tombstone.FromZipError(lost, artifact, grace, now)
+			t, err := tombstone.FromZipError(lost, expiresAt, now)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(asJSON(t)).To(Equal(map[string]any{
 				"lg_format":     1.0,
@@ -138,31 +135,18 @@ var _ = Describe("FromZipError", Label("artifacts"), func() {
 		Entry("404 once expires_at has passed is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(time.Second), tombstone.Expired),
 		Entry("404 at expires_at is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt, tombstone.Expired),
 		Entry("404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(-time.Second), tombstone.Deleted),
-		Entry("API 404 within log_grace of created_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, createdAt, tombstone.Deleted),
-		Entry("blob 404 past log_grace of created_at is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, createdAt.Add(grace+time.Second), tombstone.Deleted),
-	)
-
-	DescribeTable("calls a blob 404 within log_grace of created_at Transient",
-		func(now time.Time) {
-			lost := &github.StatusError{URL: zipURL, Status: 404, Blob: true}
-			_, err := tombstone.FromZipError(lost, artifact, grace, now)
-			Expect(err).To(BeTransient())
-			Expect(err).To(MatchError(lost))
-			Expect(err).To(MatchError(ContainSubstring("within log_grace")))
-		},
-		Entry("at log_grace", createdAt.Add(grace)),
-		Entry("within log_grace", createdAt.Add(time.Minute)),
+		Entry("blob 404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, expiresAt.Add(-time.Second), tombstone.Deleted),
 	)
 
 	It("calls a 404 deleted when the artifact has no expires_at", func() {
-		t, err := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, model.Artifact{}, grace, expiresAt)
+		t, err := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, time.Time{}, expiresAt)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(t.Reason).To(Equal(tombstone.Deleted))
 	})
 
 	DescribeTable("gives back any other error",
 		func(other error) {
-			_, err := tombstone.FromZipError(other, artifact, grace, expiresAt.Add(time.Hour))
+			_, err := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
 			Expect(err).To(Equal(other))
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 500}}),

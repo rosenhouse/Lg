@@ -77,7 +77,6 @@ type Artifact struct {
 	Name        string    `json:"name"`
 	SizeInBytes int64     `json:"size_in_bytes"`
 	Expired     bool      `json:"expired"`
-	CreatedAt   time.Time `json:"created_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	Digest      string    `json:"digest"`
 }
