@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,5 +24,19 @@ var _ = Describe("Real", Label("transport"), func() {
 		var exitErr *exec.ExitError
 		Expect(errors.As(err, &exitErr)).To(BeTrue())
 		Expect(exitErr.ExitCode()).To(Equal(3))
+	})
+
+	It("returns soon after ctx ends even while the program's child holds stdout", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		DeferCleanup(cancel)
+		done := make(chan error, 1)
+		go func() {
+			_, _, err := execx.Real{}.Run(ctx, "sh", []string{"-c", "sleep 60; :"}, map[string]string{"PATH": os.Getenv("PATH")})
+			done <- err
+		}()
+
+		var err error
+		Eventually(done, "5s").Should(Receive(&err))
+		Expect(err).To(HaveOccurred())
 	})
 })

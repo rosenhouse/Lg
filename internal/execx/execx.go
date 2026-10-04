@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
+	"time"
 )
 
 type Runner interface {
@@ -16,6 +17,8 @@ type Real struct{}
 
 func (Real) Run(ctx context.Context, name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	// A child the program leaves behind can hold stdout open after ctx ends.
+	cmd.WaitDelay = time.Second
 	cmd.Env = []string{}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
