@@ -47,7 +47,7 @@ func (syncCmd) Run(deps *Deps) error {
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
-			return deps.NewGitHub(api, cfg.Repo, token)
+			return deps.NewGitHub(api, cfg.Repo, token, deps.Clock)
 		},
 		Store:    s,
 		Host:     cfg.Host,

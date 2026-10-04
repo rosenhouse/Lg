@@ -40,7 +40,7 @@ func hops(api, blob http.HandlerFunc) *github.HTTP {
 	}
 	apiHost := httptest.NewServer(api)
 	DeferCleanup(apiHost.Close)
-	return github.NewHTTP(github.NewTransport(shortTimeouts), mustParse(apiHost.URL), "o/r", "lg-test-token")
+	return github.NewHTTP(github.NewTransport(shortTimeouts), mustParse(apiHost.URL), "o/r", "lg-test-token", clock.Real{})
 }
 
 func answer(status int, body string) http.HandlerFunc {
@@ -293,7 +293,7 @@ var _ = Describe("DefaultTimeouts", Label("failures"), func() {
 	})
 
 	It("are NewDefault's", func() {
-		Expect(github.TimeoutsOf(github.NewDefault(mustParse("https://api.github.com"), "o/r", "lg-test-token"))).To(Equal(github.DefaultTimeouts()))
+		Expect(github.TimeoutsOf(github.NewDefault(mustParse("https://api.github.com"), "o/r", "lg-test-token", clock.Real{}))).To(Equal(github.DefaultTimeouts()))
 	})
 })
 
@@ -331,7 +331,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		DeferCleanup(server.Close)
 		timeouts := shortTimeouts
 		timeouts.Dial = time.Nanosecond
-		client := github.NewHTTP(github.NewTransport(timeouts), mustParse(server.URL), "o/r", "lg-test-token")
+		client := github.NewHTTP(github.NewTransport(timeouts), mustParse(server.URL), "o/r", "lg-test-token", clock.Real{})
 
 		_, _, err := client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("dial tcp 127.0.0.1:")))
@@ -345,7 +345,7 @@ var _ = Describe("NewTransport", Label("failures"), func() {
 		DeferCleanup(silent.Close)
 		timeouts := shortTimeouts
 		timeouts.TLSHandshake = 200 * time.Millisecond
-		client := github.NewHTTP(github.NewTransport(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token")
+		client := github.NewHTTP(github.NewTransport(timeouts), mustParse("https://"+silent.Addr().String()), "o/r", "lg-test-token", clock.Real{})
 
 		_, _, err = client.GetAttempt(ctx, 1, 1)
 		Expect(err).To(MatchError(ContainSubstring("TLS handshake timeout")))

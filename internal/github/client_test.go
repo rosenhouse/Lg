@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
@@ -56,7 +57,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 	BeforeEach(func() {
 		fake = fakegithub.Start(runID, "after-attempt-1")
-		client = github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token")
+		client = github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
 	})
 
 	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every request", Label("transport"),
@@ -68,7 +69,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			}))
 			DeferCleanup(server.Close)
 
-			Expect(call(context.Background(), github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "gho_header_test"))).To(Succeed())
+			Expect(call(context.Background(), github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "gho_header_test", clock.Real{}))).To(Succeed())
 			Expect(headers.Get("Accept")).To(Equal("application/vnd.github+json"))
 			Expect(headers.Get("X-GitHub-Api-Version")).To(Equal("2022-11-28"))
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
@@ -150,7 +151,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		api := httptest.NewServer(http.RedirectHandler(blob.URL+"/blob", http.StatusFound))
 		DeferCleanup(api.Close)
 
-		Expect(github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).To(Succeed())
+		Expect(github.NewHTTP(http.DefaultTransport, mustParse(api.URL), "o/r", "lg-test-token", clock.Real{}).DownloadJobLog(context.Background(), 1, &bytes.Buffer{})).To(Succeed())
 		Expect(blobAuthorization).To(Equal([]string{""}))
 	})
 
@@ -162,7 +163,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(ctx, 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).DownloadJobLog(ctx, 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(ContainSubstring("stopped after 10 redirects")))
 		Expect(requests).To(Equal(10))
 	}, SpecTimeout(5*time.Second))
@@ -230,7 +231,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 				TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "example.com", MinVersion: tls.VersionTLS12},
 			}
 
-			runs, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token").ListRuns(context.Background())
+			runs, err := github.NewHTTP(everyHostIsServer, mustParse(apiURL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background())
 
 			if onAPIHost {
 				Expect(err).NotTo(HaveOccurred())
@@ -271,7 +272,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		runs, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").ListRuns(context.Background())
+		runs, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(3))
 		Expect(requests).To(Equal([]string{
@@ -294,7 +295,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		DeferCleanup(cancel)
-		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").ListRuns(ctx)
+		_, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListRuns(ctx)
 		Expect(err).To(MatchError(first + ": Link next " + first + " repeats an earlier page"))
 		Expect(requests).To(Equal(1))
 	})
@@ -305,7 +306,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").ListAttemptJobs(context.Background(), 1, 1)
+		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).ListAttemptJobs(context.Background(), 1, 1)
 		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: listed 1 of 2 jobs"))
 	})
 
@@ -316,7 +317,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		Expect(err).To(MatchError(HavePrefix(server.URL + "/repos/o/r/actions/jobs/1/logs: ")))
 	})

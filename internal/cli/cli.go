@@ -25,7 +25,7 @@ type Deps struct {
 	Stderr    io.Writer
 	Clock     clock.Clock
 	Runner    execx.Runner
-	NewGitHub func(api *url.URL, repo, token string) github.Client
+	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
 }
 
 func RealDeps() Deps {

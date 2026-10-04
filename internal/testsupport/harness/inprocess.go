@@ -60,7 +60,7 @@ func InProcess() *InProcessEnv {
 		Clock: clk,
 		Mirror: &mirror.Mirror{
 			Tokens:    staticToken(fakegh.Token),
-			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token) },
+			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token, clk) },
 			Store:     s,
 			Host:      "github.com",
 			Repo:      "rosenhouse/lg",

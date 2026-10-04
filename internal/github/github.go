@@ -178,18 +178,19 @@ type Source struct {
 // redirects and no error names a blob URL.
 type HTTP struct {
 	transport http.RoundTripper
+	clock     clock.Clock
 	api       url.URL
 	repoURL   string
 	token     string
 }
 
-func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string) *HTTP {
-	return &HTTP{transport: transport, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
+func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk clock.Clock) *HTTP {
+	return &HTTP{transport: transport, clock: clk, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
 }
 
 // NewDefault is the Client lg sync uses, with DefaultTimeouts.
-func NewDefault(api *url.URL, repo, token string) Client {
-	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token)
+func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
+	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk)
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
