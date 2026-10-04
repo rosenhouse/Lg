@@ -32,7 +32,7 @@ func jobs(run scenario.Run, attempt string) []map[string]any {
 	return listing.Jobs
 }
 
-var _ = Describe("Recorded", func() {
+var _ = Describe("Recorded", Label("attempts"), func() {
 	It("holds every file of the recording", func() {
 		run := scenario.Recorded(runID, "after-attempt-2")
 
@@ -43,7 +43,7 @@ var _ = Describe("Recorded", func() {
 	})
 })
 
-var _ = Describe("Clone", func() {
+var _ = Describe("Clone", Label("attempts"), func() {
 	It("gives the run, its jobs and its artifacts new ids, the same at every stage", func() {
 		for _, stage := range []string{"after-attempt-1", "after-attempt-2"} {
 			clone := scenario.Clone(scenario.Recorded(runID, stage), 7)
@@ -78,7 +78,7 @@ var _ = Describe("Clone", func() {
 	})
 })
 
-var _ = Describe("mutations", func() {
+var _ = Describe("mutations", Label("attempts"), func() {
 	var run scenario.Run
 
 	BeforeEach(func() {
