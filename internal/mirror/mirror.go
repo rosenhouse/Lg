@@ -83,13 +83,13 @@ func (m *Mirror) cycle(ctx context.Context) error {
 }
 
 // listedRun is a listed run with its dir and this cycle's listing of its
-// artifacts. gone marks a run not found.
+// artifacts. artifactsListed is false for a run whose listing failed or was not found.
 type listedRun struct {
 	github.Run
-	dir       string
-	gone      bool
-	artifacts []github.Artifact
-	listing   github.Source
+	dir             string
+	artifactsListed bool
+	artifacts       []github.Artifact
+	listing         github.Source
 }
 
 func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
@@ -111,16 +111,13 @@ func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Rep
 	return listed, nil
 }
 
-// artifactPhase publishes every run's artifacts and marks the runs not found.
-// It returns the errors that runScoped accepts, and stops at any other.
+// artifactPhase publishes every run's artifacts. It returns the errors that
+// runScoped accepts, and stops at any other.
 func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for i := range runs {
 		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i])
-		switch {
-		case errors.Is(err, errRunGone):
-			runs[i].gone = true
-		case err != nil:
+		if err != nil {
 			return nil, err
 		}
 		failed = append(failed, runFailed...)
@@ -128,12 +125,13 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 	return failed, nil
 }
 
-// attemptPhase publishes the attempts of every run that is not gone. It
-// returns the errors that runScoped accepts, and stops at any other.
+// attemptPhase publishes the attempts of every run whose artifacts this cycle
+// listed, since each attempt holds that listing. It returns the errors that
+// runScoped accepts, and stops at any other.
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
 	for _, run := range runs {
-		if run.gone {
+		if !run.artifactsListed {
 			continue
 		}
 		runFailed, err := m.syncAttempts(ctx, gh, run)
@@ -209,7 +207,7 @@ func runScoped(err error) bool {
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
-// errRunGone is a 404 on a run's artifacts, an attempt or its jobs, which skips the run.
+// errRunGone is a 404 on an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run listedRun, n int, target string) error {
