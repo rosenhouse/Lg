@@ -111,17 +111,10 @@ func runScoped(err error) bool {
 		}
 		return true
 	}
-	var statusErr *github.StatusError
-	if errors.As(err, &statusErr) {
-		return !blocksCycle(statusErr)
-	}
 	var transient failure.Transient
+	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	return errors.As(err, &transient) || errors.As(err, &malformed)
-}
-
-func blocksCycle(e *github.StatusError) bool {
-	return !e.Blob && github.Refusal(e.Status)
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
