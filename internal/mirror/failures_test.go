@@ -201,6 +201,7 @@ var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run stil
 	Entry("an unparsable 200 on the attempt", "api", "runs/37129738159/attempts/1", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
 	Entry("an unparsable 200 on the attempt's jobs", "api", "runs/37129738159/attempts/1/jobs", unparsable, "invalid character '<' looking for beginning of value", cycleTimeout),
 	Entry("a jobs listing short of its total_count", "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusOK, Body: `{"total_count":1,"jobs":[]}`}, "listed 0 of 1 jobs", cycleTimeout),
+	Entry("a jobs listing that repeats a job id", Label("attempts"), "api", "runs/37129738159/attempts/1/jobs", fakegithub.Fault{Status: http.StatusOK, Body: `{"total_count":2,"jobs":[{"id":5,"name":"a","steps":[]},{"id":5,"name":"a","steps":[]}]}`}, "job 5 listed twice", cycleTimeout),
 )
 
 var unparsable = fakegithub.Fault{Status: http.StatusOK, Body: "<html>unicorn</html>"}

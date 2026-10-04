@@ -182,6 +182,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("jobs that are not an array", answer(http.StatusOK, `{"total_count":1,"jobs":{}}`), listJobs, hopTimeout),
 		Entry("a job with a field of the wrong type", answer(http.StatusOK, `{"total_count":1,"jobs":[{"id":"x"}]}`), listJobs, hopTimeout),
 		Entry("jobs short of their total_count", answer(http.StatusOK, `{"total_count":2,"jobs":[{"id":1}]}`), listJobs, hopTimeout),
+		Entry("a job listed twice", Label("attempts"), answer(http.StatusOK, `{"total_count":2,"jobs":[{"id":1},{"id":1}]}`), listJobs, hopTimeout),
 		Entry("a Link next off the API host", linking("http://other.example/next"), listJobs, hopTimeout),
 		Entry("a Link next that repeats a page", func(w http.ResponseWriter, r *http.Request) {
 			linking("http://"+r.Host+r.URL.RequestURI())(w, r)
