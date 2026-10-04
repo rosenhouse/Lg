@@ -3,6 +3,7 @@ package matchers
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
@@ -15,4 +16,16 @@ func BeTransient() types.GomegaMatcher {
 		var transient failure.Transient
 		return errors.As(err, &transient)
 	}, "wraps a failure.Transient")
+}
+
+// BeBlocked matches an error that wraps a failure.Blocked of kind whose
+// fields satisfy every one of fields.
+func BeBlocked(kind failure.Kind, fields ...types.GomegaMatcher) types.GomegaMatcher {
+	return gomega.WithTransform(func(err error) (failure.Blocked, error) {
+		var blocked failure.Blocked
+		if !errors.As(err, &blocked) {
+			return blocked, errors.New("want a failure.Blocked, got " + fmt.Sprint(err))
+		}
+		return blocked, nil
+	}, gomega.SatisfyAll(append([]types.GomegaMatcher{gomega.HaveField("Kind", kind)}, fields...)...))
 }

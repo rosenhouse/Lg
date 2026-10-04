@@ -14,10 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
@@ -41,6 +43,9 @@ type Server struct {
 	first     string
 	added     []json.RawMessage
 	pageCap   int
+	clock     clock.Clock
+	limit     int
+	remaining int
 	token     string
 	requests  []Request
 	faults    []*fault
@@ -63,15 +68,16 @@ type download struct {
 	file string
 }
 
-// Fault answers a request with Status, or breaks the connection. Body
-// replaces the error GitHub or blob storage would send with Status. Drop
-// closes it partway through the status line. Truncate sends the response's
-// Content-Length and half its body. Stall sends nothing more until the
-// client gives up. Truncate cuts the matched response, so a log's belongs on
-// its blob, not on the API hop's redirect. Times limits how many requests it
-// answers; 0 means every one.
+// Fault answers a request with Status, or breaks the connection. Headers are
+// set on the response, over the rate-limit headers. Body replaces the error
+// GitHub or blob storage would send with Status. Drop closes it partway
+// through the status line. Truncate sends the response's Content-Length and
+// half its body. Stall sends nothing more until the client gives up. Truncate
+// cuts the matched response, so a log's belongs on its blob, not on the API
+// hop's redirect. Times limits how many requests it answers; 0 means every one.
 type Fault struct {
 	Status   int
+	Headers  map[string]string
 	Body     string
 	Times    int
 	Drop     bool
@@ -106,7 +112,13 @@ func New() *Server { return Listen(nil) }
 
 // Listen serves the API on l, or on a free port of 127.0.0.1 when l is nil.
 func Listen(l net.Listener) *Server {
-	s := &Server{runs: map[string]*run{}, closing: make(chan struct{})}
+	s := &Server{
+		runs:      map[string]*run{},
+		closing:   make(chan struct{}),
+		clock:     clock.NewFake(recordings.DefaultNow()),
+		limit:     5000,
+		remaining: 5000,
+	}
 	s.api = httptest.NewUnstartedServer(s.record("api", s.routes()))
 	if l != nil {
 		_ = s.api.Listener.Close()
@@ -223,6 +235,38 @@ func (s *Server) RequireToken(token string) {
 	s.token = token
 }
 
+// SecondaryLimitBody is the body of GitHub's 403 for a secondary rate limit.
+const SecondaryLimitBody = `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits","status":"403"}`
+
+// ResetAfter is how long after its clock's time the fake says the rate limit resets.
+const ResetAfter = time.Hour
+
+// SetClock sets the clock that absolute headers such as X-RateLimit-Reset come from.
+func (s *Server) SetClock(c clock.Clock) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = c
+}
+
+// SetRateLimit makes X-RateLimit-Limit limit and X-RateLimit-Remaining
+// remaining, less one for each later API request.
+func (s *Server) SetRateLimit(limit, remaining int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limit, s.remaining = limit, remaining
+}
+
+// countRequest counts an API request against the rate limit and sets the
+// headers GitHub sends about it. Callers hold mu.
+func (s *Server) countRequest(header http.Header) {
+	s.remaining = max(s.remaining-1, 0)
+	header.Set("X-RateLimit-Limit", strconv.Itoa(s.limit))
+	header.Set("X-RateLimit-Remaining", strconv.Itoa(s.remaining))
+	header.Set("X-RateLimit-Used", strconv.Itoa(s.limit-s.remaining))
+	header.Set("X-RateLimit-Reset", strconv.FormatInt(s.clock.Now().Add(ResetAfter).Unix(), 10))
+	header.Set("X-RateLimit-Resource", "core")
+}
+
 // AddRun lists a run with the given body.
 func (s *Server) AddRun(body json.RawMessage) {
 	s.mu.Lock()
@@ -290,7 +334,14 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		if host == "api" && s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
 			f = Fault{Status: http.StatusUnauthorized}
 		}
+		w.Header().Set("Date", s.clock.Now().UTC().Format(http.TimeFormat))
+		if host == "api" {
+			s.countRequest(w.Header())
+		}
 		s.mu.Unlock()
+		for k, v := range f.Headers {
+			w.Header().Set(k, v)
+		}
 		for _, held := range holds {
 			select {
 			case <-held.released:

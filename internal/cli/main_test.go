@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -10,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/cli"
+	"github.com/rosenhouse/lg/internal/failure"
 )
 
 var _ = Describe("Main", Label("cli"), func() {
@@ -27,6 +29,13 @@ var _ = Describe("Main", Label("cli"), func() {
 		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{errDiskFull}, Stderr: stderr})
 		Expect(code).To(Equal(1))
 		Expect(stderr.String()).To(Equal("lg: disk full\n"))
+	})
+
+	It("exits 3 and prints the error when a command is blocked", Label("blocked"), func() {
+		blocked := fmt.Errorf("sync: %w", failure.Blocked{Kind: failure.Auth, Detail: "401 Unauthorized"})
+		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{blocked}, Stderr: stderr})
+		Expect(code).To(Equal(3))
+		Expect(stderr.String()).To(Equal("lg: sync: blocked (auth): 401 Unauthorized\n"))
 	})
 
 	It("prefixes every line of a multi-line error", func() {

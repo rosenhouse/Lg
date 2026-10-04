@@ -7,7 +7,11 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// DefaultNow is past log_grace for every recorded attempt.
+func DefaultNow() time.Time { return time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC) }
 
 // Line is one request in status.txt. First and Final differ when the
 // request was redirected.

@@ -14,6 +14,7 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/execx"
+	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
@@ -25,7 +26,8 @@ type Deps struct {
 	Stderr    io.Writer
 	Clock     clock.Clock
 	Runner    execx.Runner
-	NewGitHub func(api *url.URL, repo, token string) github.Client
+	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
+	StoreFS   store.FS
 }
 
 func RealDeps() Deps {
@@ -34,7 +36,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}}
 }
 
 type commands struct {
@@ -104,9 +106,12 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
 		var configErr config.Error
+		var blocked failure.Blocked
 		switch {
 		case errors.As(err, &configErr):
 			return 2
+		case errors.As(err, &blocked):
+			return 3
 		case errors.Is(err, lock.ErrTimeout):
 			return 4
 		}

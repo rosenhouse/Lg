@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 )
 
@@ -52,7 +55,21 @@ func parseFail(v string) (fail, bool) {
 		f.fault.Stall = true
 	case "truncate+stall":
 		f.fault.Truncate, f.fault.Stall = true, true
+	case "ratelimit":
+		f.fault.Status = http.StatusForbidden
+		f.fault.Headers = map[string]string{"X-RateLimit-Remaining": "0"}
+	case "secondary":
+		f.fault.Status = http.StatusForbidden
+		f.fault.Body = fakegithub.SecondaryLimitBody
 	default:
+		if seconds, ok := strings.CutPrefix(kind, "retry-after="); ok {
+			if _, err := strconv.ParseUint(seconds, 10, 64); err != nil {
+				return fail{}, false
+			}
+			f.fault.Status = http.StatusTooManyRequests
+			f.fault.Headers = map[string]string{"Retry-After": seconds}
+			break
+		}
 		status, err := strconv.Atoi(kind)
 		if err != nil || status < 100 || status > 599 {
 			return fail{}, false
@@ -69,14 +86,23 @@ func parseFail(v string) (fail, bool) {
 	return f, true
 }
 
+func parseRateLimit(v string) (limit, remaining int, ok bool) {
+	l, r, ok := strings.Cut(v, ",")
+	limit, errLimit := strconv.Atoi(l)
+	remaining, errRemaining := strconv.Atoi(r)
+	return limit, remaining, ok && errLimit == nil && errRemaining == nil && 0 <= remaining && remaining <= limit
+}
+
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("fakegithub", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var runs, failFlags repeated
 	flags.Var(&runs, "run", "serve run `ID=STAGE` from testdata/recordings (repeatable)")
-	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall or truncate+stall), at most TIMES times (repeatable); truncate a log or zip on the blob host, since the API hop only redirects")
+	flags.Var(&failFlags, "fail", "answer `HOST,MATCH,KIND[,TIMES]`: requests to HOST (api or blob) whose path ends in MATCH get KIND (a status, drop, truncate, stall, truncate+stall, ratelimit for a 403 with none remaining, secondary for a secondary-limit 403, or retry-after=SECONDS for a 429), at most TIMES times (repeatable); truncate a log or zip on the blob host, since the API hop only redirects")
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
+	rateLimit := flags.String("rate-limit", "5000,5000", "set X-RateLimit-Limit to LIMIT and X-RateLimit-Remaining to REMAINING before the first request, given as `LIMIT,REMAINING`")
+	now := flags.String("now", "", "start the clock that Date and X-RateLimit-Reset come from at the RFC 3339 `time`, not the real time")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -102,7 +128,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, v := range failFlags {
 		f, ok := parseFail(v)
 		if !ok {
-			_, _ = fmt.Fprintf(stderr, "fakegithub: -fail %q: want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall or truncate+stall\n", v)
+			_, _ = fmt.Fprintf(stderr, "fakegithub: -fail %q: want HOST,MATCH,KIND[,TIMES] with HOST api or blob and KIND a status, drop, truncate, stall, truncate+stall, ratelimit, secondary or retry-after=SECONDS\n", v)
 			return 2
 		}
 		fails = append(fails, f)
@@ -110,6 +136,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *pageCap < 0 {
 		_, _ = fmt.Fprintln(stderr, "fakegithub: -page-cap must be 0 or more")
 		return 2
+	}
+	limit, remaining, ok := parseRateLimit(*rateLimit)
+	if !ok {
+		_, _ = fmt.Fprintf(stderr, "fakegithub: -rate-limit %q: want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT\n", *rateLimit)
+		return 2
+	}
+	var clk clock.Clock = clock.Real{}
+	if *now != "" {
+		start, err := time.Parse(time.RFC3339, *now)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "fakegithub: -now %q: want an RFC 3339 time\n", *now)
+			return 2
+		}
+		clk = clock.Starting(start, clock.Real{})
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -128,6 +168,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	server.SetPageCap(*pageCap)
+	server.SetRateLimit(limit, remaining)
+	server.SetClock(clk)
 	for _, f := range fails {
 		server.Fail(f.host, f.match, f.fault)
 	}

@@ -13,11 +13,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -35,6 +37,7 @@ type Job struct {
 }
 
 type Client interface {
+	GetRepo(ctx context.Context) (Repo, error)
 	ListRuns(ctx context.Context) ([]Run, error)
 	GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error)
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
@@ -71,7 +74,20 @@ func NewTransport(t Timeouts) http.RoundTripper {
 	base.DialContext = dialer.DialContext
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
+	base.OnProxyConnectResponse = func(_ context.Context, proxy *url.URL, req *http.Request, resp *http.Response) error {
+		if resp.StatusCode/100 != 2 {
+			return &proxyConnectError{proxy: proxy.Host, target: req.Host, status: resp.Status}
+		}
+		return nil
+	}
 	return &idleTransport{base: base, timeouts: t}
+}
+
+// proxyConnectError is a proxy's refusal to tunnel to the API host.
+type proxyConnectError struct{ proxy, target, status string }
+
+func (e *proxyConnectError) Error() string {
+	return fmt.Sprintf("proxy %s answered CONNECT %s with %s", e.proxy, e.target, e.status)
 }
 
 // idleTransport cancels a request once its body has sent nothing for BodyIdle.
@@ -126,7 +142,13 @@ var (
 	ErrNotFound    = errors.New("not found")
 	ErrBlobMissing = errors.New("blob missing")
 	ErrGone        = errors.New("gone")
+	// ErrUnauthorized marks a Blocked caused by the API's 401.
+	ErrUnauthorized = errors.New("unauthorized")
 )
+
+type unauthorized struct{ failure.Blocked }
+
+func (u unauthorized) Unwrap() []error { return []error{u.Blocked, ErrUnauthorized} }
 
 // StatusError is a response other than 200 to a request for URL, an API
 // URL even when blob storage answered.
@@ -178,18 +200,40 @@ type Source struct {
 // redirects and no error names a blob URL.
 type HTTP struct {
 	transport http.RoundTripper
+	clock     clock.Clock
 	api       url.URL
 	repoURL   string
 	token     string
+
+	mu sync.Mutex
+	// rateLimit holds the last API response's header, received at rateLimitAt.
+	rateLimit   http.Header
+	rateLimitAt time.Time
 }
 
-func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string) *HTTP {
-	return &HTTP{transport: transport, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
+func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk clock.Clock) *HTTP {
+	return &HTTP{transport: transport, clock: clk, api: *api, repoURL: api.String() + "/repos/" + repo, token: token}
 }
 
 // NewDefault is the Client lg sync uses, with DefaultTimeouts.
-func NewDefault(api *url.URL, repo, token string) Client {
-	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token)
+func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
+	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk)
+}
+
+// Repo is a repository as GET /repos/{owner}/{repo} describes it.
+type Repo struct {
+	FullName string `json:"full_name"`
+}
+
+func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
+	var repo Repo
+	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
+		return Repo{}, err
+	}
+	if !layout.IsRepo(repo.FullName) {
+		return Repo{}, malformed(h.repoURL, "full_name %q is not owner/name", repo.FullName)
+	}
+	return repo, nil
 }
 
 func (h *HTTP) ListRuns(ctx context.Context) ([]Run, error) {
@@ -342,11 +386,22 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 }
 
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
+	h.mu.Lock()
+	blocked, reserved := failure.Reserve(h.rateLimit, h.rateLimitAt, h.clock.Now())
+	h.mu.Unlock()
+	if reserved {
+		return blocked
+	}
 	resp, err := h.follow(ctx, rawURL)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", rawURL, err)
-		if ctx.Err() != nil {
+		var opErr *net.OpError
+		var connectErr *proxyConnectError
+		switch {
+		case ctx.Err() != nil:
 			return err
+		case errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect"), errors.As(err, &connectErr):
+			return failure.Blocked{Kind: failure.Unreachable, Detail: err.Error()}
 		}
 		return failure.Transient{Err: err}
 	}
@@ -410,26 +465,34 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "lg/"+version.Version)
-	if h.onAPIHost(u) {
-		req.Header.Set("Authorization", "Bearer "+h.token)
+	if !h.onAPIHost(u) {
+		return h.transport.RoundTrip(req)
 	}
-	return h.transport.RoundTrip(req)
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	resp, err := h.transport.RoundTrip(req)
+	if err == nil {
+		h.mu.Lock()
+		h.rateLimit, h.rateLimitAt = resp.Header, h.clock.Now()
+		h.mu.Unlock()
+	}
+	return resp, err
 }
 
 // statusError classifies a failed response by the hop that sent it.
 func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
-	if e.Status >= 500 || e.Blob && Refusal(e.Status) {
+	blocked, refused := failure.FromStatus(e.Status, resp.Header, e.Message, e.Error()+": "+e.Message, h.clock.Now())
+	switch {
+	case refused && !e.Blob && e.Status == http.StatusUnauthorized:
+		return unauthorized{blocked}
+	case refused && !e.Blob:
+		return blocked
+	case refused, e.Status >= 500:
+		// lg sends blob storage no token, so its refusals are Transient.
 		return failure.Transient{Err: e}
 	}
 	return e
-}
-
-// Refusal reports a status that refuses the API's credentials or rate.
-// lg sends blob storage no token, so there it is Transient.
-func Refusal(status int) bool {
-	return status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusTooManyRequests
 }
 
 // message is GitHub's JSON message, or the first line of blob storage's XML

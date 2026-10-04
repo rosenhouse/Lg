@@ -35,24 +35,40 @@ type Mirror struct {
 
 // Cycle publishes attempt 1 of every listed run once it has completed. An
 // error that runScoped accepts aborts only its run's attempt; Cycle returns
-// these after trying every other run. Any other error stops the cycle.
+// these after trying every other run. Any other error stops the cycle, and
+// a local error that no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
+	err := m.cycle(ctx)
+	var blocked failure.Blocked
+	if errors.As(err, &blocked) {
+		if errors.Is(err, github.ErrUnauthorized) {
+			blocked.Detail += fmt.Sprintf("; run `gh auth login --hostname %s`", m.Host)
+		}
+		return blocked
+	}
+	return failure.FromErrno(err)
+}
+
+func (m *Mirror) cycle(ctx context.Context) error {
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err
 	}
 	gh := m.NewGitHub(token)
+	repo, err := m.getRepo(ctx, gh)
+	if err != nil {
+		return err
+	}
 	runs, err := gh.ListRuns(ctx)
 	if err != nil {
 		return err
 	}
 	var failed []error
 	for _, run := range runs {
-		// The API's spelling names the repo dir, so it must be the configured repo.
-		if !strings.EqualFold(run.Repository.FullName, m.Repo) {
-			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, m.Repo)
+		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
+			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, run.Repository.FullName), run.Run)
+		runDir := layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run)
 		target := layout.AttemptDir(runDir, 1)
 		published, err := m.Store.Has(target)
 		if err != nil {
@@ -72,6 +88,16 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 	return errors.Join(failed...)
 }
 
+// getRepo gets the repo's full name, which names the repo dir as GitHub
+// spells it, so a renamed repo gets a new dir.
+func (m *Mirror) getRepo(ctx context.Context, gh github.Client) (github.Repo, error) {
+	repo, err := gh.GetRepo(ctx)
+	if errors.Is(err, github.ErrNotFound) {
+		return github.Repo{}, failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s/%s was not found, or the token lacks access to it", m.Host, m.Repo)}
+	}
+	return repo, err
+}
+
 // runScoped reports whether err leaves other runs worth trying: GitHub
 // failed this run, not lg's store, credentials or rate limit. A joined
 // error must be run-scoped in every part.
@@ -84,17 +110,10 @@ func runScoped(err error) bool {
 		}
 		return true
 	}
-	var statusErr *github.StatusError
-	if errors.As(err, &statusErr) {
-		return !blocksCycle(statusErr)
-	}
 	var transient failure.Transient
+	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	return errors.As(err, &transient) || errors.As(err, &malformed)
-}
-
-func blocksCycle(e *github.StatusError) bool {
-	return !e.Blob && github.Refusal(e.Status)
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {

@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 )
 
@@ -35,9 +36,10 @@ var _ = Describe("lg sync", Label("failures"), func() {
 				Stderr: &stderr,
 				Clock:  clock.Real{},
 				Runner: tokenRunner{},
-				NewGitHub: func(api *url.URL, repo, token string) github.Client {
-					return github.NewHTTP(github.NewTransport(short), api, repo, token)
+				NewGitHub: func(api *url.URL, repo, token string, clk clock.Clock) github.Client {
+					return github.NewHTTP(github.NewTransport(short), api, repo, token, clk)
 				},
+				StoreFS: store.OSFS{},
 			})
 		}()
 
@@ -49,6 +51,10 @@ var _ = Describe("lg sync", Label("failures"), func() {
 var _ = Describe("RealDeps", Label("failures"), func() {
 	It("builds GitHub clients with github.NewDefault", func() {
 		Expect(reflect.ValueOf(cli.RealDeps().NewGitHub).Pointer()).To(Equal(reflect.ValueOf(github.NewDefault).Pointer()))
+	})
+
+	It("opens the store on the OS filesystem", Label("blocked"), func() {
+		Expect(cli.RealDeps().StoreFS).To(Equal(store.OSFS{}))
 	})
 })
 

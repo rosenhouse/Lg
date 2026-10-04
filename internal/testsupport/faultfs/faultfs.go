@@ -27,11 +27,12 @@ type FS struct {
 	mu       sync.Mutex
 	failFrom int
 	err      error
+	failOn   map[string]error
 	journal  []Op
 	mounts   map[string]store.Mount
 }
 
-func New() *FS { return &FS{mounts: map[string]store.Mount{}} }
+func New() *FS { return &FS{mounts: map[string]store.Mount{}, failOn: map[string]error{}} }
 
 // FailFrom makes the k-th journaled op, counting from 1, and every op after it return err.
 func (f *FS) FailFrom(k int, err error) {
@@ -53,12 +54,16 @@ func (f *FS) SetMount(path string, m store.Mount) {
 	f.mounts[path] = m
 }
 
-// do journals op and runs it, unless it is op k or later.
+// do journals op and runs it, unless it is op k or later or FailOn names it.
 func (f *FS) do(op Op, run func() error) error {
 	f.mu.Lock()
 	if f.failFrom > 0 && len(f.journal)+1 >= f.failFrom {
 		f.mu.Unlock()
 		return &fs.PathError{Op: op.Name, Path: op.Path, Err: f.err}
+	}
+	if err := f.failOn[op.Name]; err != nil {
+		f.mu.Unlock()
+		return &fs.PathError{Op: op.Name, Path: op.Path, Err: err}
 	}
 	f.journal = append(f.journal, op)
 	f.mu.Unlock()
@@ -127,4 +132,11 @@ func (w *faultFile) Sync() error {
 
 func (w *faultFile) Close() error {
 	return w.fs.do(Op{Name: "close", Path: w.path}, w.inner.Close)
+}
+
+// FailOn makes every later op named name return err.
+func (f *FS) FailOn(name string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failOn[name] = err
 }

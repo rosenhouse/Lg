@@ -12,8 +12,10 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -106,4 +108,10 @@ func (e *Env) roots() config.Roots {
 	roots, err := config.Locations(e.vars)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	return roots
+}
+
+// SetNow sets LG_TEST_NOW and fake's clock to now.
+func (e *Env) SetNow(now time.Time, fake *fakegithub.Server) {
+	e.Setenv("LG_TEST_NOW", now.Format(time.RFC3339))
+	fake.SetClock(clock.NewFake(now))
 }

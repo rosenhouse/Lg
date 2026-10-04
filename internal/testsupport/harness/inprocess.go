@@ -19,18 +19,21 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
+	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
-// DefaultNow is past log_grace for every recorded attempt.
-func DefaultNow() time.Time { return time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC) }
+// DefaultNow is the LG_TEST_NOW of each spec and the time fakegithub's clock starts at.
+func DefaultNow() time.Time { return recordings.DefaultNow() }
 
 // shortTimeouts let fault specs give up on a stalled fake within seconds.
 func shortTimeouts() github.Timeouts {
 	return github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: time.Second, BodyIdle: time.Second}
 }
 
-// InProcessEnv drives mirror.Cycle against its own fake and store.
+// InProcessEnv drives mirror.Cycle against its own fake, and a store on FS.
 type InProcessEnv struct {
+	FS     *faultfs.FS
 	Fake   *fakegithub.Server
 	Clock  *clock.Fake
 	Mirror *mirror.Mirror
@@ -38,25 +41,29 @@ type InProcessEnv struct {
 }
 
 // InProcess gives the calling spec an empty fakegithub, a store, a clock at
-// DefaultNow, and a Mirror of rosenhouse/lg that uses them.
+// DefaultNow that both lg and the fake use, and a Mirror of rosenhouse/lg
+// that uses them.
 func InProcess() *InProcessEnv {
 	ginkgo.GinkgoHelper()
 	root := filepath.Join(ginkgo.GinkgoT().TempDir(), "lg")
 	gomega.Expect(store.Init(root)).To(gomega.Succeed())
-	s, err := store.Open(root)
+	fsys := faultfs.New()
+	s, err := store.OpenFS(fsys, root)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	fake := fakegithub.New()
 	ginkgo.DeferCleanup(fake.Close)
 	api, err := url.Parse(fake.URL())
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	clk := clock.NewFake(DefaultNow())
+	fake.SetClock(clk)
 	transport := github.NewTransport(shortTimeouts())
 	return &InProcessEnv{
+		FS:    fsys,
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{
 			Tokens:    staticToken(fakegh.Token),
-			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token) },
+			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token, clk) },
 			Store:     s,
 			Host:      "github.com",
 			Repo:      "rosenhouse/lg",

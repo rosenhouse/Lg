@@ -1,7 +1,12 @@
 package fakegh_test
 
 import (
+	"bytes"
+	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,5 +48,45 @@ var _ = Describe("fake gh", Label("transport"), func() {
 			Expect(cmd.Run()).To(Succeed())
 		}
 		Expect(gh.ConfigDirs()).To(Equal([]string{"/gh/one", ""}))
+	})
+})
+
+var _ = Describe("fake gh told to Fail", Label("blocked"), func() {
+	It("prints the given stderr, no token, and exits 1", func() {
+		gh := fakegh.New(GinkgoT().TempDir())
+		gh.Fail("no oauth token found for github.com")
+
+		cmd := exec.CommandContext(GinkgoT().Context(), gh.Path, "auth", "token")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		Expect(cmd.Run()).To(MatchError("exit status 1"))
+		Expect(stderr.String()).To(Equal("no oauth token found for github.com\n"))
+		Expect(stdout.String()).To(BeEmpty())
+		Expect(gh.Calls()).To(Equal([]string{"auth token"}))
+	})
+})
+
+var _ = Describe("fake gh told to Hang", Label("blocked"), func() {
+	It("prints nothing until it is killed, and records its pid", func(ctx SpecContext) {
+		gh := fakegh.New(GinkgoT().TempDir())
+		gh.Hang()
+
+		timeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		cmd := exec.CommandContext(timeout, gh.Path, "auth", "token")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		Expect(cmd.Run()).To(MatchError("signal: killed"))
+		Expect(stdout.String()).To(BeEmpty())
+		Expect(gh.Calls()).To(Equal([]string{"auth token"}))
+		Expect(gh.HungPIDs()).To(Equal([]int{cmd.Process.Pid}))
+	}, SpecTimeout(5*time.Second))
+
+	It("has no pids while the file it records them in is still empty", func() {
+		dir := GinkgoT().TempDir()
+		gh := fakegh.New(dir)
+		Expect(os.WriteFile(filepath.Join(dir, "hung-pids"), nil, 0o644)).To(Succeed())
+
+		Expect(gh.HungPIDs()).To(BeEmpty())
 	})
 })

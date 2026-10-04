@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -18,6 +19,10 @@ type Real struct{}
 
 func (Real) Run(ctx context.Context, name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	// Killing the program's process group also kills any child it started,
+	// such as a keyring helper.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	// A child the program leaves behind can hold stdout open after it exits or ctx ends.
 	cmd.WaitDelay = time.Second
 	cmd.Env = []string{}
