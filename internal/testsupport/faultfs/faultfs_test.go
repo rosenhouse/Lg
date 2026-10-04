@@ -88,6 +88,20 @@ var _ = Describe("FS", Label("store"), func() {
 		Entry("fsync", 4, []string{"d", "d/a"}),
 	)
 
+	It("FailOn fails every op of the given name with the given error, leaving the others to run", Label("blocked"), func() {
+		f.FailOn("write", syscall.ENOSPC)
+
+		Expect(writeFile()).To(MatchError(syscall.ENOSPC))
+		Expect(writeFile()).NotTo(Succeed())
+		Expect(f.RemoveAll(filepath.Join(dir, "d"))).To(Succeed())
+		Expect(filepath.Join(dir, "d")).NotTo(BeAnExistingFile())
+		var journal []string
+		for _, op := range f.Journal() {
+			journal = append(journal, op.Name)
+		}
+		Expect(journal).To(Equal([]string{"mkdir", "create", "mkdir", "remove"}))
+	})
+
 	It("reports the mount it was told for a path, and the inner FS's otherwise", func() {
 		Expect(os.Mkdir(filepath.Join(dir, "a"), 0o755)).To(Succeed())
 		real, err := store.OSFS{}.Mount(dir)
