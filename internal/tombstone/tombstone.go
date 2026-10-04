@@ -63,3 +63,7 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 	t.HTTPStatus = &statusErr.Status
 	return t, nil
 }
+
+func FromZipError(err error, expiresAt, now time.Time) (Tombstone, bool) {
+	return Tombstone{}, false
+}

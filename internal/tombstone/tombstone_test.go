@@ -111,3 +111,43 @@ var _ = Describe("FromError", Label("failures"), func() {
 		Entry("any other error", errors.New("disk full")),
 	)
 })
+
+var _ = Describe("FromZipError", Label("artifacts"), func() {
+	const zipURL = "https://api.github.com/repos/o/r/actions/artifacts/1/zip"
+	expiresAt := time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
+
+	DescribeTable("tombstones artifact.zip with the failed hop's status and message",
+		func(lost *github.StatusError, now time.Time, reason tombstone.Reason) {
+			lost.URL = zipURL
+			t, ok := tombstone.FromZipError(lost, expiresAt, now)
+			Expect(ok).To(BeTrue())
+			Expect(asJSON(t)).To(Equal(map[string]any{
+				"lg_format":     1.0,
+				"tombstoned_at": now.Format(time.RFC3339),
+				"target":        "artifact.zip",
+				"url":           zipURL,
+				"http_status":   float64(lost.Status),
+				"reason":        string(reason),
+				"message":       lost.Message,
+			}))
+		},
+		Entry("410 is expired", &github.StatusError{Status: 410, Message: "Gone"}, expiresAt.Add(-time.Hour), tombstone.Expired),
+		Entry("404 once expires_at has passed is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(time.Second), tombstone.Expired),
+		Entry("404 at expires_at is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt, tombstone.Expired),
+		Entry("404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(-time.Second), tombstone.Deleted),
+		Entry("blob 404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, expiresAt.Add(-time.Second), tombstone.Deleted),
+	)
+
+	DescribeTable("gives nothing for any other error",
+		func(other error) {
+			_, ok := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
+			Expect(ok).To(BeFalse())
+		},
+		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 500}}),
+		Entry("a Transient ErrNotFound", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 404}}),
+		Entry("an API 400", &github.StatusError{URL: zipURL, Status: 400}),
+		Entry("a Blocked auth", failure.Blocked{Kind: failure.Auth, Detail: "401 Unauthorized"}),
+		Entry("a Blocked rate_limit", failure.Blocked{Kind: failure.RateLimit, Detail: "429 Too Many Requests"}),
+		Entry("any other error", errors.New("disk full")),
+	)
+})
