@@ -171,6 +171,9 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		},
 		Entry("an attempt that is not JSON", answer(http.StatusOK, "<html>"), getAttempt, hopTimeout),
 		Entry("an attempt with a field of the wrong type", answer(http.StatusOK, `{"id":"x"}`), getAttempt, hopTimeout),
+		Entry("an attempt with no status", answer(http.StatusOK, `{"updated_at":"2026-10-03T14:24:12Z","run_attempt":1}`), getAttempt, hopTimeout),
+		Entry("an attempt with no updated_at", answer(http.StatusOK, `{"status":"completed","run_attempt":1}`), getAttempt, hopTimeout),
+		Entry("an attempt numbered other than requested", answer(http.StatusOK, `{"status":"completed","updated_at":"2026-10-03T14:24:12Z","run_attempt":2}`), getAttempt, hopTimeout),
 		Entry("jobs that are not JSON", answer(http.StatusOK, "<html>"), listJobs, hopTimeout),
 		Entry("jobs that are not an array", answer(http.StatusOK, `{"total_count":1,"jobs":{}}`), listJobs, hopTimeout),
 		Entry("a job with a field of the wrong type", answer(http.StatusOK, `{"total_count":1,"jobs":[{"id":"x"}]}`), listJobs, hopTimeout),
@@ -179,6 +182,16 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("a Link next that repeats a page", func(w http.ResponseWriter, r *http.Request) {
 			linking("http://"+r.Host+r.URL.RequestURI())(w, r)
 		}, listJobs, hopTimeout),
+	)
+
+	DescribeTable("names the URL and the missing field of a jobs listing, in one line",
+		func(ctx SpecContext, body, field string) {
+			_, _, err := hops(answer(http.StatusOK, body), nil).ListAttemptJobs(ctx, 1, 1)
+			Expect(err).To(MatchError(MatchRegexp(`^http://127\.0\.0\.1:\d+/repos/o/r/actions/runs/1/attempts/1/jobs\?per_page=100: no "%s"$`, field)))
+		},
+		Entry("no total_count", `{"jobs":[]}`, "total_count", hopTimeout),
+		Entry("no jobs", `{"total_count":0}`, "jobs", hopTimeout),
+		Entry("neither", `{"message":"OK"}`, "total_count", hopTimeout),
 	)
 
 	DescribeTable("gives the API URL, the status and the message of a failed hop",

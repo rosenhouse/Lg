@@ -295,3 +295,15 @@ var _ = Describe("mirror.Cycle when the jobs of a listed run's attempt return 40
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 	}, cycleTimeout)
 })
+
+var _ = Describe("mirror.Cycle when an attempt has no updated_at", Label("failures"), func() {
+	It("publishes nothing and writes no tombstone", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail("api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusOK, Body: `{"status":"completed","run_attempt":1}`})
+
+		Expect(env.Mirror.Cycle(ctx)).To(MatchError(ContainSubstring("no updated_at")))
+		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
+		Expect(env.Tombstones()).To(BeEmpty())
+	}, cycleTimeout)
+})

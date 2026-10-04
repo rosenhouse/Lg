@@ -216,6 +216,14 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
 		return Run{}, Source{}, malformed(source.URL, "%w", err)
 	}
+	switch {
+	case run.Status == "":
+		return Run{}, Source{}, malformed(source.URL, "no status")
+	case run.UpdatedAt.IsZero():
+		return Run{}, Source{}, malformed(source.URL, "no updated_at")
+	case run.RunAttempt != attempt:
+		return Run{}, Source{}, malformed(source.URL, "run_attempt is %d", run.RunAttempt)
+	}
 	return run, source, nil
 }
 
@@ -272,10 +280,10 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMess
 			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 				return &MalformedError{Err: err}
 			}
-			if err := errors.Join(json.Unmarshal(page["total_count"], &total), json.Unmarshal(page[field], &items)); err != nil {
-				return &MalformedError{Err: err}
+			if err := unmarshalField(page, "total_count", &total); err != nil {
+				return err
 			}
-			return nil
+			return unmarshalField(page, field, &items)
 		})
 		if err != nil {
 			return nil, 0, 0, err
@@ -292,6 +300,17 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string) ([]json.RawMess
 		pageURL = next
 	}
 	return elements, total, len(followed), nil
+}
+
+func unmarshalField(object map[string]json.RawMessage, field string, v any) error {
+	raw, ok := object[field]
+	if !ok {
+		return &MalformedError{Err: fmt.Errorf("no %q", field)}
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return &MalformedError{Err: fmt.Errorf("%q: %w", field, err)}
+	}
+	return nil
 }
 
 var linkNext = regexp.MustCompile(`<([^>]*)>;\s*rel="next"`)
