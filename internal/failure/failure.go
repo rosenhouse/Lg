@@ -56,19 +56,27 @@ func FromStatus(status int, header http.Header, message, detail string, now time
 	return Blocked{}, false
 }
 
-// maxRetryAfter caps a Retry-After that GitHub would never send.
+// maxRetryAfter caps a wait that GitHub would never ask for.
 const maxRetryAfter = 24 * time.Hour
 
 // retryAt follows GitHub's advice: wait Retry-After seconds, else until the
 // reset when none remain, else a minute.
 func retryAt(header http.Header, now time.Time) time.Time {
-	if seconds, err := strconv.ParseUint(header.Get("Retry-After"), 10, 64); err == nil {
+	seconds, err := strconv.ParseUint(header.Get("Retry-After"), 10, 64)
+	if err == nil || errors.Is(err, strconv.ErrRange) {
 		return now.Add(time.Duration(min(seconds, uint64(maxRetryAfter.Seconds()))) * time.Second)
 	}
 	if reset, ok := resetOf(header, now); ok && header.Get("X-RateLimit-Remaining") == "0" && reset.After(now) {
-		return reset
+		return capped(reset, now)
 	}
 	return now.Add(time.Minute)
+}
+
+func capped(retryAt, now time.Time) time.Time {
+	if limit := now.Add(maxRetryAfter); retryAt.After(limit) {
+		return limit
+	}
+	return retryAt
 }
 
 // resetOf gives X-RateLimit-Reset on lg's clock. It measures the reset from
@@ -96,7 +104,7 @@ func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 		return Blocked{}, false
 	}
 	detail := fmt.Sprintf("X-RateLimit-Remaining %d is below 10%% of X-RateLimit-Limit %d", remaining, limit)
-	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: reset}, true
+	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: capped(reset, now)}, true
 }
 
 // FromErrno blocks on a local error that no retry fixes: a full, read-only or

@@ -29,6 +29,8 @@ var reset = now.Add(17 * time.Minute)
 
 var resetUnix = strconv.FormatInt(reset.Unix(), 10)
 
+var decadeResetUnix = strconv.FormatInt(now.AddDate(10, 0, 0).Unix(), 10)
+
 // A server whose clock is 2h behind lg's sends these for the same reset.
 var (
 	behindDate      = now.Add(-2 * time.Hour).Format(http.TimeFormat)
@@ -59,6 +61,8 @@ var _ = DescribeTable("FromStatus", Label("blocked"),
 	Entry("403 with Retry-After", 403, headers("Retry-After", "120", "X-RateLimit-Remaining", "4999", "X-RateLimit-Reset", resetUnix), "Forbidden", failure.RateLimit, now.Add(2*time.Minute)),
 	Entry("429 with a negative Retry-After", 429, headers("Retry-After", "-300", "X-RateLimit-Remaining", "4999"), "Too Many Requests", failure.RateLimit, now.Add(time.Minute)),
 	Entry("429 with a Retry-After over a day", 429, headers("Retry-After", "100000000000000"), "Too Many Requests", failure.RateLimit, now.Add(24*time.Hour)),
+	Entry("429 with a Retry-After too large to parse", 429, headers("Retry-After", "99999999999999999999999"), "Too Many Requests", failure.RateLimit, now.Add(24*time.Hour)),
+	Entry("403 with X-RateLimit-Remaining 0 and a reset over a day ahead", 403, headers("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", decadeResetUnix), "API rate limit exceeded", failure.RateLimit, now.Add(24*time.Hour)),
 	Entry("403 with X-RateLimit-Remaining 0", 403, headers("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", resetUnix), "API rate limit exceeded", failure.RateLimit, reset),
 	Entry("403 with X-RateLimit-Remaining 0 from a server whose clock is behind", 403, headers("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", behindResetUnix, "Date", behindDate), "API rate limit exceeded", failure.RateLimit, reset),
 	Entry("403 with X-RateLimit-Remaining 0, no Date and a reset already past", 403, headers("X-RateLimit-Remaining", "0", "X-RateLimit-Reset", behindResetUnix), "API rate limit exceeded", failure.RateLimit, now.Add(time.Minute)),
@@ -121,3 +125,11 @@ var _ = DescribeTable("Reserve", Label("blocked"),
 	Entry("with no X-RateLimit-Limit", headers("X-RateLimit-Remaining", "9", "X-RateLimit-Reset", resetUnix), now, false),
 	Entry("with no X-RateLimit-Reset", headers("X-RateLimit-Limit", "100", "X-RateLimit-Remaining", "9"), now, false),
 )
+
+var _ = Describe("Reserve", Label("blocked"), func() {
+	It("blocks for at most a day when the reset is further ahead", func() {
+		b, ok := failure.Reserve(headers("X-RateLimit-Limit", "100", "X-RateLimit-Remaining", "1", "X-RateLimit-Reset", decadeResetUnix), now, now)
+		Expect(ok).To(BeTrue())
+		Expect(b.RetryAt).To(Equal(now.Add(24 * time.Hour)))
+	})
+})
