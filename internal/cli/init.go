@@ -3,7 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +31,7 @@ func (c initCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	// Refusing before openForWriting leaves no store behind.
 	if _, err := os.Lstat(file); err == nil {
 		return config.Error(file + " already exists")
 	}
@@ -44,9 +44,6 @@ func (c initCmd) Run(deps *Deps) error {
 		return err
 	}
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if errors.Is(err, fs.ErrExist) {
-		return config.Error(file + " already exists")
-	}
 	if err != nil {
 		return err
 	}
