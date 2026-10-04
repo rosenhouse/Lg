@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -67,4 +68,17 @@ func Root() string {
 // Dir holds a run at a stage.
 func Dir(runID int64, stage string) string {
 	return filepath.Join(Root(), fmt.Sprintf("run-%d", runID), stage)
+}
+
+// RecordedAt is when record.sh fetched the stage, from its recorded_at.txt.
+func RecordedAt(runID int64, stage string) (time.Time, error) {
+	raw, err := os.ReadFile(filepath.Join(Dir(runID, stage), "recorded_at.txt"))
+	if err != nil {
+		return time.Time{}, err
+	}
+	at, err := time.Parse(time.RFC1123, strings.TrimSpace(string(raw)))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return at.UTC(), nil
 }
