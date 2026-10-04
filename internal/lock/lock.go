@@ -15,13 +15,17 @@ import (
 
 const pollInterval = 50 * time.Millisecond
 
+// ErrTimeout is wrapped by Wait's error when the lock stays busy past its timeout.
+var ErrTimeout = errors.New("gave up")
+
 // Lock is an exclusive flock, released by Release or when the process exits.
 type Lock struct {
 	file *os.File
 }
 
 // Wait takes the lock on path, polling until timeout, and then records this
-// process's pid in it. If the lock is busy, it first calls waiting with the holder.
+// process's pid in it if it can. If the lock is busy, it first calls waiting
+// with the holder.
 func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(holder string)) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
@@ -43,23 +47,15 @@ func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(hold
 		select {
 		case <-deadline:
 			_ = file.Close()
-			return nil, fmt.Errorf("%s is held by %s; gave up after %s", path, holder(path), timeout)
+			return nil, fmt.Errorf("%s is held by %s; %w after %s", path, holder(path), ErrTimeout, timeout)
 		case <-clk.After(pollInterval):
 		}
 	}
-	if err := writePID(file); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
+	// The pid only names the holder to waiters, so a full disk, where gc
+	// must still take the lock to free space, leaves it unknown.
+	_ = file.Truncate(0)
+	_, _ = file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
 	return &Lock{file: file}, nil
-}
-
-func writePID(file *os.File) error {
-	if err := file.Truncate(0); err != nil {
-		return err
-	}
-	_, err := file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)
-	return err
 }
 
 func holder(path string) string {
@@ -71,4 +67,8 @@ func holder(path string) string {
 	return "pid " + pid
 }
 
-func (l *Lock) Release() error { return l.file.Close() }
+// Release clears the pid, so no waiter names a holder that has let go.
+func (l *Lock) Release() error {
+	_ = l.file.Truncate(0)
+	return l.file.Close()
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -92,8 +93,11 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 		var configErr config.Error
-		if errors.As(err, &configErr) {
+		switch {
+		case errors.As(err, &configErr):
 			return 2
+		case errors.Is(err, lock.ErrTimeout):
+			return 4
 		}
 		return 1
 	}
