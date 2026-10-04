@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	neturl "net/url"
+	"net/url"
 	"regexp"
 
 	"github.com/rosenhouse/lg/internal/model"
@@ -49,14 +49,14 @@ func BaseURL(host, apiURL string) string {
 
 type HTTP struct {
 	client  *http.Client
-	api     neturl.URL
+	api     url.URL
 	repoURL string
 	token   string
 }
 
 func NewHTTP(client *http.Client, baseURL, repo, token string) *HTTP {
 	h := &HTTP{repoURL: baseURL + "/repos/" + repo, token: token}
-	if api, err := neturl.Parse(baseURL); err == nil {
+	if api, err := url.Parse(baseURL); err == nil {
 		h.api = *api
 	}
 	withRedirects := *client
@@ -130,12 +130,14 @@ func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) err
 
 // list GETs a listing and every page its Link next URLs lead to, returning
 // the elements of field and the total_count.
-func (h *HTTP) list(ctx context.Context, path, field string) (elements []json.RawMessage, total int, err error) {
-	for url := h.repoURL + path; url != ""; {
+func (h *HTTP) list(ctx context.Context, path, field string) ([]json.RawMessage, int, error) {
+	var elements []json.RawMessage
+	var total int
+	for pageURL := h.repoURL + path; pageURL != ""; {
 		var page map[string]json.RawMessage
 		var items []json.RawMessage
 		var next string
-		err := h.get(ctx, url, func(resp *http.Response) error {
+		err := h.get(ctx, pageURL, func(resp *http.Response) error {
 			next = nextLink(resp.Header.Get("Link"))
 			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 				return err
@@ -146,12 +148,12 @@ func (h *HTTP) list(ctx context.Context, path, field string) (elements []json.Ra
 			return nil, 0, err
 		}
 		if next != "" {
-			if u, err := neturl.Parse(next); err != nil || !h.onAPIHost(u) {
-				return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", url, next)
+			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
+				return nil, 0, fmt.Errorf("%s: Link next %s is not on the API host", pageURL, next)
 			}
 		}
 		elements = append(elements, items...)
-		url = next
+		pageURL = next
 	}
 	return elements, total, nil
 }
@@ -165,18 +167,18 @@ func nextLink(header string) string {
 	return ""
 }
 
-func (h *HTTP) onAPIHost(u *neturl.URL) bool {
+func (h *HTTP) onAPIHost(u *url.URL) bool {
 	return u.Host != "" && u.Scheme == h.api.Scheme && u.Host == h.api.Host
 }
 
-func (h *HTTP) getJSON(ctx context.Context, url string, v any) error {
-	return h.get(ctx, url, func(resp *http.Response) error {
+func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
+	return h.get(ctx, rawURL, func(resp *http.Response) error {
 		return json.NewDecoder(resp.Body).Decode(v)
 	})
 }
 
-func (h *HTTP) get(ctx context.Context, url string, read func(*http.Response) error) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -190,10 +192,10 @@ func (h *HTTP) get(ctx context.Context, url string, read func(*http.Response) er
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, resp.Status)
+		return fmt.Errorf("%s: %s", rawURL, resp.Status)
 	}
 	if err := read(resp); err != nil {
-		return fmt.Errorf("%s: %w", url, err)
+		return fmt.Errorf("%s: %w", rawURL, err)
 	}
 	return nil
 }
