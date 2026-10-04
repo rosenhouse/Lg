@@ -49,7 +49,7 @@ type HTTP struct {
 	repoURL string
 }
 
-func NewHTTP(client *http.Client, baseURL, repo string) *HTTP {
+func NewHTTP(client *http.Client, baseURL, repo, token string) *HTTP {
 	return &HTTP{client: client, repoURL: baseURL + "/repos/" + repo}
 }
 

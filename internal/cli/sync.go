@@ -38,7 +38,7 @@ func (syncCmd) Run(deps *Deps) error {
 	}
 	defer release()
 	m := mirror.Mirror{
-		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo),
+		GitHub: github.NewHTTP(&http.Client{}, github.BaseURL(cfg.Host, cfg.APIURL), cfg.Repo, ""),
 		Store:  s,
 		Host:   cfg.Host,
 		Repo:   cfg.Repo,

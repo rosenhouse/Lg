@@ -38,7 +38,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		DeferCleanup(fake.Close)
 		Expect(fake.LoadDir(runID, recording)).To(Succeed())
 		m = mirror.Mirror{
-			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg"),
+			GitHub: github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg", "lg-test-token"),
 			Store:  s,
 			Host:   "github.com",
 			Repo:   "rosenhouse/lg",
@@ -77,6 +77,23 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+	})
+
+	It("writes jobs.json joining all pages into one array whose elements are JSON-equal to those served", Label("transport"), func() {
+		fake.SetPageCap(5)
+
+		Expect(m.Cycle(context.Background())).To(Succeed())
+		var stored, served []json.RawMessage
+		raw, err := os.ReadFile(filepath.Join(root, "data/github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture/attempt-1/jobs.json"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal(raw, &stored)).To(Succeed())
+		var listing struct{ Jobs []json.RawMessage }
+		Expect(json.Unmarshal(fake.Served("attempt-1/jobs.json"), &listing)).To(Succeed())
+		served = listing.Jobs
+		Expect(stored).To(HaveLen(len(served)))
+		for i := range served {
+			Expect(stored[i]).To(MatchJSON(served[i]))
+		}
 	})
 
 	It("publishes no attempt still in progress and requests none of its jobs", func() {

@@ -40,10 +40,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 
 	BeforeEach(func() {
 		fake = fakegithub.Start(runID, "after-attempt-1")
-		client = github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg")
+		client = github.NewHTTP(http.DefaultClient, fake.URL(), "rosenhouse/lg", "lg-test-token")
 	})
 
-	DescribeTable("sends Accept, X-GitHub-Api-Version and User-Agent lg/<version> on every request",
+	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every request",
 		func(call func(context.Context, *github.HTTP) error) {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,10 +52,11 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			}))
 			DeferCleanup(server.Close)
 
-			Expect(call(context.Background(), github.NewHTTP(http.DefaultClient, server.URL, "o/r"))).To(Succeed())
+			Expect(call(context.Background(), github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token"))).To(Succeed())
 			Expect(headers.Get("Accept")).To(Equal("application/vnd.github+json"))
 			Expect(headers.Get("X-GitHub-Api-Version")).To(Equal("2022-11-28"))
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
+			Expect(headers.Get("Authorization")).To(Equal("Bearer lg-test-token"))
 		},
 		Entry("ListRuns", func(ctx context.Context, c *github.HTTP) error { _, err := c.ListRuns(ctx); return err }),
 		Entry("GetAttempt", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetAttempt(ctx, 1, 1); return err }),
@@ -121,13 +122,44 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		))
 	})
 
+	It("follows Link next on the API host, joining the pages", Label("transport"), func() {
+		Expect(fake.Load(37129738159, "logs-deleted")).To(Succeed())
+		fake.SetPageCap(1)
+
+		runs, err := client.ListRuns(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(HaveLen(2))
+		jobs, err := client.ListAttemptJobs(context.Background(), runID, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(jobs).To(HaveLen(12))
+		Expect(fake.Requests()).To(HaveLen(14))
+	})
+
+	It("refuses a Link next to another host without requesting it", Label("transport"), func() {
+		var foreign []string
+		other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			foreign = append(foreign, r.URL.String())
+		}))
+		DeferCleanup(other.Close)
+		next := other.URL + "/repositories/1/actions/runs?page=2"
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Link", "<"+next+`>; rel="next"`)
+			_, _ = w.Write([]byte(`{"total_count":2,"workflow_runs":[{"id":1}]}`))
+		}))
+		DeferCleanup(server.Close)
+
+		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").ListRuns(context.Background())
+		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs?per_page=100: Link next " + next + " is not on the API host"))
+		Expect(foreign).To(BeEmpty())
+	})
+
 	It("refuses a jobs listing whose total_count exceeds the jobs on its one page", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"total_count":2,"jobs":[{"id":1}]}`))
 		}))
 		DeferCleanup(server.Close)
 
-		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r").ListAttemptJobs(context.Background(), 1, 1)
+		_, err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").ListAttemptJobs(context.Background(), 1, 1)
 		Expect(err).To(MatchError(server.URL + "/repos/o/r/actions/runs/1/attempts/1/jobs?per_page=100: 1 of 2 jobs on the first page"))
 	})
 
@@ -138,7 +170,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		}))
 		DeferCleanup(server.Close)
 
-		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
+		err := github.NewHTTP(http.DefaultClient, server.URL, "o/r", "lg-test-token").DownloadJobLog(context.Background(), 1, &bytes.Buffer{})
 		Expect(err).To(MatchError(io.ErrUnexpectedEOF))
 		Expect(err).To(MatchError(HavePrefix(server.URL + "/repos/o/r/actions/jobs/1/logs: ")))
 	})
