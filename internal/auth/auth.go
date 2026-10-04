@@ -27,7 +27,10 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 	command := gh + " " + strings.Join(args, " ")
 	stdout, stderr, err := g.Runner.Run(ctx, gh, args, g.Env)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w: %s", command, err, bytes.TrimSpace(stderr))
+		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
+			err = fmt.Errorf("%w: %s", err, msg)
+		}
+		return "", fmt.Errorf("%s: %w", command, err)
 	}
 	token := string(bytes.TrimSpace(stdout))
 	if token == "" {

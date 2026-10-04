@@ -44,13 +44,17 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		Entry("LG_GH empty", map[string]string{"LG_GH": "", "PATH": "/bin"}, "gh"),
 	)
 
-	It("names the command and gh's stderr, but not its stdout, when gh fails", func() {
-		runner := &fakeRunner{stdout: "gho_partial", stderr: "not logged in\n", err: errors.New("exit status 1")}
+	DescribeTable("names the command and any stderr from gh, but not its stdout, when gh fails",
+		func(stderr, message string) {
+			runner := &fakeRunner{stdout: "gho_partial", stderr: stderr, err: errors.New("exit status 1")}
 
-		_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+			_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
 
-		Expect(err).To(MatchError("gh auth token --hostname github.com: exit status 1: not logged in"))
-	})
+			Expect(err).To(MatchError(message))
+		},
+		Entry("with stderr", "not logged in\n", "gh auth token --hostname github.com: exit status 1: not logged in"),
+		Entry("without stderr", " \n", "gh auth token --hostname github.com: exit status 1"),
+	)
 
 	It("fails when gh prints no token", func() {
 		_, err := auth.GhTokenSource{Runner: &fakeRunner{stdout: "\n"}}.Token(context.Background(), "github.com")
