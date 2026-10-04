@@ -159,7 +159,7 @@ func skipsLaterAttempts(ctx SpecContext, match string) {
 	Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
 	env.Fake.Fail("api", match, fakegithub.Fault{Status: http.StatusNotFound})
 
-	Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+	Expect(env.Sync(ctx)).To(Succeed())
 	Expect(env.AttemptDirs(runID)).To(BeEmpty())
 	Expect(env.Fake.Requests()).NotTo(ContainElement(HaveField("Path", MatchRegexp(`/attempts/[23]\b`))))
 }
