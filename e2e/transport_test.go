@@ -28,6 +28,9 @@ var _ = Describe("lg sync", Label("transport"), func() {
 	})
 
 	It("sends Authorization: Bearer with the token printed by `gh auth token --hostname github.com`", func() {
+		env.GH().SetToken("gho_from_gh")
+		fake.RequireToken("gho_from_gh")
+
 		Expect(env.Sync()).To(gexec.Exit(0))
 		Expect(env.GH().Calls()).To(Equal([]string{"auth token --hostname github.com"}))
 		Expect(fake.Requests()).To(ContainElement(HaveField("Host", "api")))

@@ -23,4 +23,14 @@ var _ = Describe("fake gh", Label("transport"), func() {
 			"auth token --hostname github.com",
 		}))
 	})
+
+	It("prints the token SetToken gives it", func() {
+		gh := fakegh.New(GinkgoT().TempDir())
+
+		gh.SetToken("gho_rewritten")
+
+		out, err := exec.CommandContext(GinkgoT().Context(), gh.Path, "auth", "token").Output()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(out)).To(Equal("gho_rewritten\n"))
+	})
 })

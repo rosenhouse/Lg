@@ -27,9 +27,15 @@ func New(dir string) *GH {
 	ginkgo.GinkgoHelper()
 	g := &GH{Path: filepath.Join(dir, "gh"), dir: dir}
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> '%s'\ncat '%s'\n", g.file("calls"), g.file("token"))
-	gomega.Expect(os.WriteFile(g.file("token"), []byte(Token+"\n"), 0o644)).To(gomega.Succeed())
+	g.SetToken(Token)
 	gomega.Expect(os.WriteFile(g.Path, []byte(script), 0o755)).To(gomega.Succeed())
 	return g
+}
+
+// SetToken makes the script print token.
+func (g *GH) SetToken(token string) {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(os.WriteFile(g.file("token"), []byte(token+"\n"), 0o644)).To(gomega.Succeed())
 }
 
 // Calls gives the arguments of each run, joined by spaces.
