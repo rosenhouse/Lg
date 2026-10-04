@@ -189,11 +189,10 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 })
 
 var _ = Describe("NewHTTPClient", Label("failures"), func() {
-	It("sets the dial, TLS-handshake and response-header timeouts and no total deadline", func() {
+	It("sets the TLS-handshake and response-header timeouts and no total deadline", func() {
 		client := github.NewHTTPClient(github.DefaultTimeouts)
 		Expect(client.Timeout).To(BeZero())
-		transport, dialer, bodyIdle := github.TransportOf(client)
-		Expect(dialer.Timeout).To(Equal(10 * time.Second))
+		transport, bodyIdle := github.TransportOf(client)
 		Expect(transport.TLSHandshakeTimeout).To(Equal(10 * time.Second))
 		Expect(transport.ResponseHeaderTimeout).To(Equal(30 * time.Second))
 		Expect(bodyIdle).To(Equal(60 * time.Second))
@@ -222,6 +221,18 @@ var _ = Describe("NewHTTPClient", Label("failures"), func() {
 		_, err := client.DownloadJobLog(ctx, 1, &log)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(log.String()).To(Equal("xxxxxx"))
+	}, SpecTimeout(5*time.Second))
+
+	It("gives up on a dial after Dial", func(ctx SpecContext) {
+		server := httptest.NewServer(answer(http.StatusOK, "{}"))
+		DeferCleanup(server.Close)
+		timeouts := shortTimeouts
+		timeouts.Dial = time.Nanosecond
+		client := github.NewHTTP(github.NewHTTPClient(timeouts), mustParse(server.URL), "o/r", "lg-test-token")
+
+		_, err := client.GetAttempt(ctx, 1, 1)
+		Expect(err).To(MatchError(ContainSubstring("dial tcp 127.0.0.1:")))
+		Expect(err).To(MatchError(ContainSubstring("i/o timeout")))
 	}, SpecTimeout(5*time.Second))
 
 	It("gives up on a TLS handshake after TLSHandshake", func(ctx SpecContext) {

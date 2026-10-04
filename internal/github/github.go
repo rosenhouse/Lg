@@ -70,13 +70,12 @@ func NewHTTPClient(t Timeouts) *http.Client {
 	base.DialContext = dialer.DialContext
 	base.TLSHandshakeTimeout = t.TLSHandshake
 	base.ResponseHeaderTimeout = t.ResponseHeader
-	return &http.Client{Transport: &idleTransport{base: base, dialer: dialer, bodyIdle: t.BodyIdle}}
+	return &http.Client{Transport: &idleTransport{base: base, bodyIdle: t.BodyIdle}}
 }
 
 // idleTransport cancels a request once its body has sent nothing for bodyIdle.
 type idleTransport struct {
 	base     *http.Transport
-	dialer   *net.Dialer
 	bodyIdle time.Duration
 }
 
