@@ -249,8 +249,14 @@ func (s *Store) Publish(u *Unit, target string) error {
 // mkdirAll makes path and any missing parents, returning those it made,
 // parents first. With syncParents, it fsyncs each new dir's parent.
 func mkdirAll(fsys fsOps, path string, syncParents bool) ([]string, error) {
+	return mkdirBelow(fsys, "", path, syncParents)
+}
+
+// mkdirBelow is mkdirAll that never makes base or its parents, so it fails
+// once base is gone.
+func mkdirBelow(fsys fsOps, base, path string, syncParents bool) ([]string, error) {
 	var missing []string
-	for dir := path; ; dir = filepath.Dir(dir) {
+	for dir := path; dir != base; dir = filepath.Dir(dir) {
 		_, err := fsys.Lstat(dir)
 		if err == nil {
 			break
@@ -298,13 +304,14 @@ func (u *Unit) place(name, content, dir string) error {
 func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
 
 // Create opens a new member file, creating its parent dirs within the unit.
+// It fails once the unit's dir is gone.
 // Closing it fsyncs it.
 func (u *Unit) Create(name string) (io.WriteCloser, error) {
 	if !filepath.IsLocal(name) || slices.Contains(strings.Split(filepath.ToSlash(name), "/"), "..") {
 		return nil, fmt.Errorf("member name %q is absolute or contains \"..\"", name)
 	}
 	path := filepath.Join(u.dir, name)
-	made, err := mkdirAll(u.fs, filepath.Dir(path), false)
+	made, err := mkdirBelow(u.fs, u.dir, filepath.Dir(path), false)
 	if err != nil {
 		return nil, err
 	}

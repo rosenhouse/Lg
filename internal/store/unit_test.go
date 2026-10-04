@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -8,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/store"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 var _ = Describe("Unit", Label("sync"), func() {
@@ -74,6 +76,17 @@ var _ = Describe("Unit", Label("sync"), func() {
 		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(Succeed())
 		Expect(unit.Abort()).To(Succeed())
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+	})
+
+	It("fails and publishes nothing when its staging dir vanishes", Label("store"), func() {
+		Expect(unit.WriteJSON("attempt.json", []byte("{}"))).To(Succeed())
+		Expect(os.RemoveAll(filepath.Join(root, "tmp"))).To(Succeed())
+		before := treesnap.Snapshot(filepath.Join(root, "data"))
+
+		Expect(unit.WriteJSON("jobs/1_build/job.json", []byte("{}"))).To(MatchError(fs.ErrNotExist))
+		Expect(s.Publish(unit, target)).To(MatchError(fs.ErrNotExist))
+		Expect(treesnap.Snapshot(filepath.Join(root, "data"))).To(Equal(before))
+		Expect(filepath.Join(root, "tmp")).NotTo(BeAnExistingFile())
 	})
 
 	It("refuses to create a member twice", func() {
