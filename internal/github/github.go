@@ -2,7 +2,6 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -394,7 +393,7 @@ func message(body []byte, status int) string {
 	if json.Unmarshal(body, &m) == nil && m.Message != "" {
 		return m.Message
 	}
-	if xml.Unmarshal(bytes.TrimPrefix(body, []byte("\uFEFF")), &m) == nil && m.Message != "" {
+	if xml.Unmarshal(body, &m) == nil && m.Message != "" {
 		first, _, _ := strings.Cut(m.Message, "\n")
 		return first
 	}
