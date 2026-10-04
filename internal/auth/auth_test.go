@@ -112,13 +112,13 @@ var _ = Describe("GhTokenSource's timeout", Label("blocked"), func() {
 		Expect(runner.deadline).To(BeTemporally("~", clock.Real{}.Now().Add(30*time.Second), 5*time.Second))
 	})
 
-	It("kills a gh that has not exited, and blocks as auth naming the timeout", func(ctx SpecContext) {
+	It("kills a gh that has not exited, and blocks as auth naming the timeout and `--insecure-storage`", func(ctx SpecContext) {
 		gh := fakegh.New(GinkgoT().TempDir())
 		gh.Hang()
 
 		_, err := auth.GhTokenSource{Runner: execx.Real{}, Env: map[string]string{"LG_GH": gh.Path}, Timeout: 200 * time.Millisecond}.Token(ctx, "github.com")
 
-		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: gh.Path + " auth token --hostname github.com did not exit within 200ms; run `gh auth login --hostname github.com`"}))
+		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: gh.Path + " auth token --hostname github.com did not exit within 200ms; run `gh auth login --hostname github.com --insecure-storage`"}))
 	}, SpecTimeout(10*time.Second))
 
 	It("returns ctx's error, not Blocked, when ctx ends first", func(ctx SpecContext) {
