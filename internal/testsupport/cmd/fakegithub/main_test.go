@@ -37,15 +37,10 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		return resp.Header, body
 	}
 
-	It("serves each -run at its stage on -addr, paging at -page-cap", func() {
-		free, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-		Expect(err).NotTo(HaveOccurred())
-		addr := free.Addr().String()
-		Expect(free.Close()).To(Succeed())
-		url := "http://" + addr
-
-		session := start("-run", "37129390741=after-attempt-1", "-run", "37129738159=logs-deleted", "-page-cap", "5", "-addr", addr)
-		Eventually(session.Out, "5s").Should(gbytes.Say("serving " + regexp.QuoteMeta(url) + "\n"))
+	It("serves each -run at its stage, paging at -page-cap", func() {
+		session := start("-run", "37129390741=after-attempt-1", "-run", "37129738159=logs-deleted", "-page-cap", "5", "-addr", "127.0.0.1:0")
+		Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+		url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
 
 		_, body := get(url + "/repos/rosenhouse/lg/actions/runs?per_page=100")
 		var runs struct {
@@ -59,6 +54,16 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		Expect(json.Unmarshal(body, &jobs)).To(Succeed())
 		Expect(jobs.Jobs).To(HaveLen(5))
 		Expect(header.Get("Link")).To(ContainSubstring(`rel="next"`))
+	})
+
+	It("exits 1 naming an -addr already in use", func() {
+		taken, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(taken.Close)
+
+		session := start("-run", "37129390741=after-attempt-1", "-addr", taken.Addr().String())
+		Eventually(session, "5s").Should(gexec.Exit(1))
+		Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(taken.Addr().String()) + ".*address already in use"))
 	})
 
 	It("exits 2 naming a -run that is not ID=STAGE", func() {
