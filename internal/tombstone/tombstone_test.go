@@ -103,7 +103,10 @@ var _ = Describe("FromError", Label("failures"), func() {
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: logURL, Status: 500}}),
 		Entry("a Transient ErrNotFound", failure.Transient{Err: apiError(404, "")}),
+		Entry("an API 401", apiError(401, "")),
+		Entry("an API 403", apiError(403, "")),
 		Entry("an API 422", apiError(422, "")),
+		Entry("an API 429", apiError(429, "")),
 		Entry("any other error", errors.New("disk full")),
 	)
 })
