@@ -1,7 +1,11 @@
 // Package model holds GitHub Actions entities and the rules lg applies to them.
 package model
 
-import "time"
+import (
+	"regexp"
+	"strings"
+	"time"
+)
 
 // Run is a workflow run, as listed or as of one attempt.
 type Run struct {
@@ -89,6 +93,14 @@ func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
 	return ArtifactDownload
 }
 
+var sha256Digest = regexp.MustCompile(`^sha256:([0-9a-fA-F]{64})$`)
+
+// SHA256 gives the hex SHA-256 that the artifact's digest names, and false
+// for a digest that is missing or names another hash.
 func (a Artifact) SHA256() (string, bool) {
-	return "", false
+	m := sha256Digest.FindStringSubmatch(a.Digest)
+	if m == nil {
+		return "", false
+	}
+	return strings.ToLower(m[1]), true
 }
