@@ -137,7 +137,7 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 			body := get(base + "/repos/rosenhouse/Lg/actions/runs/37129390741")
 			var compact bytes.Buffer
 			Expect(json.Compact(&compact, body)).To(Succeed())
-			Expect(body).To(Equal(compact.Bytes()), base)
+			Expect(string(body)).To(Equal(compact.String()), base)
 		}
 	})
 })
