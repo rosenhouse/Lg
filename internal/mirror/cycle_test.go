@@ -149,7 +149,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		Expect(fsys.Journal()).To(BeEmpty())
-		Expect(fake.Requests()[before:]).To(HaveLen(8))
+		Expect(fake.Requests()[before:]).To(HaveLen(2+len(mirror.NonTerminal)), "the repo, the backfill window and one listing per non-terminal status")
 		Expect(fake.Requests()[before:]).To(HaveEach(HaveField("Path", BeElementOf("/repos/rosenhouse/lg", "/repos/rosenhouse/lg/actions/runs"))))
 	})
 
