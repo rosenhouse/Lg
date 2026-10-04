@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 
+	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
@@ -31,7 +33,22 @@ const liveSyncTimeout = 15 * time.Minute
 const (
 	fixtureStage     = "after-attempt-3"
 	logsDeletedStage = "after-expiry"
+	// GitHub delists an artifact once it expires, so the fixture run's live listing is the after-expiry one.
+	artifactsStage  = "after-expiry"
+	expiredArtifact = int64(11276327411)
 )
+
+// recordedKinds counts the job kinds of each recorded attempt, by run and attempt.
+var recordedKinds = map[int64]map[int]map[model.JobKind]int{
+	fixtureRun: {
+		1: {model.Ran: 10, model.NotApplicable: 2},
+		2: {model.CarriedForward: 8, model.NotApplicable: 1, model.Ran: 3},
+		3: {model.Ran: 11, model.NotApplicable: 1},
+	},
+	logsDeletedRun: {
+		1: {model.Ran: 10, model.NotApplicable: 2},
+	},
+}
 
 var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Ordered, func() {
 	var (
@@ -44,7 +61,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 		env = harness.NewLive(lgPath)
 		env.WriteLiveConfig("backfill: 90d", "retention: 90d")
 
-		Eventually(env.Lg("sync"), liveSyncTimeout).Should(gexec.Exit(0))
+		syncLive(env)
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
 		logsDeletedDir = runDir(env, logsDeletedRun)
 	})
@@ -53,11 +70,9 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 		for attempt := 1; attempt <= 3; attempt++ {
 			dir := layout.AttemptDir(fixtureDir, attempt)
 			Expect(dir).To(BeADirectory())
-			kinds := recordedKinds(fixtureRun, fixtureStage, attempt)
-			Expect(storedJobIDs(dir)).To(ConsistOf(ids(kinds)), "attempt %d", attempt)
-			for id, kind := range kinds {
-				Expect(storedKind(dir, id)).To(Equal(kind), "attempt %d job %d", attempt, id)
-			}
+			kinds := storedKinds(dir)
+			Expect(slices.Collect(maps.Keys(kinds))).To(ConsistOf(recordedJobIDs(fixtureRun, fixtureStage, attempt)), "attempt %d", attempt)
+			Expect(countKinds(kinds)).To(Equal(recordedKinds[fixtureRun][attempt]), "attempt %d", attempt)
 		}
 	})
 
@@ -66,7 +81,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 			dir := layout.AttemptDir(fixtureDir, attempt)
 			logs := recordedLogs(fixtureRun, fixtureStage, attempt)
 			ran := 0
-			for id, kind := range recordedKinds(fixtureRun, fixtureStage, attempt) {
+			for id, kind := range storedKinds(dir) {
 				if kind != model.Ran {
 					continue
 				}
@@ -74,23 +89,22 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 				Expect(logs).To(HaveKey(id), "attempt %d job %d", attempt, id)
 				Expect(recordings.CompareLog(logs[id], jobDir(dir, strconv.FormatInt(id, 10)))).To(Succeed(), "attempt %d job %d", attempt, id)
 			}
-			Expect(ran).NotTo(BeZero())
+			Expect(ran).To(Equal(recordedKinds[fixtureRun][attempt][model.Ran]), "attempt %d", attempt)
 		}
 	})
 
 	It("writes deleted tombstones for the 10 ran jobs of run 37129738159", func() {
 		dir := layout.AttemptDir(logsDeletedDir, 1)
-		ran := 0
-		for id, kind := range recordedKinds(logsDeletedRun, logsDeletedStage, 1) {
+		kinds := storedKinds(dir)
+		Expect(countKinds(kinds)).To(Equal(recordedKinds[logsDeletedRun][1]))
+		for id, kind := range kinds {
 			if kind != model.Ran {
 				continue
 			}
-			ran++
 			job := jobDir(dir, strconv.FormatInt(id, 10))
 			Expect(filepath.Join(job, "log.txt")).NotTo(BeAnExistingFile())
 			Expect(readJSON(filepath.Join(job, "log.txt.tombstone"))).To(HaveKeyWithValue("reason", "deleted"), "job %d", id)
 		}
-		Expect(ran).To(Equal(10))
 	})
 
 	It("stores attempt.json matching the recording on id, run_attempt, head_sha, status, conclusion and run_started_at", func() {
@@ -108,11 +122,16 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 		compare(logsDeletedDir, logsDeletedRun, logsDeletedStage, 1)
 	})
 
-	It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
-		var listed []model.Artifact
-		raw, err := os.ReadFile(filepath.Join(layout.AttemptDir(fixtureDir, 3), "artifacts.json"))
+	It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
+		recorded, err := recordings.Artifacts(fixtureRun, artifactsStage)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(json.Unmarshal(raw, &listed)).To(Succeed())
+		listed := artifactIDs(storedArtifacts(fixtureDir))
+		Expect(listed).To(ConsistOf(artifactIDs(recorded)))
+		Expect(listed).NotTo(ContainElement(expiredArtifact))
+	})
+
+	It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
+		listed := storedArtifacts(fixtureDir)
 		Expect(listed).NotTo(BeEmpty())
 
 		for _, artifact := range listed {
@@ -120,9 +139,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 			zip, err := os.ReadFile(filepath.Join(dir, "artifact.zip"))
 			if err == nil {
 				recorded := filepath.Join(recordings.Dir(fixtureRun, fixtureStage), "artifacts", fmt.Sprintf("%d.zip", artifact.ID))
-				if _, err := os.Stat(recorded); err == nil {
-					Expect(os.ReadFile(recorded)).To(Equal(zip), "artifact %d", artifact.ID)
-				}
+				Expect(os.ReadFile(recorded)).To(Equal(zip), "artifact %d", artifact.ID)
 				continue
 			}
 			Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(HaveKeyWithValue("reason", BeElementOf("expired", "deleted")), "artifact %d", artifact.ID)
@@ -142,11 +159,24 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 	})
 })
 
+// syncLive retries, because one transient GitHub error on any run fails a
+// sync, and the next sync resumes where it stopped.
+func syncLive(env *harness.Env) {
+	GinkgoHelper()
+	var session *gexec.Session
+	for range 3 {
+		if session = env.Lg("sync").Wait(liveSyncTimeout); session.ExitCode() == 0 {
+			break
+		}
+	}
+	Expect(session).To(gexec.Exit(0))
+}
+
 func get(url string) []byte {
 	GinkgoHelper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	Expect(err).NotTo(HaveOccurred())
-	req.Header.Set("User-Agent", "lg/test")
+	req.Header.Set("User-Agent", github.UserAgent())
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = resp.Body.Close() }()
@@ -165,22 +195,20 @@ func runDir(env *harness.Env, runID int64) string {
 	return matches[0]
 }
 
-// recordedKinds classifies a recorded attempt's jobs by id.
-func recordedKinds(runID int64, stage string, attempt int) map[int64]model.JobKind {
+func recordedJobIDs(runID int64, stage string, attempt int) []int64 {
 	GinkgoHelper()
-	run, err := recordings.Attempt(runID, stage, attempt)
-	Expect(err).NotTo(HaveOccurred())
 	jobs, err := recordings.Jobs(runID, stage, attempt)
 	Expect(err).NotTo(HaveOccurred())
-	kinds := map[int64]model.JobKind{}
+	var out []int64
 	for _, job := range jobs {
-		kinds[job.ID] = model.Classify(job, run.RunStartedAt)
+		out = append(out, job.ID)
 	}
-	return kinds
+	return out
 }
 
 // recordedLogs are the log bodies GitHub served for a recorded attempt, by
-// job id. record.sh fetches every job's log, carried-forward ones included.
+// job id. record.sh fetches every job's log, carried-forward ones included,
+// and writes the body of a 404 too, so status.txt says which are logs.
 func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	GinkgoHelper()
 	status, err := os.Open(filepath.Join(recordings.Dir(runID, stage), "status.txt"))
@@ -191,10 +219,10 @@ func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	logs := map[int64][]byte{}
 	for _, line := range lines {
 		id, ok := strings.CutPrefix(line.Path, "jobs/")
-		id, _, _ = strings.Cut(id, "/")
 		if !ok || line.Final != http.StatusOK {
 			continue
 		}
+		id, _, _ = strings.Cut(id, "/")
 		jobID, err := strconv.ParseInt(id, 10, 64)
 		Expect(err).NotTo(HaveOccurred())
 		body, err := os.ReadFile(filepath.Join(recordings.Dir(runID, stage), fmt.Sprintf("attempt-%d", attempt), "logs", id+".txt"))
@@ -205,44 +233,62 @@ func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	return logs
 }
 
-func ids(kinds map[int64]model.JobKind) []int64 {
-	var out []int64
-	for id := range kinds {
-		out = append(out, id)
-	}
-	return out
-}
-
-func storedJobIDs(attemptDir string) []int64 {
+func storedArtifacts(runDir string) []model.Artifact {
 	GinkgoHelper()
-	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
+	var listed []model.Artifact
+	raw, err := os.ReadFile(filepath.Join(layout.AttemptDir(runDir, 3), "artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
+	Expect(json.Unmarshal(raw, &listed)).To(Succeed())
+	return listed
+}
+
+func artifactIDs(artifacts []model.Artifact) []int64 {
 	var out []int64
-	for _, entry := range entries {
-		digits, _, _ := strings.Cut(entry.Name(), "_")
-		id, err := strconv.ParseInt(digits, 10, 64)
-		Expect(err).NotTo(HaveOccurred(), entry.Name())
-		out = append(out, id)
+	for _, artifact := range artifacts {
+		out = append(out, artifact.ID)
 	}
 	return out
 }
 
-// storedKind reads a job's kind off disk: carried_forward when fetch.json
+func countKinds(kinds map[int64]model.JobKind) map[model.JobKind]int {
+	counts := map[model.JobKind]int{}
+	for _, kind := range kinds {
+		counts[kind]++
+	}
+	return counts
+}
+
+// storedKinds reads each job's kind off disk: carried_forward when fetch.json
 // names it, ran from a log or an expired or deleted tombstone, and
 // not_applicable from its tombstone's reason.
-func storedKind(attemptDir string, id int64) model.JobKind {
+func storedKinds(attemptDir string) map[int64]model.JobKind {
 	GinkgoHelper()
-	job := jobDir(attemptDir, strconv.FormatInt(id, 10))
-	_, logErr := os.Stat(filepath.Join(job, "log.txt"))
-	tombstone, tombstoneErr := os.ReadFile(filepath.Join(job, "log.txt.tombstone"))
 	var fetch struct {
 		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
 	}
 	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
 	Expect(err).NotTo(HaveOccurred())
 	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+
+	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
+	Expect(err).NotTo(HaveOccurred())
+	kinds := map[int64]model.JobKind{}
+	for _, entry := range entries {
+		digits, _, _ := strings.Cut(entry.Name(), "_")
+		id, err := strconv.ParseInt(digits, 10, 64)
+		Expect(err).NotTo(HaveOccurred(), entry.Name())
+		kinds[id] = storedKind(attemptDir, id, slices.Contains(fetch.CarriedForwardJobs, id))
+	}
+	return kinds
+}
+
+func storedKind(attemptDir string, id int64, carriedForward bool) model.JobKind {
+	GinkgoHelper()
+	job := jobDir(attemptDir, strconv.FormatInt(id, 10))
+	_, logErr := os.Stat(filepath.Join(job, "log.txt"))
+	tombstone, tombstoneErr := os.ReadFile(filepath.Join(job, "log.txt.tombstone"))
 	switch {
-	case slices.Contains(fetch.CarriedForwardJobs, id):
+	case carriedForward:
 		Expect(logErr).To(HaveOccurred(), "carried-forward job %d has a log", id)
 		Expect(tombstoneErr).To(HaveOccurred(), "carried-forward job %d has a tombstone", id)
 		return model.CarriedForward
