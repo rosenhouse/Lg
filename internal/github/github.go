@@ -424,8 +424,8 @@ func (h *HTTP) ArtifactZipURL(artifactID int64) string {
 
 // list GETs a listing and every page its Link next URLs lead to, returning
 // the elements of field, the total_count and the number of pages. It stops
-// after a page whose total_count reaches cap, when cap is set.
-func (h *HTTP) list(ctx context.Context, firstURL, field string, cap int) ([]json.RawMessage, int, int, error) {
+// after a page whose total_count reaches limit, when limit is set.
+func (h *HTTP) list(ctx context.Context, firstURL, field string, limit int) ([]json.RawMessage, int, int, error) {
 	var elements []json.RawMessage
 	var total int
 	followed := map[string]bool{}
@@ -457,7 +457,7 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string, cap int) ([]jso
 		}
 		elements = append(elements, items...)
 		pageURL = next
-		if cap > 0 && total >= cap {
+		if limit > 0 && total >= limit {
 			break
 		}
 	}
