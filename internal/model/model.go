@@ -10,6 +10,7 @@ type Run struct {
 	Path       string     `json:"path"`
 	HeadBranch string     `json:"head_branch"`
 	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 	Status     string     `json:"status"`
 	RunAttempt int        `json:"run_attempt"`
 	Repository Repository `json:"repository"`
@@ -21,6 +22,7 @@ type Repository struct {
 
 type Job struct {
 	ID         int64   `json:"id"`
+	URL        string  `json:"url"`
 	Name       string  `json:"name"`
 	RunnerName *string `json:"runner_name"`
 	Steps      []Step  `json:"steps"`

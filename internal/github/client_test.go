@@ -91,6 +91,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Path:       ".github/workflows/lg-fixture.yml",
 			HeadBranch: "lg-fixture",
 			CreatedAt:  time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC),
+			UpdatedAt:  time.Date(2026, 10, 3, 14, 24, 12, 0, time.UTC),
 			Status:     "completed",
 			RunAttempt: 1,
 			Repository: model.Repository{FullName: "rosenhouse/Lg"},
