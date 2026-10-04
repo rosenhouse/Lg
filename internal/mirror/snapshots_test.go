@@ -270,3 +270,20 @@ func jsonField(raw []byte, name string) json.RawMessage {
 	Expect(json.Unmarshal(raw, &object)).To(Succeed())
 	return object[name]
 }
+
+var _ = Describe("an artifact pending for a run that was then deleted", Label("artifacts"), func() {
+	It("is retried, tombstoned as deleted and dropped from pending, though no listing names the run", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
+		env.Fake.Fail("api", "artifacts/"+flakyReport+"/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		env.Fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		env.Fake.Remove(runID)
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readZipTombstone(env, runID, flakyReport)).To(HaveKeyWithValue("reason", "deleted"))
+		Expect(readJSONFile(filepath.Join(artifactDir(env, runID, flakyReport), "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(1)))
+		Expect(readPending(env)).To(BeEmpty())
+	}, cycleTimeout)
+})
