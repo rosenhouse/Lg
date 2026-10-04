@@ -149,10 +149,12 @@ var _ = Describe("Server controls", func() {
 		Expect(fake.AddRun(scenario.InProgress(run, 2))).To(Succeed())
 		Expect(fake.AddRun(run)).To(Succeed())
 
-		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs/7/attempts/2")).To(MatchJSON(run.Files["attempt-2/attempt.json"].Data))
-		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs/7/attempts/2/jobs")).To(MatchJSON(run.Files["attempt-2/jobs.json"].Data))
-		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/jobs/7111221661475/logs")).To(Equal(run.Files["attempt-2/logs/7111221661475.txt"].Data))
-		var listing struct{ WorkflowRuns []json.RawMessage `json:"workflow_runs"` }
+		Expect(served(fake.URL() + "/repos/rosenhouse/lg/actions/runs/7/attempts/2")).To(MatchJSON(run.Files["attempt-2/attempt.json"].Data))
+		Expect(served(fake.URL() + "/repos/rosenhouse/lg/actions/runs/7/attempts/2/jobs")).To(MatchJSON(run.Files["attempt-2/jobs.json"].Data))
+		Expect(served(fake.URL() + "/repos/rosenhouse/lg/actions/jobs/7111221661475/logs")).To(Equal(run.Files["attempt-2/logs/7111221661475.txt"].Data))
+		var listing struct {
+			WorkflowRuns []json.RawMessage `json:"workflow_runs"`
+		}
 		Expect(json.Unmarshal(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs"), &listing)).To(Succeed())
 		Expect(listing.WorkflowRuns).To(ContainElement(MatchJSON(run.Files["run.json"].Data)))
 	})
