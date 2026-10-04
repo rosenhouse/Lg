@@ -31,7 +31,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps.Stderr)
+	s, release, err := openForWriting(roots, deps.Clock, deps.Stderr)
 	if err != nil {
 		return err
 	}
@@ -50,12 +50,12 @@ const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
 // holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots, stderr io.Writer) (*store.Store, func(), error) {
+func openForWriting(roots config.Roots, clk clock.Clock, stderr io.Writer) (*store.Store, func(), error) {
 	if err := store.MkdirAll(roots.State); err != nil {
 		return nil, nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")
-	held, err := lock.Wait(writeLock, writeLockWait, clock.Real{}, func(holder string) {
+	held, err := lock.Wait(writeLock, writeLockWait, clk, func(holder string) {
 		_, _ = fmt.Fprintf(stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
 	})
 	if err != nil {
