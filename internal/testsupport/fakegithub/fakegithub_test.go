@@ -175,7 +175,7 @@ var _ = Describe("fakegithub replay", Label("transport"), func() {
 })
 
 var _ = Describe("fakegithub", Label("transport"), func() {
-	It("serves blobs from a host on another domain that answers 400 to any request carrying Authorization", func() {
+	It("serves blobs from a host on another domain that answers 401 to Authorization: Bearer and 403 to any other Authorization", func() {
 		fake := fakegithub.Start(runID, "after-attempt-1")
 		redirect := fetch(fake.URL() + logPath)
 		Expect(redirect.status).To(Equal(http.StatusFound))
@@ -187,8 +187,17 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		Expect(api.Hostname()).To(Equal("127.0.0.1"))
 
 		Expect(fetch(blob.String()).status).To(Equal(http.StatusOK))
-		Expect(fetch(blob.String(), "Authorization", "Bearer lg-test-token").status).To(Equal(http.StatusBadRequest))
-		Expect(fetch(blob.String(), "Authorization", "token lg-test-token").status).To(Equal(http.StatusBadRequest))
+		bearer := fetch(blob.String(), "Authorization", "Bearer lg-test-token")
+		Expect(bearer.status).To(Equal(http.StatusUnauthorized))
+		Expect(bearer.header.Get("WWW-Authenticate")).To(HavePrefix("Bearer "))
+		Expect(string(bearer.body)).To(HavePrefix("\uFEFF<?xml"))
+		Expect(string(bearer.body)).To(ContainSubstring("<Code>InvalidAuthenticationInfo</Code>"))
+		for _, scheme := range []string{"token", "Basic"} {
+			other := fetch(blob.String(), "Authorization", scheme+" lg-test-token")
+			Expect(other.status).To(Equal(http.StatusForbidden), scheme)
+			Expect(string(other.body)).To(HavePrefix("\uFEFF<?xml"))
+			Expect(string(other.body)).To(ContainSubstring("<Code>AuthenticationFailed</Code>"), scheme)
+		}
 	})
 
 	It("pages run, job and artifact listings with Link rel=next URLs in /repositories/1402714635/ form when a page cap is set, and serves those URLs", func() {

@@ -161,10 +161,8 @@ func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 // serveBlob serves a recorded body with its final status. Like blob
 // storage, it refuses a request carrying GitHub's Authorization.
 func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "" {
-		w.Header().Set("Content-Type", "application/xml")
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><Error><Code>InvalidAuthenticationInfo</Code></Error>`))
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		refuseAuthorization(w, auth)
 		return
 	}
 	id, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
@@ -187,6 +185,20 @@ func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(d.Final)
 	_, _ = w.Write(body)
+}
+
+// refuseAuthorization answers as blob storage does: 401 to a Bearer token
+// it cannot parse, 403 to any other scheme.
+func refuseAuthorization(w http.ResponseWriter, auth string) {
+	w.Header().Set("Content-Type", "application/xml")
+	if strings.HasPrefix(auth, "Bearer ") {
+		w.Header().Set("WWW-Authenticate", "Bearer authorization_uri=https://login.microsoftonline.com/common/oauth2/authorize resource_id=https://storage.azure.com")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("\uFEFF" + `<?xml version="1.0" encoding="utf-8"?><Error><Code>InvalidAuthenticationInfo</Code><Message>Server failed to authenticate the request. Please refer to the information in the www-authenticate header.</Message><AuthenticationErrorDetail>The access token was missing or malformed.</AuthenticationErrorDetail></Error>`))
+		return
+	}
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte("\uFEFF" + `<?xml version="1.0" encoding="utf-8"?>` + "\n" + `<Error><Code>AuthenticationFailed</Code><Message>Server failed to authenticate the request. Make sure the value of Authorization header is formed correctly including the signature.</Message></Error>`))
 }
 
 func (s *Server) loaded() map[string]*run {
