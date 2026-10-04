@@ -92,14 +92,17 @@ var _ = Describe("FS", Label("store"), func() {
 		f.FailOn("write", syscall.ENOSPC)
 
 		Expect(writeFile()).To(MatchError(syscall.ENOSPC))
-		Expect(writeFile()).NotTo(Succeed())
+		second, err := f.Create(filepath.Join(dir, "d", "b"))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(second.Close)
+		Expect(second.Write([]byte("x"))).Error().To(MatchError(syscall.ENOSPC))
 		Expect(f.RemoveAll(filepath.Join(dir, "d"))).To(Succeed())
 		Expect(filepath.Join(dir, "d")).NotTo(BeAnExistingFile())
 		var journal []string
 		for _, op := range f.Journal() {
 			journal = append(journal, op.Name)
 		}
-		Expect(journal).To(Equal([]string{"mkdir", "create", "mkdir", "remove"}))
+		Expect(journal).To(Equal([]string{"mkdir", "create", "create", "remove"}))
 	})
 
 	It("reports the mount it was told for a path, and the inner FS's otherwise", func() {
