@@ -18,9 +18,9 @@ import (
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
-// syncArtifacts lists the run's artifacts into run and publishes those not
-// on disk. It returns the errors that runScoped accepts, and stops at any
-// other. A run not found is skipped.
+// syncArtifacts lists the run's artifacts into run and publishes its retry
+// set. It returns the errors that runScoped accepts, and stops at any other.
+// A run not found is skipped.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
 	artifacts, listing, err := gh.ListArtifacts(ctx, run.ID)
 	if errors.Is(err, github.ErrNotFound) {
@@ -33,13 +33,13 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 		return nil, err
 	}
 	run.artifactsListed, run.artifacts, run.listing = true, artifacts, listing
+	retry, err := m.retrySet(*run, nil)
+	if err != nil {
+		return nil, err
+	}
 	var failed []error
-	for _, artifact := range artifacts {
-		target := layout.ArtifactDir(run.dir, artifact.ID, artifact.Name)
-		done, err := m.Store.Has(target)
-		if err == nil && !done {
-			err = m.publishArtifact(ctx, gh, run.Run, listing, artifact, target)
-		}
+	for _, artifact := range retry {
+		err := m.publishArtifact(ctx, gh, run.Run, listing, artifact, layout.ArtifactDir(run.dir, artifact.ID, artifact.Name))
 		switch {
 		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, artifact.ID, err))
