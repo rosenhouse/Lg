@@ -372,6 +372,15 @@ var _ = Describe("FindRunDir", Label("attempts"), func() {
 		Expect(s.FindRunDir(filepath.Join(date, "7_new-name_other"))).To(Equal(filepath.Join(date, "7_old-name_main")))
 	})
 
+	It("gives the dir it is asked for when it exists, without reading the date dir", func() {
+		Expect(os.MkdirAll(filepath.Join(date, "7_lg-fixture_main"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(date, "7_old-name_main"), 0o755)).To(Succeed())
+		unreadable, err := store.OpenFS(unreadableDir{path: date}, filepath.Dir(s.Data()))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(unreadable.FindRunDir(filepath.Join(date, "7_lg-fixture_main"))).To(Equal(filepath.Join(date, "7_lg-fixture_main")))
+	})
+
 	It("gives the dir it is asked for when the date dir holds none of the run's id", func() {
 		Expect(os.MkdirAll(filepath.Join(date, "77_lg-fixture_main"), 0o755)).To(Succeed())
 
@@ -390,3 +399,16 @@ var _ = Describe("FindRunDir", Label("attempts"), func() {
 		Expect(err).To(MatchError(syscall.ENOTDIR))
 	})
 })
+
+// unreadableDir fails ReadDir of path.
+type unreadableDir struct {
+	store.OSFS
+	path string
+}
+
+func (u unreadableDir) ReadDir(path string) ([]fs.DirEntry, error) {
+	if filepath.Clean(path) == u.path {
+		return nil, syscall.EIO
+	}
+	return u.OSFS.ReadDir(path)
+}
