@@ -1,0 +1,110 @@
+package e2e_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gexec"
+
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/harness"
+)
+
+const flakyReportDir = fixtureRunDir + "/artifacts/11276401837_flaky-report"
+
+// servedArtifacts is the run's artifact listing as served, joined into one array.
+func servedArtifacts(fake *fakegithub.Server) []byte {
+	GinkgoHelper()
+	var listing struct{ Artifacts []json.RawMessage }
+	Expect(json.Unmarshal(fake.Served("artifacts.json"), &listing)).To(Succeed())
+	elements := make([][]byte, len(listing.Artifacts))
+	for i, a := range listing.Artifacts {
+		elements[i] = a
+	}
+	return append(append([]byte("["), bytes.Join(elements, []byte(","))...), ']')
+}
+
+// servedArtifact is the element of the run's artifact listing as served.
+func servedArtifact(fake *fakegithub.Server, id int64) []byte {
+	GinkgoHelper()
+	var listing []json.RawMessage
+	Expect(json.Unmarshal(servedArtifacts(fake), &listing)).To(Succeed())
+	for _, raw := range listing {
+		var a struct{ ID int64 }
+		Expect(json.Unmarshal(raw, &a)).To(Succeed())
+		if a.ID == id {
+			return raw
+		}
+	}
+	Fail("artifact " + strconv.FormatInt(id, 10) + " is not listed")
+	return nil
+}
+
+var _ = Describe("attempt-N", Label("artifacts"), func() {
+	It("holds artifacts.json as listed in the cycle that published it, with run_attempt_at_fetch in fetch.json", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+
+		listed := map[int][]byte{}
+		for n, stage := range []string{"after-attempt-1", "after-attempt-2", "after-attempt-3"} {
+			Expect(fake.Advance(fixtureRun, stage)).To(Succeed())
+			listed[n+1] = servedArtifacts(fake)
+			Expect(env.Sync()).To(gexec.Exit(0))
+		}
+		for n, listing := range listed {
+			attempt := filepath.Join(env.Data(), fixtureRunDir, "attempt-"+strconv.Itoa(n))
+			Expect(filepath.Join(attempt, "artifacts.json")).To(BeARegularFile())
+			Expect(os.ReadFile(filepath.Join(attempt, "artifacts.json"))).To(Equal(indented(listing)), "attempt %d", n)
+			Expect(readJSON(filepath.Join(attempt, "fetch.json"))).To(HaveKeyWithValue("run_attempt_at_fetch", BeEquivalentTo(n)))
+		}
+	})
+})
+
+var _ = Describe("an artifact whose zip and whose attempt's log both failed transiently, after a re-run-all deleted it", Label("artifacts"), func() {
+	It("gets artifact.json and a deleted tombstone on the next sync", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		listed := servedArtifact(fake, 11276401837)
+		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		fake.Fail("api", "artifacts/11276401837/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(fake.Advance(fixtureRun, "after-attempt-3")).To(Succeed())
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		dir := filepath.Join(env.Data(), flakyReportDir)
+		Expect(filepath.Join(dir, "artifact.json")).To(BeARegularFile())
+		Expect(os.ReadFile(filepath.Join(dir, "artifact.json"))).To(Equal(indented(listed)))
+		Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(SatisfyAll(
+			HaveKeyWithValue("reason", "deleted"),
+			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
+		))
+	})
+})
+
+var _ = Describe("an artifact listed only in an on-disk attempt snapshot, after state/ is deleted", Label("artifacts"), func() {
+	It("is retried and tombstoned as deleted when it 404s", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		fake.Fail("api", "artifacts/11276401837/zip", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(os.RemoveAll(env.State())).To(Succeed())
+		Expect(fake.Advance(fixtureRun, "after-attempt-3")).To(Succeed())
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+		dir := filepath.Join(env.Data(), flakyReportDir)
+		Expect(filepath.Join(dir, "artifact.json")).To(BeARegularFile())
+		Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(SatisfyAll(
+			HaveKeyWithValue("reason", "deleted"),
+			HaveKeyWithValue("http_status", BeEquivalentTo(http.StatusNotFound)),
+		))
+	})
+})
