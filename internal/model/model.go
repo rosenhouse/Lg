@@ -77,6 +77,14 @@ const (
 	ArtifactDownload ArtifactAction = "download"
 )
 
+// ClassifyArtifact gives ArtifactExpired to an artifact listed as expired,
+// else ArtifactTooLarge to one listed as larger than maxBytes.
 func ClassifyArtifact(a Artifact, maxBytes int64) ArtifactAction {
+	switch {
+	case a.Expired:
+		return ArtifactExpired
+	case a.SizeInBytes > maxBytes:
+		return ArtifactTooLarge
+	}
 	return ArtifactDownload
 }
