@@ -192,3 +192,20 @@ var _ = Describe("mirror.Cycle when one log returns 500", Label("artifacts"), fu
 		Expect(env.ArtifactDirs(runID)).To(HaveLen(4))
 	}, cycleTimeout)
 })
+
+var _ = Describe("an artifact's fetch.json", Label("artifacts"), func() {
+	It("records the PR numbers of the run as listed", func(ctx SpecContext) {
+		env := harness.InProcess()
+		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), cloneID)
+		Expect(env.Fake.AddRun(scenario.WithPullRequests(run, 42, 7))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		raw, err := os.ReadFile(filepath.Join(env.ArtifactDirs(cloneID)[0], "fetch.json"))
+		Expect(err).NotTo(HaveOccurred())
+		var fetch struct {
+			PRNumbers []int `json:"pr_numbers"`
+		}
+		Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+		Expect(fetch.PRNumbers).To(Equal([]int{42, 7}))
+	}, cycleTimeout)
+})
