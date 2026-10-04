@@ -132,7 +132,7 @@ func Listen(l net.Listener) *Server {
 
 // Load serves a run at a stage, alongside any runs already loaded.
 func (s *Server) Load(runID int64, stage string) error {
-	return s.LoadDir(runID, Recording(runID, stage))
+	return s.LoadDir(runID, recordings.Dir(runID, stage))
 }
 
 // LoadDir serves the recording in dir as run runID.
@@ -198,9 +198,6 @@ func downloadFile(files fs.FS, urlPath string) string {
 	}
 	return ""
 }
-
-// Recording is the dir under testdata/recordings holding a run at a stage.
-func Recording(runID int64, stage string) string { return recordings.Dir(runID, stage) }
 
 // Served is a file of the first run loaded, as the server serves it: JSON
 // compacted, anything else as recorded.

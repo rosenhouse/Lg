@@ -28,12 +28,13 @@ type Run struct {
 
 // Recorded reads the recording of a run at a stage.
 func Recorded(runID int64, stage string) Run {
+	recording := os.DirFS(recordings.Dir(runID, stage))
 	files := fstest.MapFS{}
-	err := fs.WalkDir(os.DirFS(recordings.Dir(runID, stage)), ".", func(name string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(recording, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		data, err := os.ReadFile(path.Join(recordings.Dir(runID, stage), name))
+		data, err := fs.ReadFile(recording, name)
 		files[name] = &fstest.MapFile{Data: data}
 		return err
 	})
@@ -100,7 +101,7 @@ func NextDayRerun(r Run, attempt int) Run {
 		RunStartedAt time.Time `json:"run_started_at"`
 	}
 	mustUnmarshal(r.Files[attemptFile(attempt, "attempt.json")].Data, &started)
-	out := r.clone()
+	out := r.copy()
 	for name, file := range out.Files {
 		if path.Ext(name) != ".json" {
 			continue
@@ -120,7 +121,7 @@ func NextDayRerun(r Run, attempt int) Run {
 // RenameWorkflow names the workflow name in the run, and in attempt, the
 // attempts after it and their jobs.
 func RenameWorkflow(r Run, attempt int, name string) Run {
-	out := r.clone()
+	out := r.copy()
 	out.edit("run.json", func(run map[string]any) { run["name"] = name })
 	for n := attempt; out.Files[attemptFile(n, "attempt.json")] != nil; n++ {
 		out.edit(attemptFile(n, "attempt.json"), func(run map[string]any) { run["name"] = name })
@@ -152,7 +153,7 @@ func StartupFailure(r Run, attempt int) Run {
 }
 
 func (r Run) conclude(attempt int, status string, conclusion any) Run {
-	out := r.clone()
+	out := r.copy()
 	set := func(run map[string]any) { run["status"], run["conclusion"] = status, conclusion }
 	out.edit(attemptFile(attempt, "attempt.json"), set)
 	var latest struct {
@@ -169,8 +170,8 @@ func attemptFile(attempt int, name string) string {
 	return fmt.Sprintf("attempt-%d/%s", attempt, name)
 }
 
-// clone copies r's files, so that edits leave r unchanged.
-func (r Run) clone() Run {
+// copy copies r's files, so that edits leave r unchanged.
+func (r Run) copy() Run {
 	files := maps.Clone(r.Files)
 	for name, file := range files {
 		files[name] = &fstest.MapFile{Data: bytes.Clone(file.Data)}
