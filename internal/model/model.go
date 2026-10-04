@@ -22,7 +22,6 @@ type Repository struct {
 
 type Job struct {
 	ID         int64   `json:"id"`
-	URL        string  `json:"url"`
 	Name       string  `json:"name"`
 	RunnerName *string `json:"runner_name"`
 	Steps      []Step  `json:"steps"`
