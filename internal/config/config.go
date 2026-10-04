@@ -134,9 +134,12 @@ func Load(path string) (Config, error) {
 	if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, Error(fmt.Sprintf("%s: %s", path, describe(err)))
 	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return Config{}, Error(path + ": more than one YAML document")
+	}
 	cfg.Host = strings.ToLower(cfg.Host)
 	if err := Validate(cfg); err != nil {
-		return Config{}, err
+		return Config{}, Error(fmt.Sprintf("%s: %s", path, err))
 	}
 	return cfg, nil
 }
