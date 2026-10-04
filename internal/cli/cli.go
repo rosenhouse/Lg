@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -13,16 +14,18 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/execx"
+	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
 type Deps struct {
-	Env    map[string]string
-	Stdout io.Writer
-	Stderr io.Writer
-	Clock  clock.Clock
-	Runner execx.Runner
+	Env       map[string]string
+	Stdout    io.Writer
+	Stderr    io.Writer
+	Clock     clock.Clock
+	Runner    execx.Runner
+	NewGitHub func(api *url.URL, repo, token string) github.Client
 }
 
 func RealDeps() Deps {
@@ -31,7 +34,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault}
 }
 
 type commands struct {
