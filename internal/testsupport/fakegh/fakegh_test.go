@@ -65,7 +65,7 @@ var _ = Describe("fake gh told to Fail", Label("blocked"), func() {
 })
 
 var _ = Describe("fake gh told to Hang", Label("blocked"), func() {
-	It("prints nothing until it is killed", func(ctx SpecContext) {
+	It("prints nothing until it is killed, and records its pid", func(ctx SpecContext) {
 		gh := fakegh.New(GinkgoT().TempDir())
 		gh.Hang()
 
@@ -77,5 +77,6 @@ var _ = Describe("fake gh told to Hang", Label("blocked"), func() {
 		Expect(cmd.Run()).To(MatchError("signal: killed"))
 		Expect(stdout.String()).To(BeEmpty())
 		Expect(gh.Calls()).To(Equal([]string{"auth token"}))
+		Expect(gh.HungPIDs()).To(Equal([]int{cmd.Process.Pid}))
 	}, SpecTimeout(5*time.Second))
 })

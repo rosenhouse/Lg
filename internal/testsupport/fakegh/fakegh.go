@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
@@ -22,18 +23,19 @@ type GH struct {
 }
 
 // New writes the script into dir. It appends its arguments to dir/calls and
-// its GH_CONFIG_DIR to dir/config-dirs. Then it sleeps if dir/hang exists,
-// fails printing dir/stderr if that exists, and else prints dir/token.
+// its GH_CONFIG_DIR to dir/config-dirs. Then, if dir/hang exists, it appends
+// its pid to dir/hung-pids and sleeps. Else it fails printing dir/stderr if
+// that exists, and else prints dir/token.
 func New(dir string) *GH {
 	ginkgo.GinkgoHelper()
 	g := &GH{Path: filepath.Join(dir, "gh"), dir: dir}
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' "$*" >> '%s'
 printf '%%s\n' "$GH_CONFIG_DIR" >> '%s'
-[ -e '%s' ] && exec sleep 3600
-[ -e '%s' ] && { cat '%[4]s' >&2; exit 1; }
+[ -e '%s' ] && { echo $$ >> '%s'; exec sleep 3600; }
+[ -e '%s' ] && { cat '%[5]s' >&2; exit 1; }
 cat '%s'
-`, g.file("calls"), g.file("config-dirs"), g.file("hang"), g.file("stderr"), g.file("token"))
+`, g.file("calls"), g.file("config-dirs"), g.file("hang"), g.file("hung-pids"), g.file("stderr"), g.file("token"))
 	g.SetToken(Token)
 	gomega.Expect(os.WriteFile(g.Path, []byte(script), 0o755)).To(gomega.Succeed())
 	return g
@@ -79,4 +81,16 @@ func (g *GH) Fail(stderr string) {
 func (g *GH) Hang() {
 	ginkgo.GinkgoHelper()
 	gomega.Expect(os.WriteFile(g.file("hang"), nil, 0o644)).To(gomega.Succeed())
+}
+
+// HungPIDs gives the pid of each run that hung.
+func (g *GH) HungPIDs() []int {
+	ginkgo.GinkgoHelper()
+	var pids []int
+	for _, line := range g.lines("hung-pids") {
+		pid, err := strconv.Atoi(line)
+		gomega.Expect(err).NotTo(gomega.HaveOccurred())
+		pids = append(pids, pid)
+	}
+	return pids
 }
