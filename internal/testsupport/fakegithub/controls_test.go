@@ -2,6 +2,7 @@ package fakegithub_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"time"
@@ -10,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
 const (
@@ -23,6 +25,19 @@ var _ = Describe("Server controls", func() {
 	BeforeEach(func() {
 		fake = fakegithub.Start(runID, "after-attempt-1")
 	})
+
+	served := func(url string) []byte {
+		GinkgoHelper()
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+		Expect(err).NotTo(HaveOccurred())
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp).To(HaveHTTPStatus(http.StatusOK), url)
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		return body
+	}
 
 	get := func(path string) int {
 		GinkgoHelper()
@@ -127,6 +142,19 @@ var _ = Describe("Server controls", func() {
 		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer other").status).To(Equal(http.StatusUnauthorized))
 		Expect(fetch(fake.URL()+logPath, "Authorization", "token lg-test-token").status).To(Equal(http.StatusUnauthorized))
 		Expect(fetch(fake.URL()+logPath, "Authorization", "Bearer lg-test-token").status).To(Equal(http.StatusFound))
+	})
+
+	It("AddRun serves a scenario run's listing, attempts, jobs and logs, and serves it again in place of the earlier one", Label("attempts"), func() {
+		run := scenario.Clone(scenario.Recorded(runID, "after-attempt-2"), 7)
+		Expect(fake.AddRun(scenario.InProgress(run, 2))).To(Succeed())
+		Expect(fake.AddRun(run)).To(Succeed())
+
+		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs/7/attempts/2")).To(MatchJSON(run.Files["attempt-2/attempt.json"].Data))
+		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs/7/attempts/2/jobs")).To(MatchJSON(run.Files["attempt-2/jobs.json"].Data))
+		Expect(served(fake.URL()+"/repos/rosenhouse/lg/actions/jobs/7111221661475/logs")).To(Equal(run.Files["attempt-2/logs/7111221661475.txt"].Data))
+		var listing struct{ WorkflowRuns []json.RawMessage `json:"workflow_runs"` }
+		Expect(json.Unmarshal(served(fake.URL()+"/repos/rosenhouse/lg/actions/runs"), &listing)).To(Succeed())
+		Expect(listing.WorkflowRuns).To(ContainElement(MatchJSON(run.Files["run.json"].Data)))
 	})
 
 	It("Advance refuses a run that is not loaded", Label("transport"), func() {

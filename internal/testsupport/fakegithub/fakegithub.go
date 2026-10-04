@@ -21,6 +21,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
 type Request struct {
@@ -166,6 +167,9 @@ func (s *Server) loadFS(runID int64, files fs.FS) error {
 	return nil
 }
 
+// AddRun serves r, or serves it in place of an earlier r of the same id.
+func (s *Server) AddRun(r scenario.Run) error { return nil }
+
 // Advance serves a loaded run at another stage.
 func (s *Server) Advance(runID int64, stage string) error {
 	s.mu.Lock()
@@ -268,8 +272,8 @@ func (s *Server) countRequest(header http.Header) {
 	header.Set("X-RateLimit-Resource", "core")
 }
 
-// AddRun lists a run with the given body.
-func (s *Server) AddRun(body json.RawMessage) {
+// AddListed lists a run with the given body, and serves nothing else of it.
+func (s *Server) AddListed(body json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.added = append(s.added, body)

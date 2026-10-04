@@ -314,7 +314,7 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 			fake := fakegithub.New()
 			DeferCleanup(fake.Close)
 			for i := range 150 {
-				fake.AddRun(json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":"2026-10-02T00:00:00Z","status":"completed"}`, i+1)))
+				fake.AddListed(json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":"2026-10-02T00:00:00Z","status":"completed"}`, i+1)))
 			}
 
 			resp := fetch(fake.URL() + "/repos/rosenhouse/lg/actions/runs" + query)
@@ -336,13 +336,13 @@ var _ = Describe("fakegithub", Label("transport"), func() {
 		DeferCleanup(fake.Close)
 		const added = 1050
 		for i := range added {
-			fake.AddRun(json.RawMessage(fmt.Sprintf(
+			fake.AddListed(json.RawMessage(fmt.Sprintf(
 				`{"id":%d,"created_at":"2026-10-02T%02d:%02d:00Z","status":"completed","conclusion":"success","repository":{"full_name":"rosenhouse/Lg"}}`,
 				i+1, i/60, i%60)))
 		}
 		const unmatched = 5
 		for i := range unmatched {
-			fake.AddRun(json.RawMessage(fmt.Sprintf(
+			fake.AddListed(json.RawMessage(fmt.Sprintf(
 				`{"id":%d,"created_at":"2026-10-03T00:%02d:00Z","status":"in_progress","repository":{"full_name":"rosenhouse/Lg"}}`,
 				added+i+1, i)))
 		}
