@@ -132,19 +132,28 @@ type StatusError struct {
 	URL     string
 	Status  int
 	Message string
-	blob    bool
-	kind    error
+	Blob    bool
 }
 
 func (e *StatusError) Error() string {
 	hop := ""
-	if e.blob {
+	if e.Blob {
 		hop = "blob storage answered "
 	}
 	return fmt.Sprintf("%s: %s%d %s", e.URL, hop, e.Status, http.StatusText(e.Status))
 }
 
-func (e *StatusError) Unwrap() error { return e.kind }
+func (e *StatusError) Unwrap() error {
+	switch {
+	case e.Status == http.StatusGone:
+		return ErrGone
+	case e.Status == http.StatusNotFound && e.Blob:
+		return ErrBlobMissing
+	case e.Status == http.StatusNotFound:
+		return ErrNotFound
+	}
+	return nil
+}
 
 // Source is where a file came from: an API URL, never a blob URL.
 type Source struct {
@@ -372,15 +381,8 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 // statusError classifies a failed response by the hop that sent it.
 func (h *HTTP) statusError(rawURL string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), blob: !h.onAPIHost(resp.Request.URL)}
-	switch {
-	case e.Status == http.StatusGone:
-		e.kind = ErrGone
-	case e.Status == http.StatusNotFound && e.blob:
-		e.kind = ErrBlobMissing
-	case e.Status == http.StatusNotFound:
-		e.kind = ErrNotFound
-	case e.Status >= 500, e.Status == http.StatusForbidden && e.blob:
+	e := &StatusError{URL: rawURL, Status: resp.StatusCode, Message: message(body, resp.StatusCode), Blob: !h.onAPIHost(resp.Request.URL)}
+	if e.Status >= 500 || e.Status == http.StatusForbidden && e.Blob {
 		return failure.Transient{Err: e}
 	}
 	return e

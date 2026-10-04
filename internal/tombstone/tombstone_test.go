@@ -24,9 +24,12 @@ var (
 	grace   = time.Hour
 )
 
-// statusError is what github returns for a failed hop of kind.
-func statusError(kind error, status int, message string) error {
-	return errors.Join(kind, &github.StatusError{URL: logURL, Status: status, Message: message})
+func apiError(status int, message string) error {
+	return &github.StatusError{URL: logURL, Status: status, Message: message}
+}
+
+func blobError(status int, message string) error {
+	return &github.StatusError{URL: logURL, Status: status, Message: message, Blob: true}
 }
 
 func asJSON(t tombstone.Tombstone) map[string]any {
@@ -40,7 +43,7 @@ func asJSON(t tombstone.Tombstone) map[string]any {
 
 var _ = Describe("Tombstone JSON", Label("failures"), func() {
 	It("has lg_format, tombstoned_at, target, url, http_status, reason and message", func() {
-		t, err := tombstone.FromError(statusError(github.ErrGone, 410, expiredMessage), updated, grace, updated.Add(time.Minute+500*time.Millisecond))
+		t, err := tombstone.FromError(apiError(410, expiredMessage), updated, grace, updated.Add(time.Minute+500*time.Millisecond))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(asJSON(t)).To(Equal(map[string]any{
 			"lg_format":     1.0,
@@ -76,9 +79,9 @@ var _ = Describe("FromError", Label("failures"), func() {
 			Expect(t.HTTPStatus).To(HaveValue(Equal(status)))
 			Expect(t.TombstonedAt).To(Equal(now))
 		},
-		Entry("ErrNotFound after log_grace is deleted", statusError(github.ErrNotFound, 404, "Not Found"), updated.Add(grace+time.Second), tombstone.Deleted, 404),
-		Entry("ErrBlobMissing after log_grace is deleted", statusError(github.ErrBlobMissing, 404, "The specified blob does not exist."), updated.Add(grace+time.Second), tombstone.Deleted, 404),
-		Entry("ErrGone within log_grace is expired", statusError(github.ErrGone, 410, "Gone"), updated, tombstone.Expired, 410),
+		Entry("ErrNotFound after log_grace is deleted", apiError(404, "Not Found"), updated.Add(grace+time.Second), tombstone.Deleted, 404),
+		Entry("ErrBlobMissing after log_grace is deleted", blobError(404, "The specified blob does not exist."), updated.Add(grace+time.Second), tombstone.Deleted, 404),
+		Entry("ErrGone within log_grace is expired", apiError(410, "Gone"), updated, tombstone.Expired, 410),
 	)
 
 	DescribeTable("calls a 404 within log_grace Transient",
@@ -88,9 +91,9 @@ var _ = Describe("FromError", Label("failures"), func() {
 			Expect(err).To(MatchError(lost))
 			Expect(err).To(MatchError(ContainSubstring("within log_grace")))
 		},
-		Entry("ErrNotFound at log_grace", statusError(github.ErrNotFound, 404, "Not Found"), updated.Add(grace)),
-		Entry("ErrNotFound within log_grace", statusError(github.ErrNotFound, 404, "Not Found"), updated.Add(time.Minute)),
-		Entry("ErrBlobMissing at log_grace", statusError(github.ErrBlobMissing, 404, ""), updated.Add(grace)),
+		Entry("ErrNotFound at log_grace", apiError(404, "Not Found"), updated.Add(grace)),
+		Entry("ErrNotFound within log_grace", apiError(404, "Not Found"), updated.Add(time.Minute)),
+		Entry("ErrBlobMissing at log_grace", blobError(404, ""), updated.Add(grace)),
 	)
 
 	DescribeTable("returns any other error as it is",
@@ -99,8 +102,8 @@ var _ = Describe("FromError", Label("failures"), func() {
 			Expect(err).To(BeIdenticalTo(other))
 		},
 		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: logURL, Status: 500}}),
-		Entry("a Transient ErrNotFound", failure.Transient{Err: statusError(github.ErrNotFound, 404, "")}),
-		Entry("an API 422", statusError(errors.New("unprocessable"), 422, "")),
+		Entry("a Transient ErrNotFound", failure.Transient{Err: apiError(404, "")}),
+		Entry("an API 422", apiError(422, "")),
 		Entry("any other error", errors.New("disk full")),
 	)
 })
