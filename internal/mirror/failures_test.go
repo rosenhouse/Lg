@@ -49,7 +49,8 @@ func readTombstone(attemptDir, jobID string) map[string]any {
 var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attempt within log_grace of the attempt's updated_at, and writes a deleted tombstone after it", Label("failures"),
 	func(ctx SpecContext, host, match string) {
 		env := harness.InProcess()
-		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		// The run listing's updated_at is that of attempt 3, later than attempt 1's.
+		Expect(env.Fake.Load(runID, "after-attempt-3")).To(Succeed())
 		env.Fake.Fail(host, match, fakegithub.Fault{Status: http.StatusNotFound})
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour))
