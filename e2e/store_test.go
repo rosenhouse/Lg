@@ -200,8 +200,8 @@ var _ = Describe("two concurrent lg sync processes", Label("store"), func() {
 		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix("jobs/111221289888/logs"))))
 		requested := len(fake.Requests())
 		second, waitSecond := env.StartSync()
-		Consistently(func() int { return len(fake.Requests()) }, time.Second).Should(Equal(requested))
-		Expect(second.ExitCode()).To(Equal(-1), "second sync exited while the first held the lock")
+		Eventually(second.Err, harness.ExitTimeout).Should(gbytes.Say("lg: waiting for "))
+		Expect(fake.Requests()).To(HaveLen(requested))
 
 		release()
 		Expect(waitFirst()).To(gexec.Exit(0))
