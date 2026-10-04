@@ -29,6 +29,12 @@ var _ = Describe("Load", Label("discovery"), func() {
 		Entry("days", "7d", 7*day),
 	)
 
+	It("accepts the most days a duration holds and rejects one more", func() {
+		Expect(config.Load(write("repo: rosenhouse/lg\nretention: 106751d\n"))).To(HaveField("Retention", config.Duration(106751*day)))
+		_, err := config.Load(write("repo: rosenhouse/lg\nretention: 106752d\n"))
+		Expect(err).To(MatchError(HaveSuffix(`config.yaml: line 2: want a duration such as 7d or 36h, not "106752d"`)))
+	})
+
 	DescribeTable("rejects a duration in days that is not a whole number",
 		func(value string) {
 			_, err := config.Load(write("repo: rosenhouse/lg\nretention: " + value + "\n"))
