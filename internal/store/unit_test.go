@@ -38,7 +38,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 	})
 
 	It("publishes members created in subdirs by renaming the staged unit into place", func() {
-		w, err := unit.Create("jobs/1_build/log.txt")
+		w, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		_, err = w.Write([]byte("\xef\xbb\xbflog"))
 		Expect(err).NotTo(HaveOccurred())
@@ -61,7 +61,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 
 	DescribeTable("rejects a member name that is absolute or contains ..", Label("store"),
 		func(name string) {
-			_, err := unit.Create(name)
+			_, err := unit.Create(name, store.Unlimited)
 			Expect(err).To(MatchError(ContainSubstring(name)))
 			Expect(unit.WriteJSON(name, []byte("{}"))).To(MatchError(ContainSubstring(name)))
 			Expect(filepath.Join(root, "escaped.json")).NotTo(BeAnExistingFile())
@@ -90,16 +90,16 @@ var _ = Describe("Unit", Label("sync"), func() {
 	})
 
 	It("refuses to create a member twice", func() {
-		w, err := unit.Create("log.txt")
+		w, err := unit.Create("log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(w.Close()).To(Succeed())
 
-		_, err = unit.Create("log.txt")
+		_, err = unit.Create("log.txt", store.Unlimited)
 		Expect(err).To(MatchError(os.ErrExist))
 	})
 
 	It("gives the bytes and sha256 of each closed member", Label("failures"), func() {
-		w, err := unit.Create("jobs/1_build/log.txt")
+		w, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		_, err = w.Write([]byte("ab"))
 		Expect(err).NotTo(HaveOccurred())
@@ -112,8 +112,24 @@ var _ = Describe("Unit", Label("sync"), func() {
 		Expect(unit.Sum("a.json")).To(Equal(store.Sum{Bytes: 3, SHA256: "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"}))
 	})
 
+	It("fails a write past maxBytes with ErrTooLarge, keeping the bytes and sha256 of what fit", Label("artifacts"), func() {
+		w, err := unit.Create("artifact.zip", 3)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = w.Write([]byte("ab"))
+		Expect(err).NotTo(HaveOccurred())
+		_, err = w.Write([]byte("c"))
+		Expect(err).NotTo(HaveOccurred())
+
+		n, err := w.Write([]byte("d"))
+		Expect(err).To(MatchError(store.ErrTooLarge))
+		Expect(err).To(MatchError(ContainSubstring(`"artifact.zip" exceeds 3 bytes`)))
+		Expect(n).To(BeZero())
+		Expect(w.Close()).To(Succeed())
+		Expect(unit.Sum("artifact.zip")).To(Equal(store.Sum{Bytes: 3, SHA256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}))
+	})
+
 	It("refuses the sum of a member not closed or never created", Label("failures"), func() {
-		w, err := unit.Create("log.txt")
+		w, err := unit.Create("log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(w.Close)
 
@@ -124,7 +140,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 	})
 
 	It("Remove deletes a closed member, so Publish leaves it out", Label("failures"), func() {
-		w, err := unit.Create("jobs/1_build/log.txt")
+		w, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(w.Close()).To(Succeed())
 		Expect(unit.WriteJSON("jobs/1_build/log.txt.tombstone", []byte(`{}`))).To(Succeed())
@@ -137,7 +153,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 	})
 
 	It("Remove refuses a member still open", Label("failures"), func() {
-		w, err := unit.Create("log.txt")
+		w, err := unit.Create("log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(w.Close)
 

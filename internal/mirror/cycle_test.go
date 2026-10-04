@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
@@ -63,11 +64,12 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			NewGitHub: func(token string) github.Client {
 				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock)
 			},
-			Store:    s,
-			Host:     "github.com",
-			Repo:     "rosenhouse/lg",
-			Clock:    clock.NewFake(harness.DefaultNow()),
-			LogGrace: time.Hour,
+			Store:            s,
+			Host:             "github.com",
+			Repo:             "rosenhouse/lg",
+			Clock:            clock.NewFake(harness.DefaultNow()),
+			LogGrace:         time.Hour,
+			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 		}
 	})
 
@@ -87,6 +89,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 
+	It("returns an error and sends no request when ArtifactMaxBytes is not set", Label("artifacts"), func() {
+		m.ArtifactMaxBytes = 0
+
+		Expect(m.Cycle(context.Background())).To(MatchError("ArtifactMaxBytes must be at least 1, not 0"))
+		Expect(tokens.hosts).To(BeEmpty())
+		Expect(fake.Requests()).To(BeEmpty())
+	})
+
 	DescribeTable("refuses a run of another repository and writes nothing",
 		func(fullName string) {
 			editJSON(filepath.Join(recording, "run.json"), func(run map[string]any) {
@@ -103,14 +113,15 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the repo and the run listing and leaves tmp/ empty when the attempt is already on disk", func() {
+	It("requests only the repo, the run listing and the run's artifacts listing, and leaves tmp/ empty, when the attempt and artifacts are already on disk", func() {
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		before := len(fake.Requests())
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
 		Expect(fake.Requests()[before:]).To(HaveExactElements(
 			HaveField("Path", "/repos/rosenhouse/lg"),
-			HaveField("Path", "/repos/rosenhouse/lg/actions/runs")))
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs"),
+			HaveField("Path", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
 	})
 
@@ -119,7 +130,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 
 		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
 		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
-		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+		Expect(filepath.Glob(filepath.Join(root, "data/*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 	})
 
 	It("writes jobs.json joining all pages into one array whose elements are JSON-equal to those served", Label("transport"), func() {
@@ -179,7 +190,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		})
 
 		Expect(m.Cycle(context.Background())).To(Succeed())
-		Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
+		Expect(filepath.Glob(filepath.Join(root, "data/*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("/jobs"))))
 	})
 })

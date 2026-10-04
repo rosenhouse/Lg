@@ -30,6 +30,12 @@ type Run struct {
 	Raw json.RawMessage
 }
 
+// Artifact is an artifact with the element GitHub served for it.
+type Artifact struct {
+	model.Artifact
+	Raw json.RawMessage
+}
+
 // Job is a job with the element GitHub served for it.
 type Job struct {
 	model.Job
@@ -43,6 +49,9 @@ type Client interface {
 	ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error)
 	DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error
 	JobLogURL(jobID int64) string
+	ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error)
+	DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error
+	ArtifactZipURL(artifactID int64) string
 }
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
@@ -274,33 +283,21 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 }
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error) {
-	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)}
-	raws, total, pages, err := h.list(ctx, source.URL, "jobs")
-	if err != nil {
-		return nil, Source{}, err
-	}
-	if total > len(raws) {
-		return nil, Source{}, malformed(source.URL, "listed %d of %d jobs", len(raws), total)
-	}
-	jobs := make([]Job, len(raws))
-	listed := map[int64]bool{}
-	for i, raw := range raws {
-		jobs[i].Raw = raw
-		if err := json.Unmarshal(raw, &jobs[i].Job); err != nil {
-			return nil, Source{}, malformed(source.URL, "%w", err)
-		}
-		if listed[jobs[i].ID] {
-			return nil, Source{}, malformed(source.URL, "job %d listed twice", jobs[i].ID)
-		}
-		listed[jobs[i].ID] = true
-	}
-	source.Pages = pages
-	return jobs, source, nil
+	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)
+	return listByID(ctx, h, listURL, "jobs", "job", func(raw json.RawMessage) (Job, int64, error) {
+		job := Job{Raw: raw}
+		err := json.Unmarshal(raw, &job.Job)
+		return job, job.ID, err
+	})
 }
 
 // DownloadJobLog copies the log's bytes to w, following GitHub's redirect to blob storage.
 func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) error {
-	return h.get(ctx, h.JobLogURL(jobID), func(resp *http.Response) error {
+	return h.download(ctx, h.JobLogURL(jobID), w)
+}
+
+func (h *HTTP) download(ctx context.Context, rawURL string, w io.Writer) error {
+	return h.get(ctx, rawURL, func(resp *http.Response) error {
 		_, err := io.Copy(w, resp.Body)
 		return err
 	})
@@ -308,6 +305,50 @@ func (h *HTTP) DownloadJobLog(ctx context.Context, jobID int64, w io.Writer) err
 
 func (h *HTTP) JobLogURL(jobID int64) string {
 	return h.repoURL + fmt.Sprintf("/actions/jobs/%d/logs", jobID)
+}
+
+func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
+	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
+	return listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
+		artifact := Artifact{Raw: raw}
+		err := json.Unmarshal(raw, &artifact.Artifact)
+		return artifact, artifact.ID, err
+	})
+}
+
+// listByID lists the elements of field, which decode reads with their ids.
+// It refuses a listing short of its total_count or one that repeats an id.
+func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, decode func(json.RawMessage) (T, int64, error)) ([]T, Source, error) {
+	raws, total, pages, err := h.list(ctx, listURL, field)
+	if err != nil {
+		return nil, Source{}, err
+	}
+	if total > len(raws) {
+		return nil, Source{}, malformed(listURL, "listed %d of %d %s", len(raws), total, field)
+	}
+	elements := make([]T, len(raws))
+	listed := map[int64]bool{}
+	for i, raw := range raws {
+		element, id, err := decode(raw)
+		if err != nil {
+			return nil, Source{}, malformed(listURL, "%w", err)
+		}
+		if listed[id] {
+			return nil, Source{}, malformed(listURL, "%s %d listed twice", noun, id)
+		}
+		listed[id] = true
+		elements[i] = element
+	}
+	return elements, Source{URL: listURL, Pages: pages}, nil
+}
+
+// DownloadArtifact copies the artifact's zip to w, following GitHub's redirect to blob storage.
+func (h *HTTP) DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error {
+	return h.download(ctx, h.ArtifactZipURL(artifactID), w)
+}
+
+func (h *HTTP) ArtifactZipURL(artifactID int64) string {
+	return h.repoURL + fmt.Sprintf("/actions/artifacts/%d/zip", artifactID)
 }
 
 // list GETs a listing and every page its Link next URLs lead to, returning

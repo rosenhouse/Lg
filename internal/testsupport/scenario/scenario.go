@@ -169,6 +169,52 @@ func QueueJob(r Run, attempt int, name string) Run {
 	return out
 }
 
+// Expire lists the artifact as expired.
+func Expire(r Run, artifactID int64) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["expired"] = true })
+}
+
+// ListsArtifact reports whether r's artifacts.json lists the artifact.
+func (r Run) ListsArtifact(artifactID int64) bool {
+	var listing struct{ Artifacts []struct{ ID int64 } }
+	mustUnmarshal(r.Files["artifacts.json"].Data, &listing)
+	return slices.ContainsFunc(listing.Artifacts, func(a struct{ ID int64 }) bool { return a.ID == artifactID })
+}
+
+// WithoutDigest lists the artifact with no digest.
+func WithoutDigest(r Run, artifactID int64) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { delete(artifact, "digest") })
+}
+
+// WithDigest lists the artifact with the digest.
+func WithDigest(r Run, artifactID int64, digest string) Run {
+	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["digest"] = digest })
+}
+
+func (r Run) editArtifact(artifactID int64, edit func(map[string]any)) Run {
+	out := r.copy()
+	out.edit("artifacts.json", func(listing map[string]any) {
+		for _, artifact := range listing["artifacts"].([]any) {
+			artifact := artifact.(map[string]any)
+			if artifact["id"].(json.Number).String() == strconv.FormatInt(artifactID, 10) {
+				edit(artifact)
+			}
+		}
+	})
+	return out
+}
+
+// WithPullRequests lists the run with pull requests of the given numbers.
+func WithPullRequests(r Run, numbers ...int) Run {
+	prs := make([]any, len(numbers))
+	for i, n := range numbers {
+		prs[i] = map[string]any{"number": n}
+	}
+	out := r.copy()
+	out.edit("run.json", func(run map[string]any) { run["pull_requests"] = prs })
+	return out
+}
+
 // WithoutRunAttempt drops run_attempt from the listed run.
 func WithoutRunAttempt(r Run) Run {
 	out := r.copy()

@@ -71,7 +71,7 @@ type download struct {
 
 // Fault answers a request with Status, or breaks the connection. Headers are
 // set on the response, over the rate-limit headers. Body replaces the error
-// GitHub or blob storage would send with Status. Drop closes it partway
+// GitHub or blob storage would send with Status, and is a 200's whole body. Drop closes it partway
 // through the status line. Truncate sends the response's Content-Length and
 // half its body. Stall sends nothing more until the client gives up. Truncate
 // cuts the matched response, so a log's belongs on its blob, not on the API
@@ -365,7 +365,7 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		case f.Stall:
 			sw.status = 0
 			s.stall(r)
-		case f.Body != "":
+		case f.Body != "" || f.Status == http.StatusOK:
 			sw.WriteHeader(f.Status)
 			_, _ = sw.Write([]byte(f.Body))
 		case f.Status != 0 && host == "blob":

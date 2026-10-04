@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -25,19 +26,22 @@ import (
 )
 
 type Mirror struct {
-	Tokens    auth.TokenSource
-	NewGitHub func(token string) github.Client
-	Store     *store.Store
-	Host      string
-	Repo      string
-	Clock     clock.Clock
-	LogGrace  time.Duration
+	Tokens           auth.TokenSource
+	NewGitHub        func(token string) github.Client
+	Store            *store.Store
+	Host             string
+	Repo             string
+	Clock            clock.Clock
+	LogGrace         time.Duration
+	ArtifactMaxBytes int64
 }
 
-// Cycle publishes each completed attempt of every listed run that is not on
-// disk. An error that runScoped accepts aborts only its attempt; Cycle
-// returns these after trying every other attempt. Any other error stops the
-// cycle, and a local error that no retry fixes blocks it.
+// Cycle publishes each listed artifact and completed attempt that is not on
+// disk. It does every run's artifacts first, newest run first as GitHub lists
+// them, because a re-run of all jobs deletes them. An error that runScoped
+// accepts aborts only its artifact or attempt; Cycle returns these after
+// trying every other. Any other error stops the cycle, and a local error that
+// no retry fixes blocks it.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	err := m.cycle(ctx)
 	var blocked failure.Blocked
@@ -51,6 +55,9 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {
+	if m.ArtifactMaxBytes < 1 {
+		return fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
+	}
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
 		return err
@@ -60,31 +67,84 @@ func (m *Mirror) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runs, err := gh.ListRuns(ctx)
+	runs, err := m.listRuns(ctx, gh, repo)
 	if err != nil {
 		return err
 	}
-	var failed []error
-	for _, run := range runs {
+	artifactsFailed, err := m.artifactPhase(ctx, gh, runs)
+	if err != nil {
+		return err
+	}
+	attemptsFailed, err := m.attemptPhase(ctx, gh, runs)
+	if err != nil {
+		return err
+	}
+	return errors.Join(append(artifactsFailed, attemptsFailed...)...)
+}
+
+// listedRun is a listed run with its dir. gone marks a run not found.
+type listedRun struct {
+	github.Run
+	dir  string
+	gone bool
+}
+
+func (m *Mirror) listRuns(ctx context.Context, gh github.Client, repo github.Repo) ([]listedRun, error) {
+	runs, err := gh.ListRuns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	listed := make([]listedRun, len(runs))
+	for i, run := range runs {
 		if !strings.EqualFold(run.Repository.FullName, repo.FullName) {
-			return fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
+			return nil, fmt.Errorf("run %d belongs to %q, not %q", run.ID, run.Repository.FullName, repo.FullName)
 		}
-		runDir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
+		dir, err := m.Store.FindRunDir(layout.RunDir(layout.RepoDir(m.Store.Data(), m.Host, repo.FullName), run.Run))
 		if err != nil {
-			return err
+			return nil, err
 		}
-		runFailed, err := m.syncRun(ctx, gh, runDir, run)
-		if err != nil {
-			return err
+		listed[i] = listedRun{Run: run, dir: dir}
+	}
+	return listed, nil
+}
+
+// artifactPhase publishes every run's artifacts and marks the runs not found.
+// It returns the errors that runScoped accepts, and stops at any other.
+func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+	var failed []error
+	for i := range runs {
+		runFailed, err := m.syncArtifacts(ctx, gh, runs[i].dir, runs[i].Run)
+		switch {
+		case errors.Is(err, errRunGone):
+			runs[i].gone = true
+		case err != nil:
+			return nil, err
 		}
 		failed = append(failed, runFailed...)
 	}
-	return errors.Join(failed...)
+	return failed, nil
 }
 
-// syncRun publishes the run's planned attempts. It returns the errors that
+// attemptPhase publishes the attempts of every run that is not gone. It
+// returns the errors that runScoped accepts, and stops at any other.
+func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
+	var failed []error
+	for _, run := range runs {
+		if run.gone {
+			continue
+		}
+		runFailed, err := m.syncAttempts(ctx, gh, run.dir, run.Run)
+		if err != nil {
+			return nil, err
+		}
+		failed = append(failed, runFailed...)
+	}
+	return failed, nil
+}
+
+// syncAttempts publishes the run's planned attempts. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) syncRun(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, runDir string, run github.Run) ([]error, error) {
 	onDisk, err := m.attemptsOnDisk(runDir)
 	if err != nil {
 		return nil, err
@@ -146,7 +206,7 @@ func runScoped(err error) bool {
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed)
 }
 
-// errRunGone is a 404 on an attempt or its jobs, which skips the run.
+// errRunGone is a 404 on a run's artifacts, an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
 func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run github.Run, n int, target string) error {
@@ -216,29 +276,14 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 		s.carriedForward = append(s.carriedForward, job.ID)
 		return nil
 	case model.NotApplicable:
-		ts := tombstone.NeverProduced("log.txt", gh.JobLogURL(job.ID), "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
+		ts := tombstone.New("log.txt", gh.JobLogURL(job.ID), tombstone.NotApplicable, "GitHub produces no log for a job with no steps and no runner", m.Clock.Now())
 		return writeTombstone(s.unit, dir, ts)
 	}
-	log := filepath.Join(dir, "log.txt")
-	w, err := s.unit.Create(log)
-	if err != nil {
-		return err
+	download := func(w io.Writer) error { return gh.DownloadJobLog(ctx, job.ID, w) }
+	lost := func(err error) (tombstone.Tombstone, error) {
+		return tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
 	}
-	err = gh.DownloadJobLog(ctx, job.ID, w)
-	if closeErr := w.Close(); closeErr != nil {
-		return errors.Join(err, closeErr)
-	}
-	if err == nil {
-		return s.record(log, github.Source{URL: gh.JobLogURL(job.ID)})
-	}
-	ts, err := tombstone.FromError(err, attempt.UpdatedAt, m.LogGrace, m.Clock.Now())
-	if err != nil {
-		return err
-	}
-	if err := s.unit.Remove(log); err != nil {
-		return err
-	}
-	return writeTombstone(s.unit, dir, ts)
+	return s.download(filepath.Join(dir, "log.txt"), gh.JobLogURL(job.ID), store.Unlimited, download, lost)
 }
 
 func writeTombstone(unit *store.Unit, dir string, ts tombstone.Tombstone) error {
@@ -256,20 +301,38 @@ func writeValue(unit *store.Unit, name string, v any) error {
 	return unit.WriteJSON(name, buf.Bytes())
 }
 
-// fetch is fetch.json: how and when lg fetched its unit.
+// fetch is an attempt's fetch.json.
 type fetch struct {
-	LgFormat          int               `json:"lg_format"`
-	LgVersion         string            `json:"lg_version"`
-	FetchedAt         time.Time         `json:"fetched_at"`
-	Host              string            `json:"host"`
-	Repo              string            `json:"repo"`
-	RunID             int64             `json:"run_id"`
-	Attempt           int               `json:"attempt"`
-	RunCreatedAt      time.Time         `json:"run_created_at"`
-	RunAttemptAtFetch int               `json:"run_attempt_at_fetch"`
-	Sources           map[string]source `json:"sources"`
+	unitFetch
+	Attempt int               `json:"attempt"`
+	Sources map[string]source `json:"sources"`
 	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
 	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+}
+
+// unitFetch is what every fetch.json records.
+type unitFetch struct {
+	LgFormat          int       `json:"lg_format"`
+	LgVersion         string    `json:"lg_version"`
+	FetchedAt         time.Time `json:"fetched_at"`
+	Host              string    `json:"host"`
+	Repo              string    `json:"repo"`
+	RunID             int64     `json:"run_id"`
+	RunCreatedAt      time.Time `json:"run_created_at"`
+	RunAttemptAtFetch int       `json:"run_attempt_at_fetch"`
+}
+
+func (m *Mirror) unitFetch(run github.Run) unitFetch {
+	return unitFetch{
+		LgFormat:          1,
+		LgVersion:         version.Version,
+		FetchedAt:         m.Clock.Now().UTC().Truncate(time.Second),
+		Host:              m.Host,
+		Repo:              run.Repository.FullName,
+		RunID:             run.ID,
+		RunCreatedAt:      run.CreatedAt,
+		RunAttemptAtFetch: run.RunAttempt,
+	}
 }
 
 type source struct {
@@ -282,15 +345,8 @@ type source struct {
 
 func (m *Mirror) writeFetch(s *staged, run, attempt github.Run) error {
 	return writeValue(s.unit, "fetch.json", fetch{
-		LgFormat:           1,
-		LgVersion:          version.Version,
-		FetchedAt:          m.Clock.Now().UTC().Truncate(time.Second),
-		Host:               m.Host,
-		Repo:               run.Repository.FullName,
-		RunID:              run.ID,
+		unitFetch:          m.unitFetch(run),
 		Attempt:            attempt.RunAttempt,
-		RunCreatedAt:       run.CreatedAt,
-		RunAttemptAtFetch:  run.RunAttempt,
 		Sources:            s.sources,
 		CarriedForwardJobs: s.carriedForward,
 	})
@@ -317,6 +373,30 @@ func (s *staged) record(name string, from github.Source) error {
 	}
 	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
 	return nil
+}
+
+// download stages name from get. When get fails, it stages the tombstone
+// that lost gives instead, or returns lost's error.
+func (s *staged) download(name, url string, maxBytes int64, get func(io.Writer) error, lost func(error) (tombstone.Tombstone, error)) error {
+	w, err := s.unit.Create(name, maxBytes)
+	if err != nil {
+		return err
+	}
+	err = get(w)
+	if closeErr := w.Close(); closeErr != nil {
+		return errors.Join(err, closeErr)
+	}
+	if err == nil {
+		return s.record(name, github.Source{URL: url})
+	}
+	ts, err := lost(err)
+	if err != nil {
+		return err
+	}
+	if err := s.unit.Remove(name); err != nil {
+		return err
+	}
+	return writeTombstone(s.unit, filepath.Dir(name), ts)
 }
 
 // jsonArray joins the jobs as served into one array, as if GitHub had sent a single page.

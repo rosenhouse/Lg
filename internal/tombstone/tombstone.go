@@ -16,6 +16,7 @@ const (
 	Expired       Reason = "expired"
 	Deleted       Reason = "deleted"
 	NotApplicable Reason = "not_applicable"
+	TooLarge      Reason = "too_large"
 )
 
 // Tombstone is stored as <target>.tombstone in place of target.
@@ -29,22 +30,17 @@ type Tombstone struct {
 	Message      string    `json:"message"`
 }
 
-func newTombstone(target, url string, reason Reason, message string, now time.Time) Tombstone {
+// New tombstones a target for a reason of lg's own, with no HTTP status.
+func New(target, url string, reason Reason, message string, now time.Time) Tombstone {
 	return Tombstone{LgFormat: 1, TombstonedAt: now.UTC().Truncate(time.Second), Target: target, URL: url, Reason: reason, Message: message}
-}
-
-// NeverProduced tombstones a target that GitHub never produces, so lg never requests url.
-func NeverProduced(target, url, message string, now time.Time) Tombstone {
-	return newTombstone(target, url, NotApplicable, message, now)
 }
 
 // FromError tombstones log.txt when err shows GitHub has lost it for good: a
 // 410, or a 404 once log_grace has passed since the attempt's updated_at. A
 // 404 within log_grace is Transient. Any other error comes back as it is.
 func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, now time.Time) (Tombstone, error) {
-	var transient failure.Transient
-	var statusErr *github.StatusError
-	if errors.As(err, &transient) || !errors.As(err, &statusErr) {
+	statusErr, ok := permanent(err)
+	if !ok {
 		return Tombstone{}, err
 	}
 	var reason Reason
@@ -59,7 +55,43 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 	default:
 		return Tombstone{}, err
 	}
-	t := newTombstone("log.txt", statusErr.URL, reason, statusErr.Message, now)
+	return fromStatus("log.txt", statusErr, reason, now), nil
+}
+
+// FromZipError tombstones artifact.zip when err shows GitHub has lost it for
+// good: a 410, or a 404, which is expired once expires_at has passed and
+// deleted before it or with no expires_at. It gives back any other err.
+func FromZipError(err error, expiresAt, now time.Time) (Tombstone, error) {
+	statusErr, ok := permanent(err)
+	if !ok {
+		return Tombstone{}, err
+	}
+	notFound := errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrBlobMissing)
+	expired := !expiresAt.IsZero() && !expiresAt.After(now)
+	var reason Reason
+	switch {
+	case errors.Is(err, github.ErrGone), notFound && expired:
+		reason = Expired
+	case notFound:
+		reason = Deleted
+	default:
+		return Tombstone{}, err
+	}
+	return fromStatus("artifact.zip", statusErr, reason, now), nil
+}
+
+// permanent gives the StatusError of err unless err is Transient.
+func permanent(err error) (*github.StatusError, bool) {
+	var transient failure.Transient
+	var statusErr *github.StatusError
+	if errors.As(err, &transient) || !errors.As(err, &statusErr) {
+		return nil, false
+	}
+	return statusErr, true
+}
+
+func fromStatus(target string, statusErr *github.StatusError, reason Reason, now time.Time) Tombstone {
+	t := New(target, statusErr.URL, reason, statusErr.Message, now)
 	t.HTTPStatus = &statusErr.Status
-	return t, nil
+	return t
 }

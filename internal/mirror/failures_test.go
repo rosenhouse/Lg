@@ -149,6 +149,17 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
 	}, cycleTimeout)
+
+	It("still publishes the other run's artifacts and attempts when one run's artifacts listing fails", Label("artifacts"), func(ctx SpecContext) {
+		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
+			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusBadGateway})
+
+			Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+			Expect(env.ArtifactDirs(other)).To(HaveLen(4))
+			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
+			Expect(env.AttemptDirs(other)).To(HaveLen(1))
+		})
+	}, cycleTimeout)
 })
 
 // skipsLaterAttempts checks that a 404 at match in attempt 1 of a run with
@@ -178,6 +189,21 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 
 	It("skips the run's later attempts", Label("attempts"), func(ctx SpecContext) {
 		skipsLaterAttempts(ctx, fmt.Sprintf("runs/%d/attempts/1", runID))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when a listed run's artifacts listing returns 404", Label("artifacts"), func() {
+	It("skips the whole run without a tombstone and publishes the others", func(ctx SpecContext) {
+		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
+			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusNotFound})
+
+			Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+			Expect(env.ArtifactDirs(other)).NotTo(BeEmpty())
+			Expect(env.AttemptDirs(other)).To(HaveLen(1))
+			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
+			Expect(env.AttemptDirs(failing)).To(BeEmpty())
+			Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring(strconv.FormatInt(failing, 10)))))
+		})
 	}, cycleTimeout)
 })
 

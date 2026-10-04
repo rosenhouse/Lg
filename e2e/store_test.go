@@ -41,15 +41,14 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 		attempt1 = filepath.Join(env.Data(), fixtureRunDir, "attempt-1")
 	})
 
-	// syncThroughFault runs lg sync, checking that data/ is unchanged while
-	// the failing log request is held, part way through staging attempt-1.
+	// syncThroughFault runs lg sync, checking that no file of attempt-1 is
+	// in data/ while the failing log request is held, part way through staging it.
 	syncThroughFault := func() *gexec.Session {
 		GinkgoHelper()
 		release := fake.Hold(failingLog)
-		before := treesnap.Snapshot(env.Data())
 		_, wait := env.StartSync()
 		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix(failingLog))))
-		Expect(treesnap.Snapshot(env.Data())).To(Equal(before))
+		Expect(treesnap.Snapshot(env.Data())).NotTo(HaveKey(HavePrefix(fixtureRunDir + "/attempt-1")))
 		release()
 		return wait()
 	}

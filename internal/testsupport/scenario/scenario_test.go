@@ -233,4 +233,63 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(field(unnumbered, "attempt-2/attempt.json", "run_attempt")).To(BeEquivalentTo(2))
 		})
 	})
+
+	Describe("Expire", Label("artifacts"), func() {
+		It("lists the artifact as expired, leaving the others and the original run unchanged", func() {
+			expired := scenario.Expire(run, 7_011275917910)
+
+			var listing struct {
+				TotalCount int `json:"total_count"`
+				Artifacts  []map[string]any
+			}
+			Expect(json.Unmarshal(expired.Files["artifacts.json"].Data, &listing)).To(Succeed())
+			Expect(listing.Artifacts).To(HaveLen(listing.TotalCount))
+			Expect(listing.Artifacts).To(ContainElement(SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("expired", true))))
+			Expect(listing.Artifacts).To(HaveEach(Or(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("expired", false))))
+			Expect(string(run.Files["artifacts.json"].Data)).NotTo(ContainSubstring(`"expired":true`))
+		})
+	})
+
+	Describe("ListsArtifact", Label("artifacts"), func() {
+		It("reports whether the run's artifacts.json lists the id", func() {
+			Expect(run.ListsArtifact(7_011275917910)).To(BeTrue())
+			Expect(run.ListsArtifact(11275917910)).To(BeFalse())
+		})
+	})
+
+	Describe("WithoutDigest", Label("artifacts"), func() {
+		It("drops the artifact's digest, leaving the others and the original run unchanged", func() {
+			undigested := scenario.WithoutDigest(run, 7_011275917910)
+
+			var listing struct{ Artifacts []map[string]any }
+			Expect(json.Unmarshal(undigested.Files["artifacts.json"].Data, &listing)).To(Succeed())
+			Expect(listing.Artifacts).To(ContainElement(SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), Not(HaveKey("digest")))))
+			Expect(listing.Artifacts).To(HaveEach(Or(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("digest", HavePrefix("sha256:")))))
+			Expect(strings.Count(string(run.Files["artifacts.json"].Data), `"digest"`)).To(Equal(len(listing.Artifacts)))
+		})
+	})
+
+	Describe("WithDigest", Label("artifacts"), func() {
+		It("lists the artifact with the digest, leaving the others and the original run unchanged", func() {
+			digested := scenario.WithDigest(run, 7_011275917910, "sha512:abcd")
+
+			var listing struct{ Artifacts []map[string]any }
+			Expect(json.Unmarshal(digested.Files["artifacts.json"].Data, &listing)).To(Succeed())
+			Expect(listing.Artifacts).To(ContainElement(SatisfyAll(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("digest", "sha512:abcd"))))
+			Expect(listing.Artifacts).To(HaveEach(Or(HaveKeyWithValue("id", BeEquivalentTo(7_011275917910)), HaveKeyWithValue("digest", HavePrefix("sha256:")))))
+			Expect(string(run.Files["artifacts.json"].Data)).NotTo(ContainSubstring("sha512"))
+		})
+	})
+
+	Describe("WithPullRequests", Label("artifacts"), func() {
+		It("lists the run with pull requests of the given numbers", func() {
+			opened := scenario.WithPullRequests(run, 42, 7)
+
+			Expect(field(opened, "run.json", "pull_requests")).To(ConsistOf(
+				HaveKeyWithValue("number", BeEquivalentTo(42)),
+				HaveKeyWithValue("number", BeEquivalentTo(7)),
+			))
+			Expect(field(run, "run.json", "pull_requests")).To(BeEmpty())
+		})
+	})
 })

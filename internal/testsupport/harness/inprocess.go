@@ -63,13 +63,14 @@ func InProcess() *InProcessEnv {
 		Fake:  fake,
 		Clock: clk,
 		Mirror: &mirror.Mirror{
-			Tokens:    staticToken(fakegh.Token),
-			NewGitHub: func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token, clk) },
-			Store:     s,
-			Host:      "github.com",
-			Repo:      "rosenhouse/lg",
-			Clock:     clk,
-			LogGrace:  time.Duration(config.Defaults().LogGrace),
+			Tokens:           staticToken(fakegh.Token),
+			NewGitHub:        func(token string) github.Client { return github.NewHTTP(transport, api, "rosenhouse/lg", token, clk) },
+			Store:            s,
+			Host:             "github.com",
+			Repo:             "rosenhouse/lg",
+			Clock:            clk,
+			LogGrace:         time.Duration(config.Defaults().LogGrace),
+			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 		},
 		root: root,
 	}
@@ -92,6 +93,14 @@ func (e *InProcessEnv) Tmp() string { return filepath.Join(e.root, "tmp") }
 func (e *InProcessEnv) AttemptDirs(runID int64) []string {
 	ginkgo.GinkgoHelper()
 	dirs, err := filepath.Glob(filepath.Join(e.Data(), "*", "*", "*", "runs", "*", fmt.Sprintf("%d_*", runID), "attempt-*"))
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	return dirs
+}
+
+// ArtifactDirs lists the published artifact dirs of a run.
+func (e *InProcessEnv) ArtifactDirs(runID int64) []string {
+	ginkgo.GinkgoHelper()
+	dirs, err := filepath.Glob(filepath.Join(e.Data(), "*", "*", "*", "runs", "*", fmt.Sprintf("%d_*", runID), "artifacts", "*"))
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	return dirs
 }

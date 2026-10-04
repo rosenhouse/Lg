@@ -206,7 +206,7 @@ func publishAttempt(s *store.Store, attemptJSON string) error {
 	if err := unit.WriteJSON("attempt.json", []byte(attemptJSON)); err != nil {
 		return err
 	}
-	w, err := unit.Create("jobs/1_build/log.txt")
+	w, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 	if err != nil {
 		return err
 	}

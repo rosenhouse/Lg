@@ -78,6 +78,10 @@ func JobDir(attemptDir string, id int64, name string) string {
 	return filepath.Join(attemptDir, "jobs", fmt.Sprintf("%d_%s", id, Slug(name)))
 }
 
+func ArtifactDir(runDir string, id int64, name string) string {
+	return filepath.Join(runDir, "artifacts", fmt.Sprintf("%d_%s", id, Slug(name)))
+}
+
 // AttemptNumber gives n for the base name of AttemptDir(_, n).
 func AttemptNumber(name string) (int, bool) {
 	digits, ok := strings.CutPrefix(name, "attempt-")

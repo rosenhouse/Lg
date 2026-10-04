@@ -56,8 +56,8 @@ var _ = Describe("Tombstone JSON", Label("failures"), func() {
 		}))
 	})
 
-	It("has a null http_status for not_applicable", func() {
-		t := tombstone.NeverProduced("log.txt", logURL, "no steps and no runner", updated)
+	It("has a null http_status for a reason of lg's own", func() {
+		t := tombstone.New("log.txt", logURL, tombstone.NotApplicable, "no steps and no runner", updated)
 		Expect(asJSON(t)).To(Equal(map[string]any{
 			"lg_format":     1.0,
 			"tombstoned_at": "2026-10-03T14:24:12Z",
@@ -108,6 +108,52 @@ var _ = Describe("FromError", Label("failures"), func() {
 		Entry("a Blocked rate_limit", failure.Blocked{Kind: failure.RateLimit, Detail: "429 Too Many Requests", RetryAt: updated.Add(time.Hour)}),
 		Entry("a Blocked unreachable", failure.Blocked{Kind: failure.Unreachable, Detail: "connection refused"}),
 		Entry("a Blocked local_io", failure.Blocked{Kind: failure.LocalIO, Detail: "no space left on device"}),
+		Entry("any other error", errors.New("disk full")),
+	)
+})
+
+var _ = Describe("FromZipError", Label("artifacts"), func() {
+	const zipURL = "https://api.github.com/repos/o/r/actions/artifacts/1/zip"
+	expiresAt := time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC)
+
+	DescribeTable("tombstones artifact.zip with the failed hop's status and message",
+		func(lost *github.StatusError, now time.Time, reason tombstone.Reason) {
+			lost.URL = zipURL
+			t, err := tombstone.FromZipError(lost, expiresAt, now)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(asJSON(t)).To(Equal(map[string]any{
+				"lg_format":     1.0,
+				"tombstoned_at": now.Format(time.RFC3339),
+				"target":        "artifact.zip",
+				"url":           zipURL,
+				"http_status":   float64(lost.Status),
+				"reason":        string(reason),
+				"message":       lost.Message,
+			}))
+		},
+		Entry("410 is expired", &github.StatusError{Status: 410, Message: "Gone"}, expiresAt.Add(-time.Hour), tombstone.Expired),
+		Entry("404 once expires_at has passed is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(time.Second), tombstone.Expired),
+		Entry("404 at expires_at is expired", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt, tombstone.Expired),
+		Entry("404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "Not Found"}, expiresAt.Add(-time.Second), tombstone.Deleted),
+		Entry("blob 404 before expires_at is deleted", &github.StatusError{Status: 404, Message: "The specified blob does not exist.", Blob: true}, expiresAt.Add(-time.Second), tombstone.Deleted),
+	)
+
+	It("calls a 404 deleted when the artifact has no expires_at", func() {
+		t, err := tombstone.FromZipError(&github.StatusError{URL: zipURL, Status: 404}, time.Time{}, expiresAt)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(t.Reason).To(Equal(tombstone.Deleted))
+	})
+
+	DescribeTable("gives back any other error",
+		func(other error) {
+			_, err := tombstone.FromZipError(other, expiresAt, expiresAt.Add(time.Hour))
+			Expect(err).To(Equal(other))
+		},
+		Entry("a Transient 500", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 500}}),
+		Entry("a Transient ErrNotFound", failure.Transient{Err: &github.StatusError{URL: zipURL, Status: 404}}),
+		Entry("an API 400", &github.StatusError{URL: zipURL, Status: 400}),
+		Entry("a Blocked auth", failure.Blocked{Kind: failure.Auth, Detail: "401 Unauthorized"}),
+		Entry("a Blocked rate_limit", failure.Blocked{Kind: failure.RateLimit, Detail: "429 Too Many Requests"}),
 		Entry("any other error", errors.New("disk full")),
 	)
 })

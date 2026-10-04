@@ -67,7 +67,7 @@ var _ = Describe("lg sync with LG_TEST_NOW", Label("failures"), func() {
 		env.SetNow(time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC), fake)
 
 		Expect(env.Sync()).To(gexec.Exit(1))
-		Expect(os.ReadDir(env.Data())).To(BeEmpty())
+		Expect(filepath.Glob(filepath.Join(env.Data(), "*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 
 		env.SetNow(time.Date(2026, 10, 3, 15, 31, 0, 0, time.UTC), fake)
 		Expect(env.Sync()).To(gexec.Exit(0))
@@ -94,6 +94,6 @@ var _ = Describe("lg sync with log_grace in config.yaml", Label("failures"), fun
 		session := env.Sync()
 		Expect(session).To(gexec.Exit(1))
 		Expect(session.Err).To(gbytes.Say("within log_grace"))
-		Expect(os.ReadDir(env.Data())).To(BeEmpty())
+		Expect(filepath.Glob(filepath.Join(env.Data(), "*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 	})
 })
