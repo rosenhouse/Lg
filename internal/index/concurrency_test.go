@@ -43,6 +43,18 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Eventually(opened, waitTimeout).Should(Receive(Succeed()))
 	}, syncTimeout)
 
+	It("reconcile an unchanged store while another connection holds the write lock", func(ctx SpecContext) {
+		reconcile(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		tx, err := impatientWriter(dbPath(env)).BeginTx(ctx, nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = tx.Rollback() })
+
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+	}, syncTimeout)
+
 	It("keep what another wrote while Open waited to make a fresh lg.db current", func(ctx SpecContext) {
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
 		writer := impatientWriter(path)
