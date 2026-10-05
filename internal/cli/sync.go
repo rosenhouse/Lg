@@ -52,5 +52,6 @@ func (syncCmd) Run(deps *Deps) error {
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	return m.Cycle(ctx)
+	_, err = m.Run(ctx)
+	return err
 }

@@ -248,7 +248,8 @@ func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
 
 // Repo is a repository as GET /repos/{owner}/{repo} describes it.
 type Repo struct {
-	FullName string `json:"full_name"`
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
 }
 
 func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {

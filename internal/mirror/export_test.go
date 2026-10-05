@@ -1,13 +1,13 @@
 package mirror
 
 import (
+	"context"
 	"errors"
 
 	"github.com/rosenhouse/lg/internal/github"
 )
 
 var (
-	RunScoped    = runScoped
 	NonTerminal  = nonTerminal
 	Merge        = merge
 	RescanWindow = rescanWindow
@@ -32,4 +32,10 @@ func (m *Mirror) RetrySet(runDir string, listing, pending []github.Artifact) ([]
 		retries[i] = Retry{Artifact: c.Artifact, RunAttempt: c.Origin.RunAttempt}
 	}
 	return retries, errors.Join(unreadable, err)
+}
+
+// Cycle runs a cycle without its report.
+func (m *Mirror) Cycle(ctx context.Context) error {
+	_, err := m.Run(ctx)
+	return err
 }

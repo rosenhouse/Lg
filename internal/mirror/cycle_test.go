@@ -87,6 +87,13 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(os.ReadDir(filepath.Join(root, "data/ghe.corp.example"))).NotTo(BeEmpty())
 	})
 
+	It("reports the repo's default branch from GET /repos", Label("status"), func() {
+		report, err := m.Run(context.Background())
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(report).To(Equal(mirror.Report{DefaultBranch: "main"}))
+	})
+
 	It("returns the error from Tokens and sends no request", Label("transport"), func() {
 		tokens.err = errors.New("gh: not logged in")
 

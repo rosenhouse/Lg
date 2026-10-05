@@ -39,33 +39,39 @@ type Mirror struct {
 	DiskCap          int64
 }
 
-// Cycle publishes each listed artifact and completed attempt that is not on
-// disk. It does every run's artifacts first, newest run first, because a
-// re-run of all jobs deletes them. An error that runScoped
-// accepts aborts only its artifact or attempt; Cycle returns these after
-// trying every other. Any other error stops the cycle, and a local error that
-// no retry fixes blocks it. Retention runs after the cycle, also a blocked
-// one, unless ctx is done.
-func (m *Mirror) Cycle(ctx context.Context) error {
+// Report is what a cycle learned besides its error.
+type Report struct {
+	DefaultBranch string
+}
+
+// Run runs one cycle. It publishes each listed artifact and completed
+// attempt that is not on disk. It does every run's artifacts first, newest
+// run first, because a re-run of all jobs deletes them. An error that
+// RunScoped accepts aborts only its artifact or attempt; Run returns these
+// after trying every other. Any other error stops the cycle, and a local
+// error that no retry fixes blocks it. Retention runs after the cycle, also a
+// blocked one, unless ctx is done.
+func (m *Mirror) Run(ctx context.Context) (Report, error) {
 	// A zero DiskCap or Retention would evict everything.
 	if m.DiskCap < 1 {
-		return fmt.Errorf("DiskCap must be at least 1, not %d", m.DiskCap)
+		return Report{}, fmt.Errorf("DiskCap must be at least 1, not %d", m.DiskCap)
 	}
 	if m.Retention <= 0 {
-		return fmt.Errorf("retention must be positive, not %s", m.Retention)
+		return Report{}, fmt.Errorf("retention must be positive, not %s", m.Retention)
 	}
-	err := m.classify(m.cycle(ctx))
+	report, err := m.cycle(ctx)
+	err = m.classify(err)
 	if ctx.Err() != nil {
 		if err == nil {
-			return ctx.Err()
+			return report, ctx.Err()
 		}
-		return err
+		return report, err
 	}
 	retained := failure.FromErrno(m.retain(ctx))
 	if retained == nil {
-		return err
+		return report, err
 	}
-	return errors.Join(err, retained)
+	return report, errors.Join(err, retained)
 }
 
 func (m *Mirror) classify(err error) error {
@@ -83,46 +89,47 @@ func (m *Mirror) retain(ctx context.Context) error {
 	return retention.Retain(ctx, m.Store, m.Clock.Now(), m.Retention, m.DiskCap, func(string) {})
 }
 
-func (m *Mirror) cycle(ctx context.Context) error {
+func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 	if m.ArtifactMaxBytes < 1 {
-		return fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
+		return Report{}, fmt.Errorf("ArtifactMaxBytes must be at least 1, not %d", m.ArtifactMaxBytes)
 	}
 	token, err := m.Tokens.Token(ctx, m.Host)
 	if err != nil {
-		return err
+		return Report{}, err
 	}
 	gh := m.NewGitHub(token)
 	repo, err := m.getRepo(ctx, gh)
 	if err != nil {
-		return err
+		return Report{}, err
 	}
+	report := Report{DefaultBranch: repo.DefaultBranch}
 	p, discardedPending, err := m.loadPending(repo)
 	if err != nil {
-		return err
+		return report, err
 	}
 	w, discardedWatch, err := loadWatch(m.Store, m.Host)
 	if err != nil {
-		return err
+		return report, err
 	}
 	d, err := m.discover(ctx, gh, repo, p, w)
 	if err != nil {
-		return err
+		return report, err
 	}
 	artifactsFailed, err := m.artifactPhase(ctx, gh, d.runs, p)
 	if err != nil {
-		return err
+		return report, err
 	}
 	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs)
 	if err != nil {
-		return err
+		return report, err
 	}
 	if err := m.saveWatch(w, d.runs); err != nil {
-		return err
+		return report, err
 	}
 	if err := m.recordRescan(d.rescannedAt); err != nil {
-		return err
+		return report, err
 	}
-	return errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.failed}, artifactsFailed, attemptsFailed)...)
+	return report, errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.failed}, artifactsFailed, attemptsFailed)...)
 }
 
 // saveWatch watches the runs the cycle left incomplete on disk, except those
@@ -171,7 +178,7 @@ func (l *artifactListing) candidates() []candidate {
 }
 
 // artifactPhase publishes every run's artifacts, newest run first. It
-// returns the errors that runScoped accepts, and stops at any other.
+// returns the errors that RunScoped accepts, and stops at any other.
 func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
 	var failed []error
 	for i := len(runs) - 1; i >= 0; i-- {
@@ -186,7 +193,7 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 
 // attemptPhase publishes the attempts of every run whose artifacts this cycle
 // listed, and whose run_attempt it read after that, since each attempt holds
-// both. It goes oldest run first. It returns the errors that runScoped
+// both. It goes oldest run first. It returns the errors that RunScoped
 // accepts, and stops at any other.
 func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
 	var failed []error
@@ -205,7 +212,7 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 }
 
 // syncAttempts publishes the run's planned attempts, and marks the run gone
-// at a 404. It returns the errors that runScoped accepts, and stops at any
+// at a 404. It returns the errors that RunScoped accepts, and stops at any
 // other.
 func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
 	var failed []error
@@ -215,7 +222,7 @@ func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listed
 		case errors.Is(err, errRunGone):
 			run.gone = true
 			return failed, nil
-		case runScoped(err):
+		case RunScoped(err):
 			failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
 		case err != nil:
 			return nil, err
@@ -248,13 +255,13 @@ func (m *Mirror) getRepo(ctx context.Context, gh github.Client) (github.Repo, er
 	return repo, err
 }
 
-// runScoped reports whether err leaves other runs worth trying: GitHub
+// RunScoped reports whether err leaves other runs worth trying: GitHub
 // failed this run, not lg's store, credentials or rate limit. A joined
 // error must be run-scoped in every part.
-func runScoped(err error) bool {
+func RunScoped(err error) bool {
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, part := range joined.Unwrap() {
-			if !runScoped(part) {
+			if !RunScoped(part) {
 				return false
 			}
 		}
