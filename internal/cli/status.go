@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/config"
@@ -46,45 +47,53 @@ func (c statusCmd) Run(deps *Deps) error {
 	return printStatus(deps.Stdout, st, daemon)
 }
 
-func printStatus(stdout io.Writer, st *status.Status, daemon bool) error {
-	w := &errWriter{w: stdout}
+func printStatus(w io.Writer, st *status.Status, daemon bool) error {
+	_, err := io.WriteString(w, strings.Join(statusLines(st, daemon), "\n")+"\n")
+	return err
+}
+
+func statusLines(st *status.Status, daemon bool) []string {
+	var lines []string
 	if st == nil {
-		fmt.Fprintln(w, "last sync: never")
+		lines = append(lines, "last sync: never")
 	} else {
-		fmt.Fprintf(w, "last sync: %s, finished %s (cycle %d)\n", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle)
-		fmt.Fprintf(w, "last ok sync: %s\n", orNone(st.LastSyncOKAt, "never"))
-		fmt.Fprintf(w, "next sync: %s\n", orNone(st.NextSyncAt, "none scheduled"))
 		blocked := "no"
 		if st.Blocked != nil {
 			blocked = st.Blocked.String()
 		}
-		fmt.Fprintf(w, "blocked: %s\n", blocked)
+		lines = append(lines,
+			fmt.Sprintf("last sync: %s, finished %s (cycle %d)", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle),
+			"last ok sync: "+orNone(st.LastSyncOKAt, "never"),
+			"next sync: "+orNone(st.NextSyncAt, "none scheduled"),
+			"blocked: "+blocked)
 	}
 	if daemon {
-		fmt.Fprintln(w, "daemon: running")
+		lines = append(lines, "daemon: running")
 	} else {
-		fmt.Fprintln(w, "daemon: not running")
+		lines = append(lines, "daemon: not running")
 	}
 	if st == nil {
-		return w.err
+		return lines
 	}
 	for name, r := range st.Repos {
-		fmt.Fprintf(w, "%s:\n", name)
-		fmt.Fprintf(w, "  default branch: %s\n", r.DefaultBranch)
 		lag := "none"
 		if r.LagSeconds != nil {
 			lag = (time.Duration(*r.LagSeconds) * time.Second).String()
 		}
-		fmt.Fprintf(w, "  newest completed run: %s, lag: %s\n", orNone(r.NewestCompletedRunCreatedAt, "none"), lag)
-		fmt.Fprintf(w, "  runs: %d, attempts: %d, bytes: %d\n", r.Runs, r.Attempts, r.BytesData)
-		fmt.Fprintf(w, "  pending units: %d\n", r.PendingUnits)
+		lines = append(lines,
+			name+":",
+			"  default branch: "+r.DefaultBranch,
+			fmt.Sprintf("  newest completed run: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
+			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
+			fmt.Sprintf("  pending units: %d", r.PendingUnits))
 		for _, pending := range r.Pending {
-			fmt.Fprintf(w, "    %s\n", pending)
+			lines = append(lines, "    "+pending)
 		}
-		fmt.Fprintf(w, "  horizon: %s\n", orNone(r.Horizon, "none"))
-		fmt.Fprintf(w, "  retention: %d days, disk_cap: %d bytes\n", r.RetentionDays, r.DiskCapBytes)
+		lines = append(lines,
+			"  horizon: "+orNone(r.Horizon, "none"),
+			fmt.Sprintf("  retention: %d days, disk_cap: %d bytes", r.RetentionDays, r.DiskCapBytes))
 	}
-	return w.err
+	return lines
 }
 
 func orNone(t *time.Time, none string) string {
