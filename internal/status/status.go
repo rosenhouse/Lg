@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/retention"
 )
 
 type Status struct {
@@ -214,4 +215,36 @@ func Write(path string, st Status) error {
 		return errors.Join(err, os.Remove(tmp.Name()))
 	}
 	return nil
+}
+
+// Measure finds the runs of repo, as <host>/<owner>/<name> in any case, under
+// data/, and its eviction horizon in state/. A completed run is one with an
+// attempt on disk.
+func Measure(data, state, repo string) (Disk, error) {
+	runs, err := retention.Scan(data)
+	if err != nil {
+		return Disk{}, err
+	}
+	horizons, err := retention.PeekHorizons(state)
+	if err != nil {
+		return Disk{}, err
+	}
+	var d Disk
+	for _, r := range runs {
+		if !strings.EqualFold(r.Repo, repo) {
+			continue
+		}
+		d.Runs++
+		d.Attempts += r.Attempts
+		d.Bytes += r.Bytes
+		if r.Attempts > 0 && r.CreatedAt.After(d.NewestCompleted) {
+			d.NewestCompleted = r.CreatedAt
+		}
+	}
+	for key, horizon := range horizons {
+		if strings.EqualFold(key, repo) && horizon.After(d.Horizon) {
+			d.Horizon = horizon
+		}
+	}
+	return d, nil
 }
