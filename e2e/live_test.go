@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
@@ -59,7 +60,8 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 
 	BeforeAll(func() {
 		env = harness.NewLive(lgPath)
-		env.WriteLiveConfig("backfill: 90d", "retention: 90d")
+		window := liveWindow()
+		env.WriteLiveConfig("backfill: "+window, "retention: "+window)
 
 		syncLive(env)
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
@@ -158,6 +160,20 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 		}
 	})
 })
+
+// liveWindow is 90d, or longer once a fixture run is older, so the fixture
+// runs stay in backfill and retention as they age.
+func liveWindow() string {
+	GinkgoHelper()
+	days := 90
+	now := clock.Real{}.Now()
+	for runID, stage := range map[int64]string{fixtureRun: fixtureStage, logsDeletedRun: logsDeletedStage} {
+		run, err := recordings.Attempt(runID, stage, 1)
+		Expect(err).NotTo(HaveOccurred())
+		days = max(days, int(now.Sub(run.CreatedAt).Hours()/24)+2)
+	}
+	return fmt.Sprintf("%dd", days)
+}
 
 // syncLive retries, because one transient GitHub error on any run fails a
 // sync, and the next sync resumes where it stopped.
