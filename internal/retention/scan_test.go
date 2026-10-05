@@ -93,8 +93,7 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 			writeSized(data, "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1/log.txt", 1)
 			writeSized(data, "github.com/o/r/runs/2026-10-02/2_ci_main/attempt-1/log.txt", 1)
 			gone := filepath.Join(data, rel)
-			DeferCleanup(func(walkDir func(string, fs.WalkDirFunc) error) { *retention.WalkDir = walkDir }, *retention.WalkDir)
-			*retention.WalkDir = func(root string, fn fs.WalkDirFunc) error {
+			removingWalk := func(root string, fn fs.WalkDirFunc) error {
 				return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 					if path == gone && err == nil {
 						Expect(os.RemoveAll(gone)).To(Succeed())
@@ -103,7 +102,7 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 				})
 			}
 
-			u, err := retention.Scan(data)
+			u, err := retention.ScanWith(data, removingWalk)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(u.Runs).To(ContainElement(HaveField("ID", int64(2))))
 		},

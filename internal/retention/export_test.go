@@ -1,3 +1,3 @@
 package retention
 
-var WalkDir = &walkDir
+var ScanWith = scan
