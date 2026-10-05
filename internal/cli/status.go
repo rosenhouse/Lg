@@ -87,7 +87,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
 			fmt.Sprintf("  pending units: %d", r.PendingUnits))
 		for _, pending := range r.Pending {
-			lines = append(lines, "    "+pending)
+			lines = append(lines, "    "+pending.String())
 		}
 		lines = append(lines,
 			"  horizon: "+orNone(r.Horizon, "none"),

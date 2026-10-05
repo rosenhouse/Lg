@@ -113,7 +113,7 @@ type discovery struct {
 	// failed joins the errors that runScoped accepts, but for watchFailed.
 	failed error
 	// watchFailed are the watched runs that GitHub failed to serve.
-	watchFailed []error
+	watchFailed []UnitError
 }
 
 // discover lists the runs the cycle syncs: those created in the backfill
@@ -252,7 +252,7 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 // created before the backfill window appears in no listing once it
 // completes. A run GitHub no longer has leaves the watch list. It returns
 // the errors that runScoped accepts, leaving their runs watched.
-func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed []error, err error) {
+func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed []UnitError, err error) {
 	for _, id := range slices.Sorted(maps.Keys(w.runs)) {
 		if slices.ContainsFunc(listed, func(run github.Run) bool { return run.ID == id }) {
 			delete(w.runs, id)
@@ -263,7 +263,7 @@ func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, l
 		case errors.Is(err, github.ErrNotFound):
 			delete(w.runs, id)
 		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d: %w", id, err))
+			failed = append(failed, UnitError{Run: id, Err: err})
 		case err != nil:
 			return nil, nil, err
 		default:

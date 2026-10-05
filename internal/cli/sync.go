@@ -49,7 +49,7 @@ func (syncCmd) Run(deps *Deps) error {
 		Finished:      deps.Clock.Now(),
 		Err:           err,
 		Completed:     report.Completed,
-		Pending:       report.Pending,
+		Pending:       pending(report.Pending),
 		DefaultBranch: report.DefaultBranch,
 	}))
 }
@@ -76,6 +76,14 @@ func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *u
 		DiskCap:          int64(cfg.DiskCap),
 	}
 	return m.Cycle(ctx)
+}
+
+func pending(units []mirror.UnitError) []status.Pending {
+	found := make([]status.Pending, len(units))
+	for i, u := range units {
+		found[i] = status.Pending{Unit: status.Unit{Run: u.Run, Attempt: u.Attempt, Artifact: u.Artifact}, Error: u.Err.Error()}
+	}
+	return found
 }
 
 // writeStatus completes c from cfg and the disk, and writes it over

@@ -44,10 +44,31 @@ type Report struct {
 	DefaultBranch string
 	// Completed is whether the cycle and its retention ran to their end.
 	Completed bool
-	// Pending are the runs, attempts and artifacts that a run-scoped error
-	// left for the next cycle, one error each.
-	Pending []error
+	// Pending are the units that a run-scoped error left for the next cycle,
+	// up to where the cycle stopped.
+	Pending []UnitError
 }
+
+// UnitError is an error that runScoped accepts, in the unit it left
+// unpublished: an attempt, an artifact, or else the run.
+type UnitError struct {
+	Run      int64
+	Attempt  int
+	Artifact int64
+	Err      error
+}
+
+func (u UnitError) Error() string {
+	switch {
+	case u.Attempt != 0:
+		return fmt.Sprintf("run %d attempt %d: %v", u.Run, u.Attempt, u.Err)
+	case u.Artifact != 0:
+		return fmt.Sprintf("run %d artifact %d: %v", u.Run, u.Artifact, u.Err)
+	}
+	return fmt.Sprintf("run %d: %v", u.Run, u.Err)
+}
+
+func (u UnitError) Unwrap() error { return u.Err }
 
 // Cycle runs one cycle. It publishes each listed artifact and completed
 // attempt that is not on disk. It does every run's artifacts first, newest
@@ -122,11 +143,14 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 	if err != nil {
 		return report, err
 	}
+	report.Pending = d.watchFailed
 	artifactsFailed, err := m.artifactPhase(ctx, gh, d.runs, p)
+	report.Pending = append(report.Pending, artifactsFailed...)
 	if err != nil {
 		return report, err
 	}
 	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs)
+	report.Pending = append(report.Pending, attemptsFailed...)
 	if err != nil {
 		return report, err
 	}
@@ -137,8 +161,11 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 		return report, err
 	}
 	report.Completed = true
-	report.Pending = slices.Concat(d.watchFailed, artifactsFailed, attemptsFailed)
-	return report, errors.Join(append([]error{discardedPending, discardedWatch, d.failed}, report.Pending...)...)
+	errs := []error{discardedPending, discardedWatch, d.failed}
+	for _, u := range report.Pending {
+		errs = append(errs, u)
+	}
+	return report, errors.Join(errs...)
 }
 
 // saveWatch watches the runs the cycle left incomplete on disk, except those
@@ -188,14 +215,14 @@ func (l *artifactListing) candidates() []candidate {
 
 // artifactPhase publishes every run's artifacts, newest run first. It
 // returns the errors that runScoped accepts, and stops at any other.
-func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]error, error) {
-	var failed []error
+func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []listedRun, p *pending) ([]UnitError, error) {
+	var failed []UnitError
 	for i := len(runs) - 1; i >= 0; i-- {
 		runFailed, err := m.syncArtifacts(ctx, gh, &runs[i], p)
-		if err != nil {
-			return nil, err
-		}
 		failed = append(failed, runFailed...)
+		if err != nil {
+			return failed, err
+		}
 	}
 	return failed, nil
 }
@@ -204,18 +231,18 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 // listed, and whose run_attempt it read after that, since each attempt holds
 // both. It goes oldest run first. It returns the errors that runScoped
 // accepts, and stops at any other.
-func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]error, error) {
-	var failed []error
+func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]UnitError, error) {
+	var failed []UnitError
 	for i := range runs {
 		run := &runs[i]
 		if run.artifacts == nil || !run.artifacts.runRead {
 			continue
 		}
 		runFailed, err := m.syncAttempts(ctx, gh, run)
-		if err != nil {
-			return nil, err
-		}
 		failed = append(failed, runFailed...)
+		if err != nil {
+			return failed, err
+		}
 	}
 	return failed, nil
 }
@@ -223,8 +250,8 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 // syncAttempts publishes the run's planned attempts, and marks the run gone
 // at a 404. It returns the errors that runScoped accepts, and stops at any
 // other.
-func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun) ([]error, error) {
-	var failed []error
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun) ([]UnitError, error) {
+	var failed []UnitError
 	for _, n := range run.planned {
 		err := m.publishAttempt(ctx, gh, *run, n, layout.AttemptDir(run.dir, n))
 		switch {
@@ -232,9 +259,9 @@ func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listed
 			run.gone = true
 			return failed, nil
 		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d attempt %d: %w", run.ID, n, err))
+			failed = append(failed, UnitError{Run: run.ID, Attempt: n, Err: err})
 		case err != nil:
-			return nil, err
+			return failed, err
 		}
 	}
 	return failed, nil

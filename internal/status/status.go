@@ -9,12 +9,16 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode"
 
 	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -82,19 +86,45 @@ type Repo struct {
 	Attempts                    int        `json:"attempts"`
 	BytesData                   int64      `json:"bytes_data"`
 	PendingUnits                int        `json:"pending_units"`
-	Pending                     []string   `json:"pending"`
+	Pending                     []Pending  `json:"pending"`
 	RetentionDays               int64      `json:"retention_days"`
 	DiskCapBytes                int64      `json:"disk_cap_bytes"`
 	Horizon                     *time.Time `json:"horizon"`
 }
+
+// Unit is a run, or an attempt or artifact of it.
+type Unit struct {
+	Run      int64 `json:"run"`
+	Attempt  int   `json:"attempt,omitempty"`
+	Artifact int64 `json:"artifact,omitempty"`
+}
+
+func (u Unit) String() string {
+	switch {
+	case u.Attempt != 0:
+		return fmt.Sprintf("run %d attempt %d", u.Run, u.Attempt)
+	case u.Artifact != 0:
+		return fmt.Sprintf("run %d artifact %d", u.Run, u.Artifact)
+	}
+	return fmt.Sprintf("run %d", u.Run)
+}
+
+// Pending is a unit that a cycle left for the next one, with its last error.
+type Pending struct {
+	Unit
+	Error string `json:"error"`
+}
+
+func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
 
 type Cycle struct {
 	Started, Finished time.Time
 	Err               error
 	// Completed is whether the cycle and its retention ran to their end.
 	Completed bool
-	// Pending are the units the cycle left for the next one, one error each.
-	Pending       []error
+	// Pending are the units the cycle left for the next one, up to where it
+	// stopped.
+	Pending       []Pending
 	Repo          string
 	DefaultBranch string
 	SyncInterval  time.Duration
@@ -107,6 +137,8 @@ type Disk struct {
 	Runs, Attempts           int
 	Bytes                    int64
 	NewestCompleted, Horizon time.Time
+	// Published are the attempts and artifacts on disk.
+	Published map[Unit]bool
 }
 
 const day = 24 * time.Hour
@@ -145,11 +177,11 @@ func Next(prev *Status, c Cycle) Status {
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
+	repo.Pending = oneLine(c.Pending)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
-		repo.Pending = lines(c.Pending)
 	} else {
-		repo.Pending = append([]string{}, last.Pending...)
+		repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published)...)
 		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
 	}
 	repo.PendingUnits = len(repo.Pending)
@@ -187,13 +219,49 @@ func timeOrNil(t time.Time) *time.Time {
 	return &t
 }
 
-// lines gives the message of each error on one line.
-func lines(errs []error) []string {
-	found := []string{}
-	for _, err := range errs {
-		found = append(found, strings.Join(strings.Fields(err.Error()), " "))
+// oneLine gives pending with each error on one line.
+func oneLine(pending []Pending) []Pending {
+	found := []Pending{}
+	for _, p := range pending {
+		found = append(found, Pending{Unit: p.Unit, Error: strings.Join(strings.Fields(p.Error), " ")})
 	}
 	return found
+}
+
+// carried gives the units of last that a cycle which stopped early neither
+// left again, in now, nor published.
+func carried(last, now []Pending, published map[Unit]bool) []Pending {
+	var kept []Pending
+	for _, p := range last {
+		if !published[p.Unit] && !slices.ContainsFunc(now, func(n Pending) bool { return n.Unit == p.Unit }) {
+			kept = append(kept, p)
+		}
+	}
+	return kept
+}
+
+// addPublished adds the attempts and artifacts of run r on disk to published.
+func addPublished(published map[Unit]bool, r retention.Run) error {
+	attempts, err := os.ReadDir(r.Dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range attempts {
+		if n, ok := layout.AttemptNumber(e.Name()); ok {
+			published[Unit{Run: r.ID, Attempt: n}] = true
+		}
+	}
+	artifacts, err := os.ReadDir(filepath.Join(r.Dir, "artifacts"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	for _, e := range artifacts {
+		idPart, _, _ := strings.Cut(e.Name(), "_")
+		if id, err := strconv.ParseInt(idPart, 10, 64); err == nil {
+			published[Unit{Run: r.ID, Artifact: id}] = true
+		}
+	}
+	return err
 }
 
 // Read gives nil when path does not exist.
@@ -255,10 +323,13 @@ func Measure(data, state, repo string) (Disk, error) {
 	if err != nil {
 		return Disk{}, err
 	}
-	var d Disk
+	d := Disk{Published: map[Unit]bool{}}
 	for _, r := range runs {
 		if !strings.EqualFold(r.Repo, repo) {
 			continue
+		}
+		if err := addPublished(d.Published, r); err != nil {
+			return Disk{}, err
 		}
 		d.Runs++
 		d.Attempts += r.Attempts

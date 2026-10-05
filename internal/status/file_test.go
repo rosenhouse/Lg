@@ -60,10 +60,10 @@ var _ = Describe("Write", Label("status"), func() {
 	})
 
 	It("writes <, > and & as they are", func() {
-		st := status.Status{Repos: map[string]status.Repo{"github.com/o/r": {Pending: []string{"runs?created=a..b&per_page=100: <html>"}}}}
+		st := status.Status{Repos: map[string]status.Repo{"github.com/o/r": {Pending: []status.Pending{{Unit: status.Unit{Run: 1}, Error: "runs?created=a..b&per_page=100: <html>"}}}}}
 
 		Expect(status.Write(store.OSFS{}, path, st)).To(Succeed())
-		Expect(os.ReadFile(path)).To(ContainSubstring(`"runs?created=a..b&per_page=100: <html>"`))
+		Expect(os.ReadFile(path)).To(ContainSubstring(`"error": "runs?created=a..b&per_page=100: <html>"`))
 	})
 
 	It("writes through fsys", func() {

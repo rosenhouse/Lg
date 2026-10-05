@@ -144,7 +144,7 @@ var _ = Describe("lg status", Label("status"), func() {
       "attempts": 4,
       "bytes_data": 123456,
       "pending_units": 1,
-      "pending": ["run 37129390741 attempt 2: 502 Bad Gateway"],
+      "pending": [{"run": 37129390741, "attempt": 2, "error": "502 Bad Gateway"}],
       "retention_days": 90,
       "disk_cap_bytes": 50000000000,
       "horizon": "2026-09-01T00:00:00Z"

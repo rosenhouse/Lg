@@ -252,7 +252,10 @@ var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 		Expect(st).To(HaveKeyWithValue("last_sync_ok_at", near(harness.DefaultNow())))
 		repo := st["repos"].(map[string]any)["github.com/rosenhouse/lg"]
 		Expect(repo).To(HaveKeyWithValue("pending_units", 1.0))
-		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(ContainSubstring("run 37129390741 attempt 1"), ContainSubstring("502 Bad Gateway")))))
+		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(
+			HaveKeyWithValue("run", 37129390741.0),
+			HaveKeyWithValue("attempt", 1.0),
+			HaveKeyWithValue("error", ContainSubstring("502 Bad Gateway"))))))
 	})
 })
 
@@ -284,7 +287,11 @@ var _ = Describe("lg sync with a watched run GitHub fails to serve", Label("stat
 		Expect(s.main("sync")).To(Equal(1))
 
 		repo := s.status()["repos"].(map[string]any)["github.com/rosenhouse/lg"]
-		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(HavePrefix("run 42: "), ContainSubstring("502 Bad Gateway")))))
+		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(
+			HaveKeyWithValue("run", 42.0),
+			Not(HaveKey("attempt")),
+			HaveKeyWithValue("error", ContainSubstring("502 Bad Gateway"))))))
+		Expect(s.stderr.String()).To(ContainSubstring("run 42: "))
 	})
 })
 

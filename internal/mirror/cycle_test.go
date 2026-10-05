@@ -13,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
@@ -93,6 +94,23 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report).To(Equal(mirror.Report{DefaultBranch: "main", Completed: true}))
 	})
+
+	DescribeTable("reports the units it left before an error stopped it", Label("status"),
+		func(stage, left, blocking string, unit types.GomegaMatcher) {
+			Expect(fake.LoadDir(runID, recordings.Dir(runID, stage))).To(Succeed())
+			fake.Fail("api", left, fakegithub.Fault{Status: http.StatusBadGateway})
+			fake.Fail("api", blocking, fakegithub.Fault{Status: http.StatusUnauthorized})
+
+			report, err := m.Cycle(context.Background())
+
+			Expect(err).To(matchers.BeBlocked(failure.Auth))
+			Expect(report.Completed).To(BeFalse())
+			Expect(report.Pending).To(ConsistOf(And(HaveField("Run", int64(runID)), unit, HaveField("Err", MatchError(ContainSubstring("502"))))))
+		},
+		Entry("in the artifact phase", "after-attempt-1", "/artifacts/11276401837/zip", "/artifacts/11276272069/zip", HaveField("Artifact", int64(11276401837))),
+		Entry("in the attempt phase", "after-attempt-2", "jobs/111221289888/logs", "/runs/37129390741/attempts/2", HaveField("Attempt", 1)),
+		Entry("in an earlier phase", "after-attempt-1", "/artifacts/11276401837/zip", "/runs/37129390741/attempts/1", HaveField("Artifact", int64(11276401837))),
+	)
 
 	It("reports a cycle that a listing stopped as not completed", Label("status"), func() {
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusBadGateway})

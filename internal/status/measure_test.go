@@ -48,12 +48,13 @@ var _ = Describe("Measure", Label("status"), func() {
 			Bytes:           int64(3*len(fetchJSON(completed)) + 10),
 			NewestCompleted: completed,
 			Horizon:         time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+			Published:       map[status.Unit]bool{{Run: 1, Attempt: 1}: true, {Run: 2, Attempt: 1}: true, {Run: 2, Attempt: 2}: true, {Run: 3, Artifact: 9}: true},
 		}))
 	})
 
 	It("measures nothing before the first sync", func() {
 		root := GinkgoT().TempDir()
 
-		Expect(status.Measure(filepath.Join(root, "data"), filepath.Join(root, "state"), "github.com/o/r")).To(BeZero())
+		Expect(status.Measure(filepath.Join(root, "data"), filepath.Join(root, "state"), "github.com/o/r")).To(Equal(status.Disk{Published: map[status.Unit]bool{}}))
 	})
 })
