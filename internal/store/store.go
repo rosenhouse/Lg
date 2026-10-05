@@ -40,6 +40,7 @@ type FS interface {
 	Rename(oldpath, newpath string) error
 	SyncDir(path string) error
 	RemoveAll(path string) error
+	Chmod(path string, mode fs.FileMode) error
 	ReadDir(path string) ([]fs.DirEntry, error)
 	Lstat(path string) (fs.FileInfo, error)
 	Mount(path string) (Mount, error)
@@ -57,8 +58,8 @@ type File interface {
 }
 
 type Store struct {
-	fs               FS
-	data, state, tmp string
+	fs                      FS
+	data, state, tmp, trash string
 }
 
 // Init makes root a store, finishing one that an earlier Init left part
@@ -84,6 +85,9 @@ func InitFS(fsys FS, root string) error {
 		}
 	}
 	if err := s.checkDirs(); err != nil {
+		return err
+	}
+	if err := mkdirAll(fsys, s.trash); err != nil {
 		return err
 	}
 	formatFile := filepath.Join(root, "FORMAT")
@@ -133,6 +137,10 @@ func check(fsys FS, root string) error {
 			return err
 		}
 		if !own {
+			// Init publishes FORMAT last, so one that appeared since is a whole store.
+			if err := checkFormat(root); !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
 			return fmt.Errorf("%s has no FORMAT and holds files lg did not write; point LG_HOME at an empty or new dir", root)
 		}
 	}
@@ -152,7 +160,7 @@ func isOwn(fsys FS, root, name string) (bool, error) {
 	case "state":
 		ownChild = func(child string) bool { return child == "write.lock" }
 	case "tmp":
-		ownChild = isUnit
+		ownChild = func(child string) bool { return isUnit(child) || child == "trash" }
 	default:
 		return false, nil
 	}
@@ -184,10 +192,14 @@ func OpenFS(fsys FS, root string) (*Store, error) {
 }
 
 // checkDirs refuses a tmp/ that units cannot be renamed from into data/, and
-// a symlinked tmp/ or data/, since Sweep would empty what tmp/ points at.
+// a symlinked tmp/, tmp/trash/ or data/, since Sweep would empty what they
+// point at.
 func (s *Store) checkDirs() error {
-	for _, dir := range []string{s.data, s.tmp} {
+	for _, dir := range []string{s.data, s.tmp, s.trash} {
 		info, err := s.fs.Lstat(dir)
+		if dir == s.trash && errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -224,7 +236,8 @@ func checkFormat(root string) error {
 }
 
 func newStore(fsys FS, root string) *Store {
-	return &Store{fs: fsys, data: filepath.Join(root, "data"), state: filepath.Join(root, "state"), tmp: filepath.Join(root, "tmp")}
+	tmp := filepath.Join(root, "tmp")
+	return &Store{fs: fsys, data: filepath.Join(root, "data"), state: filepath.Join(root, "state"), tmp: tmp, trash: filepath.Join(tmp, "trash")}
 }
 
 func (s *Store) Data() string { return s.data }
@@ -283,16 +296,26 @@ func (s *Store) FindRunDir(runDir string) (string, error) {
 	return runDir, nil
 }
 
-// Sweep empties tmp/ of what dead writers left. Callers hold
-// state/write.lock, so no live writer uses it.
+// Sweep empties tmp/ and tmp/trash/ of what dead writers left, and keeps
+// tmp/trash/ so that Evict needs no mkdir. Callers hold state/write.lock, so
+// no live writer uses them.
 func (s *Store) Sweep() error {
-	entries, err := s.fs.ReadDir(s.tmp)
+	if err := s.removeChildren(s.tmp, s.trash); err != nil {
+		return err
+	}
+	return s.removeChildren(s.trash, "")
+}
+
+func (s *Store) removeChildren(dir, except string) error {
+	entries, err := s.fs.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := s.fs.RemoveAll(filepath.Join(s.tmp, e.Name())); err != nil {
-			return err
+		if child := filepath.Join(dir, e.Name()); child != except {
+			if err := removeTree(s.fs, child); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -308,12 +331,14 @@ type Unit struct {
 }
 
 func (s *Store) NewUnit() (*Unit, error) {
-	dir := filepath.Join(s.tmp, unitPrefix+strconv.FormatUint(rand.Uint64(), 36))
+	dir := filepath.Join(s.tmp, unitPrefix+randomName())
 	if err := s.fs.Mkdir(dir); err != nil {
 		return nil, err
 	}
 	return &Unit{fs: s.fs, dir: dir, unclosed: map[string]bool{}, sums: map[string]Sum{}}, nil
 }
+
+func randomName() string { return strconv.FormatUint(rand.Uint64(), 36) }
 
 func isUnit(name string) bool { return strings.HasPrefix(name, unitPrefix) }
 
@@ -328,6 +353,9 @@ func (s *Store) Publish(u *Unit, target string) error {
 		}
 	}
 	parent := filepath.Dir(target)
+	if err := s.refuseLinks(parent); err != nil {
+		return err
+	}
 	if err := mkdirAll(s.fs, parent); err != nil {
 		return err
 	}
@@ -339,6 +367,26 @@ func (s *Store) Publish(u *Unit, target string) error {
 	}
 	return s.fs.SyncDir(parent)
 }
+
+// refuseLinks refuses a symlink at dir or at a parent of it below data/,
+// since retention does not follow one.
+func (s *Store) refuseLinks(dir string) error {
+	for ; within(dir, s.data); dir = filepath.Dir(dir) {
+		info, err := s.fs.Lstat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink, which lg does not follow below %s", dir, s.data)
+		}
+	}
+	return nil
+}
+
+func within(path, dir string) bool { return strings.HasPrefix(path, dir+string(filepath.Separator)) }
 
 func mkdirAll(fsys FS, dir string) error {
 	_, err := mkdirBelow(fsys, "", dir, true)
@@ -419,7 +467,44 @@ func (u *Unit) Remove(name string) error {
 }
 
 // Abort removes the staged unit.
-func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
+func (u *Unit) Abort() error { return removeTree(u.fs, u.dir) }
+
+// removeTree removes dir, which is under tmp/, also when a dir in it lacks
+// owner write permission, as one from an extracted archive may.
+func removeTree(fsys FS, dir string) error {
+	err := fsys.RemoveAll(dir)
+	if !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	if err := makeWritable(fsys, dir); err != nil {
+		return err
+	}
+	return fsys.RemoveAll(dir)
+}
+
+// makeWritable gives the owner rwx permission on dir and each dir in it.
+func makeWritable(fsys FS, dir string) error {
+	info, err := fsys.Lstat(dir)
+	if err != nil || !info.IsDir() {
+		return err
+	}
+	if err := fsys.Chmod(dir, info.Mode().Perm()|0o700); err != nil {
+		return err
+	}
+	entries, err := fsys.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if err := makeWritable(fsys, filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Unlimited lets a member grow to any size.
 const Unlimited int64 = math.MaxInt64
@@ -535,4 +620,25 @@ func (s *Store) Rename(oldpath, newpath string) error {
 		return err
 	}
 	return s.fs.SyncDir(filepath.Dir(newpath))
+}
+
+// RemoveEmpty removes dir when it holds nothing but Finder's .DS_Store.
+// Callers hold state/write.lock.
+func (s *Store) RemoveEmpty(dir string) error {
+	entries, err := s.fs.ReadDir(dir)
+	if err != nil || slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return e.Name() != ".DS_Store" }) {
+		return err
+	}
+	return s.fs.RemoveAll(dir)
+}
+
+// Evict moves dir into tmp/trash/ with one rename, so a reader sees all of
+// it or none, and then deletes it. It makes nothing, so it works on a full
+// disk. Callers hold state/write.lock.
+func (s *Store) Evict(dir string) error {
+	trashed := filepath.Join(s.trash, randomName())
+	if err := s.Rename(dir, trashed); err != nil {
+		return err
+	}
+	return removeTree(s.fs, trashed)
 }

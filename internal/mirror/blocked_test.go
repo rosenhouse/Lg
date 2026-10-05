@@ -65,7 +65,7 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		Expect(env.Fake.Requests()).To(requests)
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
-		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+		Expect(env.Tmp()).To(BeSwept())
 	},
 	Entry("401: auth, advising `gh auth login`",
 		failAttempts(fakegithub.Fault{Status: http.StatusUnauthorized}),

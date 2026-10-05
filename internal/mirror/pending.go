@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
@@ -19,7 +20,7 @@ import (
 // jobs deletes a run's artifacts, so the next listing may not name one that
 // failed.
 type pending struct {
-	file  stateFile
+	store *store.Store
 	hosts map[string]map[int64]pendingRun
 	// runs are the host's runs.
 	runs map[int64]pendingRun
@@ -36,9 +37,8 @@ type pendingRun struct {
 // the file has none for the host. One that does not parse is moved aside,
 // and loadPending gives the parse error as discarded.
 func loadPending(s *store.Store, host string) (p *pending, discarded, err error) {
-	file := newStateFile(s, "pending-artifacts.json")
 	hosts := map[string]map[int64]pendingRun{}
-	discarded, err = file.read(func(raw []byte) error {
+	discarded, err = s.ReadState(pendingFile, func(raw []byte) error {
 		var decoded map[string]map[int64]pendingRun
 		if err := decodePending(raw, &decoded); err != nil {
 			return err
@@ -51,7 +51,7 @@ func loadPending(s *store.Store, host string) (p *pending, discarded, err error)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &pending{file: file, hosts: hosts, runs: hosts[host]}, discarded, nil
+	return &pending{store: s, hosts: hosts, runs: hosts[host]}, discarded, nil
 }
 
 // restore records runs as the host's, and saves the file.
@@ -90,6 +90,19 @@ func (p *pending) set(run github.Run, candidates []candidate) error {
 	return p.save()
 }
 
+// prune drops each of the repo's runs that evicted reports for its
+// created_at, and saves the file when it dropped one.
+func (p *pending) prune(repo github.Repo, evicted func(createdAt time.Time) bool) error {
+	before := len(p.runs)
+	maps.DeleteFunc(p.runs, func(_ int64, r pendingRun) bool {
+		return ofRepo(github.Run{Run: r.Run}, repo) && evicted(r.Run.CreatedAt)
+	})
+	if len(p.runs) == before {
+		return nil
+	}
+	return p.save()
+}
+
 func ids(candidates []candidate) []int64 {
 	ids := make([]int64, len(candidates))
 	for i, c := range candidates {
@@ -98,7 +111,9 @@ func ids(candidates []candidate) []int64 {
 	return ids
 }
 
-func (p *pending) save() error { return p.file.write(p.hosts) }
+func (p *pending) save() error { return p.store.WriteState(pendingFile, p.hosts) }
+
+const pendingFile = "pending-artifacts.json"
 
 // unlisted gives the repo's runs with pending artifacts that listed does not
 // name, newest first, as last listed. They may be deleted.
@@ -160,7 +175,7 @@ func (m *Mirror) pendingOnDisk(repoDir string) (runs map[int64]pendingRun, unrea
 				continue
 			}
 			run, err := readRun(layout.AttemptDir(runDir, slices.Max(onDisk)))
-			var corrupt *corruptFileError
+			var corrupt *store.CorruptFileError
 			switch {
 			case errors.As(err, &corrupt):
 				unreadable = errors.Join(unreadable, err)

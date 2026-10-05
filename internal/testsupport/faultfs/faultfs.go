@@ -4,14 +4,16 @@ package faultfs
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// Op is a journaled op: mkdir, create, write, fsync, close, rename or remove.
+// Op is a journaled op: mkdir, create, write, fsync, close, rename, remove or chmod.
 type Op struct {
 	Name, Path, To string
 }
@@ -32,6 +34,7 @@ type FS struct {
 	failOn   map[string]scopedErr
 	journal  []Op
 	mounts   map[string]store.Mount
+	nonRoot  bool
 }
 
 func New() *FS { return &FS{mounts: map[string]store.Mount{}, failOn: map[string]scopedErr{}} }
@@ -97,7 +100,46 @@ func (f *FS) SyncDir(path string) error {
 }
 
 func (f *FS) RemoveAll(path string) error {
-	return f.do(Op{Name: "remove", Path: path}, func() error { return f.inner.RemoveAll(path) })
+	return f.do(Op{Name: "remove", Path: path}, func() error {
+		f.mu.Lock()
+		nonRoot := f.nonRoot
+		f.mu.Unlock()
+		if dir := readOnlyDir(path); nonRoot && dir != "" {
+			return &fs.PathError{Op: "unlinkat", Path: dir, Err: syscall.EACCES}
+		}
+		return f.inner.RemoveAll(path)
+	})
+}
+
+func (f *FS) Chmod(path string, mode fs.FileMode) error {
+	return f.do(Op{Name: "chmod", Path: path}, func() error { return f.inner.Chmod(path, mode) })
+}
+
+// ActAsNonRoot makes remove fail with EACCES, as it does for a user other than
+// root, while the tree holds a non-empty dir without owner write permission.
+func (f *FS) ActAsNonRoot() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nonRoot = true
+}
+
+// readOnlyDir gives a non-empty dir in the tree at root that lacks owner
+// write permission, and "" when there is none.
+func readOnlyDir(root string) string {
+	var found string
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		info, infoErr := d.Info()
+		entries, _ := os.ReadDir(path)
+		if infoErr == nil && info.Mode().Perm()&0o200 == 0 && len(entries) > 0 {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 func (f *FS) ReadDir(path string) ([]fs.DirEntry, error) { return f.inner.ReadDir(path) }

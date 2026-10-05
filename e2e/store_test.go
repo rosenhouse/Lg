@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
@@ -187,7 +188,7 @@ var _ = Describe("lg sync", Label("store"), func() {
 
 		Expect(held.Release()).To(Succeed())
 		Expect(wait()).To(gexec.Exit(0))
-		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+		Expect(env.Tmp()).To(matchers.BeSwept())
 	})
 })
 
@@ -197,7 +198,7 @@ var _ = Describe("lg sync with tmp/ a symlink to data/", Label("store"), func() 
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
 		Expect(env.Sync()).To(gexec.Exit(0))
-		Expect(os.Remove(env.Tmp())).To(Succeed())
+		Expect(os.RemoveAll(env.Tmp())).To(Succeed())
 		Expect(os.Symlink("data", env.Tmp())).To(Succeed())
 		before := treesnap.Snapshot(env.Data())
 

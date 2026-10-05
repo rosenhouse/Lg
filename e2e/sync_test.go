@@ -16,6 +16,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
@@ -49,7 +50,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 	})
 
 	It("leaves tmp/ empty", func() {
-		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+		Expect(env.Tmp()).To(matchers.BeSwept())
 	})
 
 	It("writes log.txt byte-identical to the recording, BOM included, for each of the 10 jobs that ran", func() {

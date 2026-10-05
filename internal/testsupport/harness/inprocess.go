@@ -73,6 +73,7 @@ func InProcess() *InProcessEnv {
 			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 			Backfill:         time.Duration(config.Defaults().Backfill),
 			Retention:        time.Duration(config.Defaults().Retention),
+			DiskCap:          int64(config.Defaults().DiskCap),
 		},
 		root: root,
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
 	"github.com/rosenhouse/lg/internal/version"
@@ -35,6 +36,7 @@ type Mirror struct {
 	ArtifactMaxBytes int64
 	Backfill         time.Duration
 	Retention        time.Duration
+	DiskCap          int64
 }
 
 // Cycle publishes each listed artifact and completed attempt that is not on
@@ -42,9 +44,31 @@ type Mirror struct {
 // re-run of all jobs deletes them. An error that runScoped
 // accepts aborts only its artifact or attempt; Cycle returns these after
 // trying every other. Any other error stops the cycle, and a local error that
-// no retry fixes blocks it.
+// no retry fixes blocks it. Retention runs after the cycle, also a blocked
+// one, unless ctx is done.
 func (m *Mirror) Cycle(ctx context.Context) error {
-	err := m.cycle(ctx)
+	// A zero DiskCap or Retention would evict everything.
+	if m.DiskCap < 1 {
+		return fmt.Errorf("DiskCap must be at least 1, not %d", m.DiskCap)
+	}
+	if m.Retention <= 0 {
+		return fmt.Errorf("retention must be positive, not %s", m.Retention)
+	}
+	err := m.classify(m.cycle(ctx))
+	if ctx.Err() != nil {
+		if err == nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	retained := failure.FromErrno(m.retain(ctx))
+	if retained == nil {
+		return err
+	}
+	return errors.Join(err, retained)
+}
+
+func (m *Mirror) classify(err error) error {
 	var blocked failure.Blocked
 	if errors.As(err, &blocked) {
 		if errors.Is(err, github.ErrUnauthorized) {
@@ -53,6 +77,10 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		return blocked
 	}
 	return failure.FromErrno(err)
+}
+
+func (m *Mirror) retain(ctx context.Context) error {
+	return retention.Retain(ctx, m.Store, m.Clock.Now(), m.Retention, m.DiskCap, func(string) {})
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {
@@ -235,7 +263,7 @@ func runScoped(err error) bool {
 	var transient failure.Transient
 	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	var corrupt *corruptFileError
+	var corrupt *store.CorruptFileError
 	var capped *cappedError
 	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt) || errors.As(err, &capped)
 }

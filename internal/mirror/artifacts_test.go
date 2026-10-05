@@ -146,7 +146,7 @@ var _ = Describe("mirror.Cycle", Label("artifacts"), func() {
 			HaveKeyWithValue("message", ContainSubstring("700")),
 			HaveKeyWithValue("url", zipURL(env, flakyReport)),
 		))
-		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+		Expect(env.Tmp()).To(BeSwept())
 	}, cycleTimeout)
 })
 

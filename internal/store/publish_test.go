@@ -12,6 +12,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -44,7 +45,7 @@ var _ = Describe("store.Publish", Label("store"), func() {
 
 			fresh := open(root)
 			Expect(fresh.Sweep()).To(Succeed())
-			Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty(), "k=%d", k)
+			Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept(), "k=%d", k)
 			Expect(publishAttempt(fresh, "{}")).To(Or(Succeed(), MatchError(store.ErrExists)), "k=%d", k)
 			Expect(files(filepath.Join(root, "data"))).To(Equal(complete), "k=%d", k)
 		}
@@ -130,7 +131,7 @@ var _ = Describe("store.Open", Label("store"), func() {
 	})
 })
 
-var _ = DescribeTable("store.Open and store.Init refuse a store whose tmp/ or data/ is a symlink, and leave it untouched", Label("store"),
+var _ = DescribeTable("store.Open and store.Init refuse a store whose tmp/, tmp/trash/ or data/ is a symlink, and leave it untouched", Label("store"),
 	func(dir, target string) {
 		root := newStore()
 		Expect(os.MkdirAll(filepath.Join(root, "elsewhere"), 0o755)).To(Succeed())
@@ -147,6 +148,7 @@ var _ = DescribeTable("store.Open and store.Init refuse a store whose tmp/ or da
 	Entry("tmp/ to data/", "tmp", "data"),
 	Entry("tmp/ to the root", "tmp", "."),
 	Entry("tmp/ elsewhere", "tmp", "elsewhere"),
+	Entry("tmp/trash/ to data/", "tmp/trash", "../data"),
 	Entry("data/ elsewhere", "data", "elsewhere"),
 )
 
@@ -157,7 +159,7 @@ var _ = Describe("store.Init", Label("store"), func() {
 		otherDevice.SetMount(filepath.Join(root, "tmp"), store.Mount{Dev: 1 << 40})
 
 		Expect(store.InitFS(otherDevice, root)).To(MatchError(ContainSubstring("different devices or mounts")))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 		Expect(filepath.Join(root, "FORMAT")).NotTo(BeAnExistingFile())
 	})
 
@@ -165,7 +167,7 @@ var _ = Describe("store.Init", Label("store"), func() {
 		root := filepath.Join(GinkgoT().TempDir(), "lg")
 
 		Expect(store.InitFS(crossDeviceFS{}, root)).To(MatchError(syscall.EXDEV))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 })
 

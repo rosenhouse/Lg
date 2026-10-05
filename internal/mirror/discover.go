@@ -13,6 +13,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/retention"
 )
 
 // Discover lists the runs created in [from, to], newest first, halving the
@@ -117,14 +118,23 @@ type discovery struct {
 // window, those in a non-terminal status, hourly the runs on disk that a
 // rerun could still change, and the watched runs and the runs with pending
 // artifacts that no listing named. It leaves out the runs that retention
-// would evict, and reports a listed run without created_at as malformed.
+// would evict or that disk_cap evicted, and reports a listed run without
+// created_at as malformed.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
+	horizons, discarded, err := retention.ReadHorizons(m.Store)
+	if err != nil {
+		return discovery{}, err
+	}
+	repoKey := retention.RepoKey(m.Host, repo.FullName)
+	evicted := func(createdAt time.Time) bool {
+		return retention.Expired(createdAt, now, m.Retention) || horizons.Skips(repoKey, createdAt)
+	}
 	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
 	if err != nil {
 		return discovery{}, err
 	}
-	d := discovery{failed: capped}
+	d := discovery{failed: errors.Join(discarded, capped)}
 	for _, status := range nonTerminal {
 		runs, capped, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {
@@ -139,7 +149,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		}
 	}
 	listed = slices.DeleteFunc(listed, func(run github.Run) bool {
-		return run.CreatedAt.IsZero() || pastRetention(run.CreatedAt, now, m.Retention)
+		return run.CreatedAt.IsZero() || evicted(run.CreatedAt)
 	})
 	rescanned, rescannedAt, reported, err := m.rescan(ctx, gh, repo, now)
 	if err != nil {
@@ -148,7 +158,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	listed = append(listed, rescanned...)
 	d.rescannedAt = rescannedAt
 	d.failed = errors.Join(d.failed, reported)
-	w.prune(now, m.Retention)
+	w.prune(evicted)
 	watched, failed, err := m.fetchWatched(ctx, gh, w, listed)
 	if err != nil {
 		return discovery{}, err
@@ -158,7 +168,11 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	if i := slices.IndexFunc(listed, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
 		return discovery{}, fmt.Errorf("run %d belongs to %q, not %q", listed[i].ID, listed[i].Repository.FullName, repo.FullName)
 	}
-	for _, run := range merge(listed, p.unlisted(listed, repo)) {
+	if err := p.prune(repo, evicted); err != nil {
+		return discovery{}, err
+	}
+	unlisted := p.unlisted(listed, repo)
+	for _, run := range merge(listed, unlisted) {
 		dir, err := m.Store.FindRunDir(m.runDir(repo, run))
 		if err != nil {
 			return discovery{}, err
@@ -198,7 +212,7 @@ func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo,
 		return nil, time.Time{}, nil, nil
 	}
 	var last rescan
-	discarded, err := newStateFile(m.Store, "rescan.json").read(func(raw []byte) error { return json.Unmarshal(raw, &last) })
+	discarded, err := m.Store.ReadState("rescan.json", func(raw []byte) error { return json.Unmarshal(raw, &last) })
 	since := now.Sub(last.RescannedAt)
 	if err != nil || (since >= 0 && since < rescanEvery) {
 		return nil, time.Time{}, discarded, err
@@ -229,7 +243,7 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 	if rescannedAt.IsZero() {
 		return nil
 	}
-	return newStateFile(m.Store, "rescan.json").write(rescan{RescannedAt: rescannedAt.UTC().Truncate(time.Second)})
+	return m.Store.WriteState("rescan.json", rescan{RescannedAt: rescannedAt.UTC().Truncate(time.Second)})
 }
 
 // fetchWatched gets each watched run that no listing named, since a run

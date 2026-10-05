@@ -44,6 +44,7 @@ type commands struct {
 	Root    rootCmd    `cmd:"" help:"Print the data directory."`
 	Version versionCmd `cmd:"" help:"Print lg's version."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
+	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
 }
 
@@ -68,6 +69,7 @@ func Main(args []string, deps Deps) (code int) {
 	stdout := &errWriter{w: deps.Stdout}
 	parser := kong.Must(&commands{},
 		kong.Name("lg"),
+		kong.Vars{"write_lock_wait": writeLockWait.String()},
 		kong.Writers(stdout, deps.Stderr),
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 	defer func() {

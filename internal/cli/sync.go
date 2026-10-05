@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,23 +12,13 @@ import (
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
-	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
-	"github.com/rosenhouse/lg/internal/store"
 )
 
 type syncCmd struct{}
 
 func (syncCmd) Run(deps *Deps) error {
-	roots, err := config.Locations(deps.Env)
-	if err != nil {
-		return err
-	}
-	file, err := config.File(deps.Env)
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Load(file)
+	roots, cfg, err := loadConfig(deps.Env)
 	if err != nil {
 		return err
 	}
@@ -40,7 +29,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps)
+	s, release, err := openForWriting(roots, deps, writeLockWait, nil)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
@@ -58,44 +47,10 @@ func (syncCmd) Run(deps *Deps) error {
 		ArtifactMaxBytes: int64(cfg.ArtifactMaxBytes),
 		Backfill:         time.Duration(cfg.Backfill),
 		Retention:        time.Duration(cfg.Retention),
+		DiskCap:          int64(cfg.DiskCap),
 	}
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	return m.Cycle(ctx)
-}
-
-// writeLockWait bounds how long a writer waits for another to finish.
-const writeLockWait = 5 * time.Minute
-
-// openForWriting takes state/write.lock, which every writer of data/ and tmp/
-// holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots, deps *Deps) (*store.Store, func(), error) {
-	if err := os.MkdirAll(roots.State, 0o755); err != nil {
-		return nil, nil, err
-	}
-	writeLock := filepath.Join(roots.State, "write.lock")
-	held, err := lock.Wait(writeLock, writeLockWait, deps.Clock, func(holder string) {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	s, err := initAndSweep(deps.StoreFS, roots.Store)
-	if err != nil {
-		_ = held.Release()
-		return nil, nil, err
-	}
-	return s, func() { _ = held.Release() }, nil
-}
-
-func initAndSweep(fsys store.FS, root string) (*store.Store, error) {
-	if err := store.InitFS(fsys, root); err != nil {
-		return nil, err
-	}
-	s, err := store.OpenFS(fsys, root)
-	if err != nil {
-		return nil, err
-	}
-	return s, s.Sweep()
 }
