@@ -85,7 +85,9 @@ func hasCode(err error, codes ...int) bool {
 	return errors.As(err, &sqliteErr) && slices.Contains(codes, sqliteErr.Code()&0xff)
 }
 
+// querier is a *sql.DB or a *sql.Tx.
 type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
@@ -312,9 +314,7 @@ func runUnits(runDir string) ([]string, error) {
 }
 
 // indexedUnits gives the sorted indexed unit dirs of each run dir.
-func indexedUnits(ctx context.Context, q interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}) (map[string][]string, error) {
+func indexedUnits(ctx context.Context, q querier) (map[string][]string, error) {
 	rows, err := q.QueryContext(ctx, "SELECT path FROM units ORDER BY path")
 	if err != nil {
 		return nil, err

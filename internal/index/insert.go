@@ -24,14 +24,20 @@ func newInserter(ctx context.Context, tx *sql.Tx) (*inserter, error) {
 		table   string
 		columns []string
 	}{
-		{&in.runs, "runs", []string{"host", "repo", "run_id", "created_at", "date_dir", "path", "workflow_id",
-			"workflow_name", "head_branch", "head_sha", "event", "pr_numbers", "display_title", "latest_attempt"}},
+		{&in.runs, "runs", []string{
+			"host", "repo", "run_id", "created_at", "date_dir", "path", "workflow_id",
+			"workflow_name", "head_branch", "head_sha", "event", "pr_numbers", "display_title", "latest_attempt",
+		}},
 		{&in.attempts, "attempts", []string{"run_id", "attempt", "path", "status", "conclusion", "run_started_at", "completed_at"}},
-		{&in.jobs, "jobs", []string{"job_id", "run_id", "attempt", "name", "slug", "kind", "original_job_id", "conclusion",
-			"started_at", "completed_at", "runner_name", "labels", "has_log", "log_bytes", "path"}},
+		{&in.jobs, "jobs", []string{
+			"job_id", "run_id", "attempt", "name", "slug", "kind", "original_job_id", "conclusion",
+			"started_at", "completed_at", "runner_name", "labels", "has_log", "log_bytes", "path",
+		}},
 		{&in.steps, "steps", []string{"job_id", "number", "name", "conclusion", "started_at", "completed_at", "path"}},
-		{&in.artifacts, "artifacts", []string{"artifact_id", "run_id", "attributed_attempt", "attribution", "name", "size",
-			"created_at", "expired", "has_zip", "extracted", "path"}},
+		{&in.artifacts, "artifacts", []string{
+			"artifact_id", "run_id", "attributed_attempt", "attribution", "name", "size",
+			"created_at", "expired", "has_zip", "extracted", "path",
+		}},
 		{&in.tombstones, "tombstones", []string{"path", "reason", "http_status", "tombstoned_at"}},
 		{&in.units, "units", []string{"path"}},
 	}
