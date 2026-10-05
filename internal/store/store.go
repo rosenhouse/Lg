@@ -148,8 +148,8 @@ func check(fsys FS, root string) error {
 }
 
 // isOwn reports whether name, in a root without FORMAT, is what Init, a
-// writer waiting on state/write.lock, an index reader, mkfs or Finder left
-// there, or lg's config when LG_CONFIG points there.
+// writer waiting on state/write.lock, mkfs or Finder left there, or lg's
+// config when LG_CONFIG points there.
 func isOwn(fsys FS, root, name string) (bool, error) {
 	var ownChild func(string) bool
 	switch name {
@@ -158,9 +158,7 @@ func isOwn(fsys FS, root, name string) (bool, error) {
 	case "data", "lost+found":
 		ownChild = func(string) bool { return false }
 	case "state":
-		ownChild = func(child string) bool {
-			return slices.Contains([]string{"write.lock", "lg.db", "lg.db-wal", "lg.db-shm"}, child)
-		}
+		ownChild = func(child string) bool { return child == "write.lock" }
 	case "tmp":
 		ownChild = func(child string) bool { return isUnit(child) || child == "trash" }
 	default:
