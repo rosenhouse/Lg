@@ -137,6 +137,10 @@ func check(fsys FS, root string) error {
 			return err
 		}
 		if !own {
+			// Init publishes FORMAT last, so one that appeared since is a whole store.
+			if err := checkFormat(root); !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
 			return fmt.Errorf("%s has no FORMAT and holds files lg did not write; point LG_HOME at an empty or new dir", root)
 		}
 	}

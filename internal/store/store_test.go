@@ -23,6 +23,15 @@ var _ = Describe("Init", Label("store"), func() {
 		root = filepath.Join(GinkgoT().TempDir(), "lg")
 	})
 
+	It("accepts a store that another Init completes while it checks the root", func() {
+		Expect(os.Mkdir(root, 0o755)).To(Succeed())
+		racing := &initDuringReadDir{root: root}
+
+		Expect(store.InitFS(racing, root)).To(Succeed())
+		Expect(racing.raced).To(BeTrue())
+		Expect(store.Open(root)).NotTo(BeNil())
+	})
+
 	It("creates FORMAT, .rgignore, data/, state/, tmp/ and tmp/trash/", func() {
 		Expect(store.Init(root)).To(Succeed())
 
@@ -486,4 +495,20 @@ func (u unreadableDir) ReadDir(path string) ([]fs.DirEntry, error) {
 		return nil, syscall.EIO
 	}
 	return u.OSFS.ReadDir(path)
+}
+
+// initDuringReadDir makes root a store just before its first listing of root,
+// as a racing lg init would.
+type initDuringReadDir struct {
+	store.OSFS
+	root  string
+	raced bool
+}
+
+func (f *initDuringReadDir) ReadDir(path string) ([]fs.DirEntry, error) {
+	if path == f.root && !f.raced {
+		f.raced = true
+		Expect(store.Init(f.root)).To(Succeed())
+	}
+	return f.OSFS.ReadDir(path)
 }
