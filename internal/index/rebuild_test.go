@@ -38,6 +38,14 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		Expect(count(db, "SELECT count(*) FROM steps")).To(BeNumerically(">", 0))
 		Expect(column[string](db, "SELECT name FROM pragma_table_info('jobs') WHERE name = 'note'")).To(BeEmpty())
 	})
+
+	It("empties lg.db when data/ holds no runs", func(ctx SpecContext) {
+		reconcile(ctx, dbPath(env), env.Data())
+		Expect(os.RemoveAll(runDir(env.Data(), runID))).To(Succeed())
+
+		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
+		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(0))
+	})
 })
 
 var _ = Describe("an index transaction", Label("index"), func() {

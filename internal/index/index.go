@@ -27,8 +27,8 @@ const Format = 1
 const busyTimeout = 10 * time.Second
 
 type Index struct {
-	db   *sql.DB
-	data string
+	db         *sql.DB
+	path, data string
 }
 
 // Open opens the index at path over the data dir data. A transaction takes
@@ -41,7 +41,7 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	ix := &Index{db: db, data: data}
+	ix := &Index{db: db, path: path, data: data}
 	if err := ix.resetUnlessCurrent(ctx); err != nil {
 		return nil, errors.Join(fmt.Errorf("%s: %w", path, err), db.Close())
 	}
@@ -145,7 +145,7 @@ func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) erro
 func (ix *Index) Reconcile(ctx context.Context) error {
 	indexed, err := indexedUnits(ctx, ix.db)
 	if err != nil {
-		return err
+		return ix.dbError(err)
 	}
 	return ix.index(ctx, indexed, false)
 }
@@ -177,8 +177,8 @@ func (ix *Index) Close() error { return ix.db.Close() }
 
 // index reads the rows of each run on disk whose unit dirs differ from
 // indexed. Then, holding the write lock, it writes them, into an emptied db
-// when fresh. It returns the errors of the runs whose files it could not
-// read, after indexing the others.
+// when fresh. It takes the lock only when the db changes. It returns the
+// errors of the runs whose files it could not read, after indexing the others.
 func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh bool) error {
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
@@ -205,6 +205,15 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh b
 		}
 		read[runDir] = rows
 	}
+	unchanged := !fresh && len(read) == 0
+	for runDir := range indexed {
+		if _, ok := onDisk[runDir]; !ok {
+			unchanged = false
+		}
+	}
+	if unchanged {
+		return errors.Join(unreadable...)
+	}
 	err = ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if fresh {
 			if err := reset(ctx, tx); err != nil {
@@ -213,7 +222,15 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh b
 		}
 		return write(ctx, tx, onDisk, read)
 	})
-	return errors.Join(append([]error{err}, unreadable...)...)
+	return errors.Join(append([]error{ix.dbError(err)}, unreadable...)...)
+}
+
+// dbError names lg.db in err.
+func (ix *Index) dbError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", ix.path, err)
 }
 
 // write drops the rows of indexed runs not on disk, and replaces those of each read run.
