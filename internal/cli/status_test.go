@@ -176,7 +176,7 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 
 		Expect(s.main("status", "--json")).To(Equal(1))
 		Expect(s.stdout.String()).To(BeEmpty())
-		Expect(s.stderr.String()).To(HaveSuffix("lg: " + s.statusFile() + " does not exist; run `lg sync`\n"))
+		Expect(s.stderr.String()).To(Equal("lg: warning: never synced; run `lg sync`\nlg: " + s.statusFile() + " does not exist\n"))
 	})
 })
 

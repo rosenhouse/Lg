@@ -28,7 +28,7 @@ func (c statusCmd) Run(deps *Deps) error {
 	if c.JSON {
 		raw, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("%s does not exist; run `lg sync`", path)
+			return fmt.Errorf("%s does not exist", path)
 		}
 		if err != nil {
 			return err
