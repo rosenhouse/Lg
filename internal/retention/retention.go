@@ -297,13 +297,40 @@ func runCreatedAt(dir string) time.Time {
 	attempts, _ := filepath.Glob(filepath.Join(dir, "attempt-*", "fetch.json"))
 	artifacts, _ := filepath.Glob(filepath.Join(dir, "artifacts", "*", "fetch.json"))
 	for _, path := range append(attempts, artifacts...) {
-		var f struct {
-			RunCreatedAt time.Time `json:"run_created_at"`
+		if at := headerCreatedAt(path); !at.IsZero() {
+			return at
 		}
-		raw, err := os.ReadFile(path)
-		if err == nil && json.Unmarshal(raw, &f) == nil && !f.RunCreatedAt.IsZero() {
-			return f.RunCreatedAt
+	}
+	return time.Time{}
+}
+
+// headerCreatedAt reads the fetch.json at path only as far as its
+// run_created_at, which comes before the sources that make it large.
+func headerCreatedAt(path string) time.Time {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}
+	}
+	defer func() { _ = f.Close() }()
+	dec := json.NewDecoder(f)
+	if open, err := dec.Token(); err != nil || open != json.Delim('{') {
+		return time.Time{}
+	}
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return time.Time{}
 		}
+		var value json.RawMessage
+		if key != "run_created_at" {
+			if dec.Decode(&value) != nil {
+				return time.Time{}
+			}
+			continue
+		}
+		var at time.Time
+		_ = dec.Decode(&at)
+		return at
 	}
 	return time.Time{}
 }

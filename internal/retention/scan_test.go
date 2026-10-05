@@ -76,6 +76,18 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		))
 	})
 
+	It("reads a fetch.json only as far as run_created_at, which comes before its sources", func() {
+		data := filepath.Join(GinkgoT().TempDir(), "data")
+		attempt := filepath.Join(data, "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1")
+		writeSized(attempt, "fetch.json", 0)
+		header := `{"lg_format":1,"run_id":1,"run_created_at":"2026-10-01T01:00:00Z","sources":{` + strings.Repeat("x", 100)
+		Expect(os.WriteFile(filepath.Join(attempt, "fetch.json"), []byte(header), 0o644)).To(Succeed())
+
+		runs, err := retention.Scan(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(ConsistOf(HaveField("CreatedAt", time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC))))
+	})
+
 	It("charges no run with an extracted/ tree outside a date dir", func() {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
 		writeSized(data, "github.com/o/r/runs/2026-10-01/5_ci_main/attempt-1/log.txt", 1)
