@@ -84,7 +84,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 			run("2026-10-03", 11, 10, retention.Tree{Dir: "x", Bytes: 4}),
 		}
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 23)
+		v := retention.Plan(runs, retention.Horizon{}, cutoff, 27)
 		Expect(v.Extracted).To(Equal([]string{"x"}))
 		Expect(dirs(v.Evicted)).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
 	})
