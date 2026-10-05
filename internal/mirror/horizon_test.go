@@ -1,0 +1,64 @@
+package mirror_test
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
+
+	"github.com/rosenhouse/lg/internal/retention"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	. "github.com/rosenhouse/lg/internal/testsupport/matchers"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
+)
+
+var _ = Describe("discovery with an eviction horizon", Label("retention"), func() {
+	var (
+		env     *harness.InProcessEnv
+		horizon time.Time
+	)
+
+	BeforeEach(func() {
+		env = harness.InProcess()
+		horizon = harness.DefaultNow().Add(-2 * scenario.Day)
+	})
+
+	runRequest := func(id int64) types.GomegaMatcher {
+		return HaveField("Path", MatchRegexp(fmt.Sprintf(`/runs/%d(/|$)`, id)))
+	}
+
+	It("skips listed runs created at or before the horizon", func(ctx SpecContext) {
+		Expect(env.Fake.AddRun(scenario.CloneAt(1, "after-attempt-1", horizon))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.CloneAt(2, "after-attempt-1", horizon.Add(-time.Hour)))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.CloneAt(3, "after-attempt-1", horizon.Add(time.Second)))).To(Succeed())
+		Expect(retention.Horizon{At: horizon}.Write(env.Mirror.Store)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Fake.Requests()).NotTo(ContainElement(runRequest(1)))
+		Expect(env.Fake.Requests()).NotTo(ContainElement(runRequest(2)))
+		Expect(env.AttemptDirs(3)).To(HaveLen(1))
+	}, cycleTimeout)
+
+	It("fetches no watched run, and no pending artifact of a run, created at or before the horizon", func(ctx SpecContext) {
+		const pendingRun = 6
+		Expect(env.Fake.AddRun(scenario.CloneAt(pendingRun, "after-attempt-1", horizon.Add(-time.Hour)))).To(Succeed())
+		zip := fmt.Sprintf("artifacts/%d/zip", pendingRun*1_000_000_000_000+11276401837)
+		env.Fake.Fail("api", zip, fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+		Expect(env.Sync(ctx)).To(BeTransient())
+		env.Fake.Remove(pendingRun)
+		watched := fmt.Sprintf(`{"github.com":{"4":%s}}`, scenario.ListedRun(4, horizon.Add(-10*scenario.Day)))
+		Expect(os.WriteFile(filepath.Join(env.State(), "watch.json"), []byte(watched), 0o644)).To(Succeed())
+		Expect(retention.Horizon{At: horizon}.Write(env.Mirror.Store)).To(Succeed())
+		before := len(env.Fake.Requests())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(4)))
+		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(pendingRun)))
+	}, cycleTimeout)
+})
