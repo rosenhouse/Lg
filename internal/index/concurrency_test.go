@@ -43,6 +43,32 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Eventually(opened).Should(Receive(Succeed()))
 	}, syncTimeout)
 
+	It("keep what another wrote while Open waited to make a fresh lg.db current", func(ctx SpecContext) {
+		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
+		writer := impatientWriter(path)
+		_, err := writer.ExecContext(ctx, "PRAGMA journal_mode = WAL")
+		Expect(err).NotTo(HaveOccurred())
+		tx, err := writer.BeginTx(ctx, nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = tx.Rollback() })
+		opened := make(chan error, 1)
+		go func() {
+			ix, err := index.Open(path, env.Data())
+			if err == nil {
+				err = ix.Close()
+			}
+			opened <- err
+		}()
+		Consistently(opened, "200ms").ShouldNot(Receive())
+
+		Expect(index.Create(ctx, tx)).To(Succeed())
+		_, err = tx.ExecContext(ctx, "INSERT INTO runs (run_id) VALUES (1)")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tx.Commit()).To(Succeed())
+		Eventually(opened).Should(Receive(Succeed()))
+		Expect(count(openDB(path), "SELECT count(*) FROM runs")).To(Equal(1))
+	})
+
 	It("let another writer commit while Reconcile reads data/", func(ctx SpecContext) {
 		ix, err := index.Open(dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
