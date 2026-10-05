@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -29,6 +30,8 @@ type Run struct {
 	Date  string
 	ID    int64
 	Bytes int64
+	// Attempts counts its attempt dirs.
+	Attempts int
 	// CreatedAt is the run_created_at in a fetch.json of the run, and zero
 	// when it has none.
 	CreatedAt time.Time
@@ -183,9 +186,13 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 		// within any run is within the last run found.
 		run := last(runs)
 		if d.IsDir() {
-			if r, ok := runAt(path, parts); ok {
+			switch r, ok := runAt(path, parts); {
+			case ok:
 				runs = append(runs, r)
-			} else if isExtracted(parts) && run != nil && within(path, run.Dir) {
+			case run == nil || !within(path, run.Dir):
+			case isAttempt(parts):
+				run.Attempts++
+			case isExtracted(parts):
 				run.Extracted = append(run.Extracted, Tree{Dir: path})
 			}
 			return nil
@@ -228,6 +235,15 @@ func runAt(path string, parts []string) (Run, bool) {
 	idPart, _, _ := strings.Cut(parts[5], "_")
 	id, _ := strconv.ParseInt(idPart, 10, 64)
 	return Run{Dir: path, Repo: strings.Join(parts[:3], "/"), Date: date, ID: id}, true
+}
+
+// isAttempt reports whether parts, a path below data/, are <run>/attempt-N.
+func isAttempt(parts []string) bool {
+	if len(parts) != 7 {
+		return false
+	}
+	_, ok := layout.AttemptNumber(parts[6])
+	return ok
 }
 
 // isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
