@@ -83,7 +83,7 @@ func InProcess() *InProcessEnv {
 func (e *InProcessEnv) Sync(ctx context.Context) error {
 	ginkgo.GinkgoHelper()
 	before := treesnap.Snapshot(e.Data())
-	_, err := e.Mirror.Run(ctx)
+	_, err := e.Mirror.Cycle(ctx)
 	gomega.Expect(treesnap.Snapshot(e.Data())).To(treesnap.BeAppendOnlyFrom(before))
 	return err
 }

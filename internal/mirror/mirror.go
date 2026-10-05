@@ -44,14 +44,14 @@ type Report struct {
 	DefaultBranch string
 }
 
-// Run runs one cycle. It publishes each listed artifact and completed
+// Cycle runs one cycle. It publishes each listed artifact and completed
 // attempt that is not on disk. It does every run's artifacts first, newest
 // run first, because a re-run of all jobs deletes them. An error that
-// RunScoped accepts aborts only its artifact or attempt; Run returns these
+// RunScoped accepts aborts only its artifact or attempt; Cycle returns these
 // after trying every other. Any other error stops the cycle, and a local
 // error that no retry fixes blocks it. Retention runs after the cycle, also a
 // blocked one, unless ctx is done.
-func (m *Mirror) Run(ctx context.Context) (Report, error) {
+func (m *Mirror) Cycle(ctx context.Context) (Report, error) {
 	// A zero DiskCap or Retention would evict everything.
 	if m.DiskCap < 1 {
 		return Report{}, fmt.Errorf("DiskCap must be at least 1, not %d", m.DiskCap)

@@ -59,7 +59,7 @@ var _ = DescribeTable("mirror.Cycle returns Blocked and makes no further request
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		inject(env)
 
-		err := env.Mirror.Cycle(ctx)
+		err := cycleErr(ctx, env.Mirror)
 		Expect(err).To(BeAssignableToTypeOf(failure.Blocked{}))
 		Expect(err).To(want)
 		Expect(env.Fake.Requests()).To(requests)
@@ -122,7 +122,7 @@ var _ = Describe("mirror.Cycle", Label("blocked"), func() {
 		// The third API response says 9 of 100 remain.
 		env.Fake.SetRateLimit(100, 12)
 
-		Expect(env.Mirror.Cycle(ctx)).To(blockedAs(failure.RateLimit, harness.DefaultNow().Add(fakegithub.ResetAfter)))
+		Expect(cycleErr(ctx, env.Mirror)).To(blockedAs(failure.RateLimit, harness.DefaultNow().Add(fakegithub.ResetAfter)))
 		Expect(env.Fake.Requests()).To(HaveLen(3))
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 	}, cycleTimeout)

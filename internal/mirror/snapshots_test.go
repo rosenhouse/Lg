@@ -307,7 +307,7 @@ var _ = Describe("a snapshot whose listing a re-run overtook", Label("artifacts"
 		heldZip := "artifacts/11276128157/zip"
 		release := env.Fake.Hold(heldZip)
 		cycled := make(chan error, 1)
-		go func() { cycled <- env.Mirror.Cycle(ctx) }()
+		go func() { cycled <- cycleErr(ctx, env.Mirror) }()
 		Eventually(env.Fake.Requests).WithTimeout(10 * time.Second).Should(ContainElement(HaveField("Path", HaveSuffix(heldZip))))
 		Expect(env.Fake.Advance(runID, "after-attempt-3")).To(Succeed())
 		release()

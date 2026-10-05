@@ -73,7 +73,7 @@ func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *u
 		Retention:        time.Duration(cfg.Retention),
 		DiskCap:          int64(cfg.DiskCap),
 	}
-	return m.Run(ctx)
+	return m.Cycle(ctx)
 }
 
 // writeStatus completes c from cfg and the disk, and writes it over

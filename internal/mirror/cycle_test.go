@@ -82,13 +82,13 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		fake.RequireToken("gho_cycle")
 		m.Host = "ghe.corp.example"
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		Expect(tokens.hosts).To(Equal([]string{"ghe.corp.example"}))
 		Expect(os.ReadDir(filepath.Join(root, "data/ghe.corp.example"))).NotTo(BeEmpty())
 	})
 
 	It("reports the repo's default branch from GET /repos", Label("status"), func() {
-		report, err := m.Run(context.Background())
+		report, err := m.Cycle(context.Background())
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(report).To(Equal(mirror.Report{DefaultBranch: "main"}))
@@ -97,7 +97,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("returns the error from Tokens and sends no request", Label("transport"), func() {
 		tokens.err = errors.New("gh: not logged in")
 
-		Expect(m.Cycle(context.Background())).To(MatchError("gh: not logged in"))
+		Expect(cycleErr(context.Background(), &m)).To(MatchError("gh: not logged in"))
 		Expect(fake.Requests()).To(BeEmpty())
 	})
 
@@ -107,7 +107,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			Expect(os.MkdirAll(old, 0o755)).To(Succeed())
 			unset(&m)
 
-			Expect(m.Cycle(context.Background())).To(MatchError(message))
+			Expect(cycleErr(context.Background(), &m)).To(MatchError(message))
 			Expect(fake.Requests()).To(BeEmpty())
 			Expect(old).To(BeADirectory())
 		},
@@ -118,7 +118,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("returns an error and sends no request when ArtifactMaxBytes is not set", Label("artifacts"), func() {
 		m.ArtifactMaxBytes = 0
 
-		Expect(m.Cycle(context.Background())).To(MatchError("ArtifactMaxBytes must be at least 1, not 0"))
+		Expect(cycleErr(context.Background(), &m)).To(MatchError("ArtifactMaxBytes must be at least 1, not 0"))
 		Expect(tokens.hosts).To(BeEmpty())
 		Expect(fake.Requests()).To(BeEmpty())
 	})
@@ -130,7 +130,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		pending := filepath.Join(root, "state", "pending-artifacts.json")
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending + ".tmp", To: pending}))
 	})
 
@@ -142,7 +142,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		pending := filepath.Join(root, "state", "pending-artifacts.json")
 		Expect(os.WriteFile(pending, []byte("<"), 0o644)).To(Succeed())
 
-		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring(pending)))
+		Expect(cycleErr(context.Background(), &m)).To(MatchError(ContainSubstring(pending)))
 		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: pending, To: pending + ".corrupt"}))
 	})
 
@@ -152,7 +152,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 				run["repository"].(map[string]any)["full_name"] = fullName
 			})
 
-			Expect(m.Cycle(context.Background())).To(MatchError(
+			Expect(cycleErr(context.Background(), &m)).To(MatchError(
 				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/Lg"`))
 			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 			Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
@@ -163,14 +163,14 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	)
 
 	It("requests only the repo and the run listings, and writes nothing, when the attempt and artifacts are already on disk", func() {
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		before := len(fake.Requests())
 		fsys := faultfs.New()
 		var err error
 		m.Store, err = store.OpenFS(fsys, root)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		Expect(fsys.Journal()).To(BeEmpty())
 		Expect(fake.Requests()[before:]).To(HaveLen(2+len(mirror.NonTerminal)), "the repo, the backfill window and one listing per non-terminal status")
 		Expect(fake.Requests()[before:]).To(HaveEach(HaveField("Path", BeElementOf("/repos/rosenhouse/lg", "/repos/rosenhouse/lg/actions/runs"))))
@@ -179,7 +179,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("removes its staged unit when a log download fails", Label("store"), func() {
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError})
 
-		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
+		Expect(cycleErr(context.Background(), &m)).To(MatchError(ContainSubstring("500")))
 		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 		Expect(filepath.Glob(filepath.Join(root, "data/*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 	})
@@ -187,7 +187,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("writes jobs.json joining all pages into one array whose elements are JSON-equal to those served", Label("transport"), func() {
 		fake.SetPageCap(5)
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		var stored, served []json.RawMessage
 		raw, err := os.ReadFile(filepath.Join(root, "data/github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture/attempt-1/jobs.json"))
 		Expect(err).NotTo(HaveOccurred())
@@ -204,7 +204,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("names the repo dir as GET /repos spells the repo's full name", Label("blocked"), func() {
 		fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusOK, Body: `{"full_name":"RosenHouse/LG"}`})
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		Expect(os.ReadDir(filepath.Join(root, "data/github.com"))).To(ConsistOf(HaveField("Name()", "RosenHouse")))
 		Expect(os.ReadDir(filepath.Join(root, "data/github.com/RosenHouse"))).To(ConsistOf(HaveField("Name()", "LG")))
 	})
@@ -216,7 +216,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 				run["repository"].(map[string]any)["full_name"] = fullName
 			})
 
-			Expect(m.Cycle(context.Background())).To(MatchError(MatchRegexp(`/repos/rosenhouse/lg: full_name %q is not owner/name$`, fullName)))
+			Expect(cycleErr(context.Background(), &m)).To(MatchError(MatchRegexp(`/repos/rosenhouse/lg: full_name %q is not owner/name$`, fullName)))
 			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
 		},
 		Entry("a path out of the store", "../../escaped"),
@@ -227,7 +227,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 	It("blocks as auth when GET /repos returns 404, naming the host and repo", Label("blocked"), func() {
 		fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusNotFound})
 
-		Expect(m.Cycle(context.Background())).To(Equal(failure.Blocked{
+		Expect(cycleErr(context.Background(), &m)).To(Equal(failure.Blocked{
 			Kind:   failure.Auth,
 			Detail: "github.com/rosenhouse/lg was not found, or the token lacks access to it",
 		}))
@@ -240,7 +240,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			attempt["conclusion"] = nil
 		})
 
-		Expect(m.Cycle(context.Background())).To(Succeed())
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		Expect(filepath.Glob(filepath.Join(root, "data/*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 		Expect(fake.Requests()).NotTo(ContainElement(HaveField("Path", ContainSubstring("/jobs"))))
 	})
