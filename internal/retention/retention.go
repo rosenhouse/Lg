@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/store"
@@ -210,26 +211,45 @@ func last[T any](s []T) *T {
 	return &s[len(s)-1]
 }
 
-// Execute raises the horizon past the runs it evicts, evicts the victims in
-// order, printing each to removed, and then removes empty date dirs. Callers
-// hold state/write.lock.
+// Execute evicts the victims in order, printing each to removed, and then
+// removes empty date dirs. It raises the horizon past the runs evicted for
+// disk_cap before they go, so that a crash part way leaves no evicted run
+// for discovery to fetch again. Callers hold state/write.lock.
 func Execute(s *store.Store, v Victims, removed io.Writer) error {
-	if err := raiseHorizon(s, v.Evicted); err != nil {
-		return err
-	}
-	for _, dir := range v.Dirs() {
+	evict := func(dir string) error {
 		if err := s.Evict(dir); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(removed, dir); err != nil {
+		_, err := fmt.Fprintln(removed, dir)
+		return err
+	}
+	for _, dir := range slices.Concat(v.Expired, v.Extracted) {
+		if err := evict(dir); err != nil {
+			return err
+		}
+	}
+	runs := v.Evicted
+	err := raiseHorizon(s, v.Evicted)
+	// On a full disk, a run must go first to make room for the horizon. A
+	// crash before the horizon is written costs one re-download of it.
+	for errors.Is(err, syscall.ENOSPC) && len(runs) > 0 {
+		if err := evict(runs[0].Dir); err != nil {
+			return err
+		}
+		runs = runs[1:]
+		err = raiseHorizon(s, v.Evicted)
+	}
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		if err := evict(r.Dir); err != nil {
 			return err
 		}
 	}
 	return removeEmptyDates(s)
 }
 
-// raiseHorizon writes the horizon before the runs go, so that a crash part
-// way leaves no evicted run for discovery to fetch again.
 func raiseHorizon(s *store.Store, evicted []Run) error {
 	if len(evicted) == 0 {
 		return nil

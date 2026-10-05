@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,11 +19,11 @@ import (
 
 var _ = Describe("retention.Execute", Label("retention"), func() {
 	var (
-		root  string
-		fsys  *faultfs.FS
-		s     *store.Store
-		runs  string
-		print bytes.Buffer
+		root string
+		fsys *faultfs.FS
+		s    *store.Store
+		runs string
+		out  bytes.Buffer
 	)
 
 	// runWithLog writes a run dir holding a log, and gives it as created at createdAt.
@@ -42,7 +43,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		s, err = store.OpenFS(fsys, root)
 		Expect(err).NotTo(HaveOccurred())
 		runs = filepath.Join(s.Data(), "github.com", "o", "r", "runs")
-		print.Reset()
+		out.Reset()
 	})
 
 	It("evicts each victim in order, prints it, and removes the date dirs left empty", func() {
@@ -55,8 +56,8 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(os.MkdirAll(leftover, 0o755)).To(Succeed())
 
 		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{evicted}}
-		Expect(retention.Execute(s, v, &print)).To(Succeed())
-		Expect(print.String()).To(Equal(strings.Join(v.Dirs(), "\n") + "\n"))
+		Expect(retention.Execute(s, v, &out)).To(Succeed())
+		Expect(out.String()).To(Equal(strings.Join(v.Dirs(), "\n") + "\n"))
 		var trashed []string
 		for _, op := range fsys.Journal() {
 			if op.Name == "rename" && strings.HasPrefix(op.To, filepath.Join(root, "tmp", "trash")) {
@@ -73,25 +74,45 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 	It("leaves a file among the date dirs alone", func() {
 		writeSized(runs, "notes.txt", 1)
 
-		Expect(retention.Execute(s, retention.Victims{}, &print)).To(Succeed())
+		Expect(retention.Execute(s, retention.Victims{}, &out)).To(Succeed())
 		Expect(filepath.Join(runs, "notes.txt")).To(BeARegularFile())
 	})
 
-	It("writes the horizon at the newest run_created_at of the evicted runs, before evicting any", func() {
+	// renamed gives the index of the rename of path in the journal.
+	renamed := func(path string) int {
+		return slices.IndexFunc(fsys.Journal(), func(op faultfs.Op) bool { return op.Name == "rename" && op.Path == path })
+	}
+
+	It("writes the horizon at the newest run_created_at of the evicted runs, after the expired runs and extracted trees go and before any evicted run", func() {
+		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
+		extracted := filepath.Join(runs, "2026-10-02", "3_ci_main", "artifacts", "5_report", "extracted")
+		writeSized(extracted, "report.xml", 10)
 		older := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 		newer := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC))
 
-		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{newer, older}}, &print)).To(Succeed())
+		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{newer, older}}
+		Expect(retention.Execute(s, v, &out)).To(Succeed())
 		h, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
-		journal := fsys.Journal()
-		horizon := slices.IndexFunc(journal, func(op faultfs.Op) bool {
-			return op.Name == "rename" && op.To == filepath.Join(s.State(), "horizon.json")
-		})
-		firstEviction := slices.IndexFunc(journal, func(op faultfs.Op) bool { return op.Name == "rename" && op.Path == newer.Dir })
-		Expect(horizon).To(BeNumerically(">=", 0))
-		Expect(horizon).To(BeNumerically("<", firstEviction))
+		horizon := renamed(filepath.Join(s.State(), "horizon.json.tmp"))
+		Expect(renamed(expired.Dir)).To(BeNumerically("<", renamed(extracted)))
+		Expect(renamed(extracted)).To(BeNumerically("<", horizon))
+		Expect(horizon).To(BeNumerically("<", renamed(newer.Dir)))
+	})
+
+	It("on a full disk, evicts runs for disk_cap until it can write the horizon", func() {
+		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
+		first := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+		second := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC))
+		fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), syscall.ENOSPC)
+
+		err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}}, &out)
+		Expect(err).To(MatchError(syscall.ENOSPC))
+		for _, dir := range []string{expired.Dir, first.Dir, second.Dir} {
+			Expect(dir).NotTo(BeADirectory())
+		}
+		Expect(out.String()).To(Equal(expired.Dir + "\n" + first.Dir + "\n" + second.Dir + "\n"))
 	})
 
 	It("keeps a newer horizon", func() {
@@ -99,7 +120,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(retention.Horizon{At: newer}.Write(s)).To(Succeed())
 		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 
-		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &print)).To(Succeed())
+		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
 		h, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h.At).To(BeTemporally("==", newer))
@@ -108,7 +129,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 	It("does not raise the horizon for an evicted run without created_at", func() {
 		evicted := runWithLog("2026-10-01/9_ci_main", time.Time{})
 
-		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &print)).To(Succeed())
+		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
 		Expect(evicted.Dir).NotTo(BeADirectory())
 		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
 	})
@@ -116,7 +137,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 	It("writes no horizon when it evicts nothing for disk_cap", func() {
 		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
 
-		Expect(retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}}, &print)).To(Succeed())
+		Expect(retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}}, &out)).To(Succeed())
 		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
 	})
 })
