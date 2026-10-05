@@ -56,9 +56,9 @@ func (w *watch) add(run model.Run) {
 	w.runs[run.ID] = watchedRun{CreatedAt: run.CreatedAt}
 }
 
-// prune drops the runs that retention would evict.
-func (w *watch) prune(now time.Time, retention time.Duration) {
-	maps.DeleteFunc(w.runs, func(_ int64, run watchedRun) bool { return pastRetention(run.CreatedAt, now, retention) })
+// prune drops the runs created when evicted reports.
+func (w *watch) prune(evicted func(createdAt time.Time) bool) {
+	maps.DeleteFunc(w.runs, func(_ int64, run watchedRun) bool { return evicted(run.CreatedAt) })
 }
 
 // pastRetention reports whether retention evicts a run created at createdAt.
