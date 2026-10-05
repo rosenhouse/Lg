@@ -90,7 +90,7 @@ var _ = Describe("the index after syncing through after-attempt-1, -2 and -3", L
 			return column[string](db, "SELECT attributed_attempt || ' ' || attribution FROM artifacts WHERE artifact_id = ?", id)
 		}
 		for _, id := range []int64{11276267449, 11276052917, 11275918123} {
-			Expect(attributed(id)).To(Equal([]string{"2 listing"}), "artifact %d", id)
+			Expect(attributed(id)).To(Equal([]string{"2 listing-diff"}), "artifact %d", id)
 		}
 		for _, id := range []int64{11276401837, 11276272069, 11276182467, 11275917910} {
 			Expect(attributed(id)).To(ConsistOf(HavePrefix("1 ")), "artifact %d", id)
