@@ -37,7 +37,6 @@ func blockedCycle(started time.Time, b failure.Blocked) status.Cycle {
 	return c
 }
 
-
 func ptr[T any](v T) *T { return &v }
 
 var _ = Describe("Next", Label("status"), func() {
