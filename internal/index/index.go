@@ -5,6 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+
+	"github.com/rosenhouse/lg/internal/layout"
 
 	_ "modernc.org/sqlite"
 )
@@ -27,17 +34,42 @@ func Open(path, data string) (*Index, error) {
 	}
 	db.SetMaxOpenConns(1)
 	ix := &Index{db: db, data: data}
-	if err := ix.inTx(context.Background(), createSchema); err != nil {
+	if err := ix.inTx(context.Background(), migrate); err != nil {
 		return nil, errors.Join(err, db.Close())
 	}
 	return ix, nil
 }
 
-func createSchema(tx *sql.Tx) error {
+// migrate drops every table, then creates the schema, unless meta.format is Format.
+func migrate(tx *sql.Tx) error {
+	var format int
+	if err := tx.QueryRow("SELECT format FROM meta").Scan(&format); err == nil && format == Format {
+		return nil
+	}
+	rows, err := tx.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+	if err != nil {
+		return err
+	}
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return errors.Join(err, rows.Close())
+		}
+		names = append(names, name)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if _, err := tx.Exec(fmt.Sprintf("DROP TABLE %q", name)); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(schema); err != nil {
 		return err
 	}
-	_, err := tx.Exec("INSERT INTO meta (format) VALUES (?)", Format)
+	_, err = tx.Exec("INSERT INTO meta (format) VALUES (?)", Format)
 	return err
 }
 
@@ -52,8 +84,176 @@ func (ix *Index) inTx(ctx context.Context, f func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (ix *Index) Reconcile(context.Context) error { return nil }
+// Reconcile re-indexes each run whose unit dirs differ from those indexed,
+// and drops the rows of runs no longer on disk.
+func (ix *Index) Reconcile(ctx context.Context) error {
+	return ix.inTx(ctx, func(tx *sql.Tx) error { return ix.reconcile(ctx, tx) })
+}
 
-func (ix *Index) Rebuild(context.Context) error { return nil }
+// Rebuild indexes every run on disk anew.
+func (ix *Index) Rebuild(ctx context.Context) error {
+	return ix.inTx(ctx, func(tx *sql.Tx) error {
+		for _, table := range tables {
+			if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+				return err
+			}
+		}
+		return ix.reconcile(ctx, tx)
+	})
+}
 
 func (ix *Index) Close() error { return ix.db.Close() }
+
+func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) error {
+	onDisk, err := unitsOnDisk(ix.data)
+	if err != nil {
+		return err
+	}
+	indexed, err := indexedUnits(tx)
+	if err != nil {
+		return err
+	}
+	for runDir := range indexed {
+		if _, ok := onDisk[runDir]; !ok {
+			if err := deleteRun(tx, runDir); err != nil {
+				return err
+			}
+		}
+	}
+	in, err := newInserter(tx)
+	if err != nil {
+		return err
+	}
+	defer in.close()
+	for runDir, units := range onDisk {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if slices.Equal(units, indexed[runDir]) {
+			continue
+		}
+		rows, err := IndexRun(runDir)
+		if err == nil {
+			err = deleteRun(tx, runDir)
+		}
+		if err == nil {
+			err = in.insert(runDir, rows)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// unitsOnDisk gives the sorted unit dirs of each run dir under data.
+func unitsOnDisk(data string) (map[string][]string, error) {
+	runs := map[string][]string{}
+	runDirs, err := dirs(data, "*", "*", "*", "runs", "*", "*")
+	if err != nil {
+		return nil, err
+	}
+	for _, runDir := range runDirs {
+		units, err := runUnits(runDir)
+		if err != nil {
+			return nil, err
+		}
+		if len(units) > 0 {
+			runs[runDir] = units
+		}
+	}
+	return runs, nil
+}
+
+// dirs gives the dirs below root whose path matches pattern, one element per level.
+func dirs(root string, pattern ...string) ([]string, error) {
+	found := []string{root}
+	for _, p := range pattern {
+		var next []string
+		for _, dir := range found {
+			entries, err := os.ReadDir(dir)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			for _, e := range entries {
+				if ok, _ := filepath.Match(p, e.Name()); ok && e.IsDir() {
+					next = append(next, filepath.Join(dir, e.Name()))
+				}
+			}
+		}
+		found = next
+	}
+	return found, nil
+}
+
+// runUnits gives the sorted unit dirs of a run: attempts, artifacts and extracted trees.
+func runUnits(runDir string) ([]string, error) {
+	attempts, err := dirs(runDir, "attempt-*")
+	if err != nil {
+		return nil, err
+	}
+	units := slices.DeleteFunc(attempts, func(dir string) bool {
+		_, ok := layout.AttemptNumber(filepath.Base(dir))
+		return !ok
+	})
+	artifacts, err := dirs(runDir, "artifacts", "*")
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range artifacts {
+		units = append(units, dir)
+		extracted := filepath.Join(dir, "extracted")
+		if _, err := os.Lstat(extracted); err == nil {
+			units = append(units, extracted)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
+	slices.Sort(units)
+	return units, nil
+}
+
+// indexedUnits gives the sorted indexed unit dirs of each run dir.
+func indexedUnits(tx *sql.Tx) (map[string][]string, error) {
+	rows, err := tx.Query("SELECT path FROM units ORDER BY path")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := map[string][]string{}
+	for rows.Next() {
+		var unit string
+		if err := rows.Scan(&unit); err != nil {
+			return nil, err
+		}
+		runDir := runOf(unit)
+		runs[runDir] = append(runs[runDir], unit)
+	}
+	return runs, rows.Err()
+}
+
+// runOf gives the run dir of an attempt, artifact or extracted unit.
+func runOf(unit string) string {
+	switch {
+	case filepath.Base(unit) == "extracted":
+		return filepath.Dir(filepath.Dir(filepath.Dir(unit)))
+	case filepath.Base(filepath.Dir(unit)) == "artifacts":
+		return filepath.Dir(filepath.Dir(unit))
+	}
+	return filepath.Dir(unit)
+}
+
+// deleteRun deletes every row whose path is runDir or below it.
+func deleteRun(tx *sql.Tx, runDir string) error {
+	for _, table := range tables {
+		// '0' follows '/', so the range holds exactly the paths below runDir.
+		_, err := tx.Exec("DELETE FROM "+table+" WHERE path = ? OR (path > ? AND path < ?)", runDir, runDir+"/", runDir+"0")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
