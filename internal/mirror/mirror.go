@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
 	"github.com/rosenhouse/lg/internal/version"
@@ -43,9 +44,17 @@ type Mirror struct {
 // re-run of all jobs deletes them. An error that runScoped
 // accepts aborts only its artifact or attempt; Cycle returns these after
 // trying every other. Any other error stops the cycle, and a local error that
-// no retry fixes blocks it.
+// no retry fixes blocks it. Retention runs after the cycle, however it ended.
 func (m *Mirror) Cycle(ctx context.Context) error {
-	err := m.cycle(ctx)
+	err := m.classify(m.cycle(ctx))
+	retained := failure.FromErrno(m.retain())
+	if retained == nil {
+		return err
+	}
+	return errors.Join(err, retained)
+}
+
+func (m *Mirror) classify(err error) error {
 	var blocked failure.Blocked
 	if errors.As(err, &blocked) {
 		if errors.Is(err, github.ErrUnauthorized) {
@@ -54,6 +63,14 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		return blocked
 	}
 	return failure.FromErrno(err)
+}
+
+func (m *Mirror) retain() error {
+	v, err := retention.Find(m.Store.Data(), m.Clock.Now(), m.Retention, m.DiskCap)
+	if err != nil {
+		return err
+	}
+	return retention.Execute(m.Store, v, io.Discard)
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {
