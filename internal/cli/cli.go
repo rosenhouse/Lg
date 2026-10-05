@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -17,6 +18,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -102,6 +104,7 @@ func Main(args []string, deps Deps) (code int) {
 		err = config.Error(err.Error())
 	}
 	if err == nil {
+		warn(&deps)
 		err = checkStore(ctx.Command(), deps.Env)
 	}
 	if err == nil {
@@ -122,6 +125,22 @@ func Main(args []string, deps Deps) (code int) {
 		return 1
 	}
 	return 0
+}
+
+// warn prints the line status.Warning gives for the store's status.json, if any.
+func warn(deps *Deps) {
+	roots, err := config.Locations(deps.Env)
+	if err != nil {
+		return
+	}
+	st, err := status.Read(filepath.Join(roots.State, "status.json"))
+	warning := status.Warning(deps.Clock.Now(), st)
+	if err != nil {
+		warning = err.Error()
+	}
+	if warning != "" {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)
+	}
 }
 
 // checkStore refuses a store that lg cannot own before any command but version runs.
