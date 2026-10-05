@@ -131,8 +131,19 @@ func IndexRun(runDir string) (Rows, error) {
 	if err != nil {
 		return Rows{}, err
 	}
+	units, err := runUnits(runDir)
+	if err != nil {
+		return Rows{}, err
+	}
 	r := &runFiles{dir: runDir}
 	var rows Rows
+	for _, unit := range units {
+		rel, err := filepath.Rel(runDir, unit)
+		if err != nil {
+			return Rows{}, err
+		}
+		rows.Units = append(rows.Units, rel)
+	}
 	rows.Run = runRow(attempts, artifacts)
 	for i, a := range attempts {
 		if err := r.addAttempt(&rows, a, attempts[:i]); err != nil {
@@ -248,7 +259,6 @@ type runFiles struct{ dir string }
 
 func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles) error {
 	dir := layout.AttemptDir("", a.n)
-	rows.Units = append(rows.Units, dir)
 	rows.Attempts = append(rows.Attempts, Attempt{
 		Attempt: a.n, Path: dir, Status: a.run.Status, Conclusion: a.run.Conclusion,
 		RunStartedAt: a.run.RunStartedAt, CompletedAt: a.run.UpdatedAt,
@@ -287,7 +297,6 @@ func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles
 }
 
 func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFiles) error {
-	rows.Units = append(rows.Units, a.dir)
 	snapshots := make([]model.Snapshot, len(attempts))
 	for i, at := range attempts {
 		snapshots[i] = model.Snapshot{Attempt: at.n, RunStartedAt: at.run.RunStartedAt, ListedAt: at.fetch.RunAttemptAtFetch}
@@ -308,7 +317,6 @@ func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFi
 	extracted := filepath.Join(a.dir, "extracted")
 	if _, err := os.Lstat(filepath.Join(r.dir, extracted)); err == nil {
 		row.Extracted = true
-		rows.Units = append(rows.Units, extracted)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
