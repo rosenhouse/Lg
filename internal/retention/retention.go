@@ -2,7 +2,11 @@
 // runs while data/ is over disk_cap.
 package retention
 
-import "time"
+import (
+	"cmp"
+	"slices"
+	"time"
+)
 
 // Run is a run dir under a date dir.
 type Run struct {
@@ -34,8 +38,53 @@ type Victims struct {
 	Evicted   []Run
 }
 
-func (v Victims) Dirs() []string { return nil }
+func (v Victims) Dirs() []string {
+	dirs := slices.Concat(v.Expired, v.Extracted)
+	for _, r := range v.Evicted {
+		dirs = append(dirs, r.Dir)
+	}
+	return dirs
+}
 
-func Cutoff(now time.Time, retention time.Duration) string { return "" }
+// Cutoff is the UTC date retention before now. Date dirs before it expire.
+func Cutoff(now time.Time, retention time.Duration) string {
+	return now.UTC().Add(-retention).Format(time.DateOnly)
+}
 
-func Plan(u Usage, cutoff string, diskCap int64) Victims { return Victims{} }
+// Plan expires the runs in date dirs before cutoff. Then, while data/ is
+// over diskCap, it removes extracted/ trees and then whole runs, oldest
+// first: by date dir, then run id.
+func Plan(u Usage, cutoff string, diskCap int64) Victims {
+	runs := slices.SortedFunc(slices.Values(u.Runs), func(a, b Run) int {
+		return cmp.Or(cmp.Compare(a.Date, b.Date), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Dir, b.Dir))
+	})
+	var v Victims
+	total := u.Bytes
+	var kept []Run
+	for _, r := range runs {
+		if r.Date < cutoff {
+			v.Expired = append(v.Expired, r.Dir)
+			total -= r.Bytes
+		} else {
+			kept = append(kept, r)
+		}
+	}
+	for i := range kept {
+		for _, tree := range kept[i].Extracted {
+			if total <= diskCap {
+				break
+			}
+			v.Extracted = append(v.Extracted, tree.Dir)
+			total -= tree.Bytes
+			kept[i].Bytes -= tree.Bytes
+		}
+	}
+	for _, r := range kept {
+		if total <= diskCap {
+			break
+		}
+		v.Evicted = append(v.Evicted, r)
+		total -= r.Bytes
+	}
+	return v
+}

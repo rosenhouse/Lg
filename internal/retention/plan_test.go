@@ -66,11 +66,11 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		runs := []retention.Run{
 			run("2026-10-05", 1, 10),
 			run("2026-10-04", 10, 10),
-			run("2026-10-04", 9, 10, retention.Tree{Dir: "x", Bytes: 4}),
-			run("2026-10-03", 11, 10),
+			run("2026-10-04", 9, 10),
+			run("2026-10-03", 11, 10, retention.Tree{Dir: "x", Bytes: 4}),
 		}
 
-		v := retention.Plan(retention.Usage{Runs: runs, Bytes: 45}, cutoff, 21)
+		v := retention.Plan(retention.Usage{Runs: runs, Bytes: 45}, cutoff, 33)
 		Expect(v.Extracted).To(Equal([]string{"x"}))
 		Expect(dirs(v.Evicted)).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
 	})
