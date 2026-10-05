@@ -139,6 +139,31 @@ var _ = Describe("index.Reconcile", Label("index"), func() {
 		Expect(count(db, "SELECT count(*) FROM jobs")).To(BeNumerically(">", 0))
 	}, syncTimeout)
 
+	It("re-indexes a run whose artifact gains extracted/, and leaves the rows of unchanged runs alone", func(ctx SpecContext) {
+		env := harness.InProcess()
+		syncStages(ctx, env, "after-attempt-1")
+		reconcile(ctx, dbPath(env), env.Data())
+		db := openDB(dbPath(env))
+		tamper := func() {
+			_, err := db.ExecContext(ctx, "UPDATE runs SET workflow_name = 'tampered'")
+			Expect(err).NotTo(HaveOccurred())
+		}
+		workflow := func() []string { return column[string](db, "SELECT workflow_name FROM runs") }
+
+		tamper()
+		reconcile(ctx, dbPath(env), env.Data())
+		Expect(workflow()).To(Equal([]string{"tampered"}))
+
+		Expect(os.Mkdir(filepath.Join(env.ArtifactDirs(runID)[0], "extracted"), 0o755)).To(Succeed())
+		reconcile(ctx, dbPath(env), env.Data())
+		Expect(count(db, "SELECT count(*) FROM artifacts WHERE extracted")).To(Equal(1))
+		Expect(workflow()).To(Equal([]string{"lg-fixture"}))
+
+		tamper()
+		reconcile(ctx, dbPath(env), env.Data())
+		Expect(workflow()).To(Equal([]string{"tampered"}))
+	}, syncTimeout)
+
 	It("gives the same rows whichever attempt of a run is indexed first, with created_at from fetch.json run_created_at", func(ctx SpecContext) {
 		env := harness.InProcess()
 		syncStages(ctx, env, "after-attempt-2")
