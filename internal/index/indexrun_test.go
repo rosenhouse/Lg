@@ -111,6 +111,16 @@ var _ = Describe("IndexRun", Label("index"), func() {
 			"TombstonedAt": Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)),
 		})))
 	})
+
+	It("ignores a dir beside the attempts whose name has no attempt number", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeAttempt(dir, 1, "first")
+		Expect(os.Mkdir(filepath.Join(dir, "attempt-x"), 0o755)).To(Succeed())
+
+		rows, err := index.IndexRun(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows.Units).To(Equal([]string{"attempt-1"}))
+	})
 })
 
 // writeArtifact writes a hand-made artifact of run 5 named a, created at
