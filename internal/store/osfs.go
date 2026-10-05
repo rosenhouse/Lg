@@ -15,6 +15,8 @@ func (OSFS) Create(path string) (File, error) {
 	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 }
 
+func (OSFS) Rewrite(path string) (File, error) { return os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0) }
+
 func (OSFS) Rename(oldpath, newpath string) error { return os.Rename(oldpath, newpath) }
 
 func (OSFS) SyncDir(path string) error {

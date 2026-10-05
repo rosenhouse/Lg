@@ -3,6 +3,7 @@ package status_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,6 +72,31 @@ var _ = Describe("Write", Label("status"), func() {
 
 		Expect(status.Write(fsys, path, status.Status{LgFormat: 1})).To(MatchError(syscall.ENOSPC))
 		Expect(path).NotTo(BeAnExistingFile())
+	})
+
+	DescribeTable("rewrites the file in place when the disk is too full for a temp file",
+		func(errno syscall.Errno) {
+			Expect(os.WriteFile(path, []byte(`{"cycle": 1}`+strings.Repeat(" ", 100)), 0o644)).To(Succeed())
+			fsys := faultfs.New()
+			fsys.FailOn("create", errno)
+
+			Expect(status.Write(fsys, path, status.Status{LgFormat: 1, Cycle: 2})).To(Succeed())
+
+			Expect(status.Read(path)).To(HaveField("Cycle", int64(2)))
+			Expect(os.ReadFile(path)).To(HaveSuffix("}\n"))
+			Expect(path + ".tmp").NotTo(BeAnExistingFile())
+		},
+		Entry("ENOSPC", syscall.ENOSPC),
+		Entry("EDQUOT", syscall.EDQUOT),
+	)
+
+	It("keeps the file after any other failure", func() {
+		Expect(os.WriteFile(path, []byte("old\n"), 0o644)).To(Succeed())
+		fsys := faultfs.New()
+		fsys.FailOn("create", syscall.EIO)
+
+		Expect(status.Write(fsys, path, status.Status{LgFormat: 1})).To(MatchError(syscall.EIO))
+		Expect(os.ReadFile(path)).To(Equal([]byte("old\n")))
 	})
 
 	It("replaces the file by renaming a temp file over it, leaving no temp file", func() {
