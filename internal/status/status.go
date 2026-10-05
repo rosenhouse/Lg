@@ -3,6 +3,7 @@ package status
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -154,8 +155,8 @@ func Next(prev *Status, c Cycle) Status {
 }
 
 // nextBlocked is what err blocks, since prev's blocked.since when prev was
-// blocked too, else since started. An err that blocks nothing keeps prev's
-// blocked.
+// blocked too, else since started. A cancelled cycle learned nothing, so it
+// keeps prev's blocked.
 func nextBlocked(prev *Status, err error, started time.Time) *Blocked {
 	var last *Blocked
 	if prev != nil {
@@ -163,7 +164,10 @@ func nextBlocked(prev *Status, err error, started time.Time) *Blocked {
 	}
 	var b failure.Blocked
 	if !errors.As(err, &b) {
-		return last
+		if errors.Is(err, context.Canceled) {
+			return last
+		}
+		return nil
 	}
 	since := started
 	if last != nil {

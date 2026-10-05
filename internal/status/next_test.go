@@ -122,7 +122,15 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(third.LastSyncOKAt).To(Equal(ptr(finished.Add(2 * time.Hour))))
 	})
 
-	It("keeps blocked, and its since, after a cycle that stopped without blocking", func() {
+	It("clears blocked after a cycle that failed without blocking, since its cause no longer applies", func() {
+		prev := status.Next(nil, blockedCycle(started, failure.Blocked{Kind: failure.Unreachable, Detail: "dial"}))
+		c := good(started.Add(time.Hour))
+		c.Completed, c.Err = false, errors.New("GET /repos/rosenhouse/lg/actions/runs: 500 Internal Server Error")
+
+		Expect(status.Next(&prev, c).Blocked).To(BeNil())
+	})
+
+	It("keeps blocked, and its since, after a cycle that was cancelled", func() {
 		prev := status.Next(nil, blockedCycle(started, failure.Blocked{Kind: failure.Auth, Detail: "keyring"}))
 		c := good(started.Add(time.Hour))
 		c.Completed, c.Err = false, context.Canceled
