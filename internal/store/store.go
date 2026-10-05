@@ -611,6 +611,7 @@ func ReplaceFileFS(fsys FS, path string, data []byte) error {
 		err = fsys.Rename(tmp, path)
 	}
 	if err != nil {
+		_ = fsys.RemoveAll(tmp)
 		return err
 	}
 	return fsys.SyncDir(filepath.Dir(path))
