@@ -3,6 +3,7 @@ package index_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
@@ -63,10 +65,36 @@ var _ = Describe("IndexRun", Label("index"), func() {
 		}))
 	})
 
+	It("attributes an artifact created after attempt 1 started, fetched during attempt 2, to attempt 1 only once attempt 2 is on disk", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeAttempt(dir, 1, "first")
+		writeArtifact(dir, 1, attemptStart(1).Add(30*time.Minute).Format(time.RFC3339), `"run_attempt_at_fetch":2`, nil)
+		attribution := func() []index.Artifact {
+			rows, err := index.IndexRun(dir)
+			Expect(err).NotTo(HaveOccurred())
+			return rows.Artifacts
+		}
+		Expect(attribution()).To(ConsistOf(MatchFields(IgnoreExtras, Fields{"AttributedAttempt": BeZero(), "Attribution": Equal(model.Unknown)})))
+
+		writeAttempt(dir, 2, "second")
+		Expect(attribution()).To(ConsistOf(MatchFields(IgnoreExtras, Fields{"AttributedAttempt": Equal(1), "Attribution": Equal(model.ByTimestamp)})))
+	})
+
+	It("gives a run with only artifacts the facts of the artifact fetched last", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeArtifact(dir, 1, "2026-10-01T00:00:00Z", `"run_attempt_at_fetch":1,"fetched_at":"2026-10-01T01:00:00Z","workflow_name":"old","display_title":"old"`, nil)
+		writeArtifact(dir, 2, "2026-10-01T00:00:00Z", `"run_attempt_at_fetch":1,"fetched_at":"2026-10-01T02:00:00Z","workflow_name":"new","display_title":"new"`, nil)
+
+		rows, err := index.IndexRun(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows.Run).To(MatchFields(IgnoreExtras, Fields{"WorkflowName": Equal("new"), "DisplayTitle": Equal("new")}))
+	})
+
 	It("gives an artifact row has_zip, expired from its zip's tombstone, and extracted when extracted/ exists", func() {
 		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
-		writeArtifact(dir, 1, "artifact.zip.tombstone", `{"lg_format":1,"reason":"expired","http_status":410,"tombstoned_at":"2026-10-02T00:00:00Z"}`)
-		writeArtifact(dir, 2, "artifact.zip", "PK")
+		writeArtifact(dir, 1, "2026-10-01T00:00:00Z", `"run_attempt_at_fetch":1`,
+			map[string]string{"artifact.zip.tombstone": `{"lg_format":1,"reason":"expired","http_status":410,"tombstoned_at":"2026-10-02T00:00:00Z"}`})
+		writeArtifact(dir, 2, "2026-10-01T00:00:00Z", `"run_attempt_at_fetch":1`, map[string]string{"artifact.zip": "PK"})
 		Expect(os.Mkdir(filepath.Join(dir, "artifacts/2_a/extracted"), 0o755)).To(Succeed())
 
 		rows, err := index.IndexRun(dir)
@@ -85,23 +113,25 @@ var _ = Describe("IndexRun", Label("index"), func() {
 	})
 })
 
-// writeArtifact writes a hand-made artifact of run 5 named a, with one more file.
-func writeArtifact(runDir string, id int64, name, content string) {
+// writeArtifact writes a hand-made artifact of run 5 named a, created at
+// createdAt, whose fetch.json adds the members fetch, and the files extra.
+func writeArtifact(runDir string, id int64, createdAt, fetch string, extra map[string]string) {
 	GinkgoHelper()
 	dir := layout.ArtifactDir(runDir, id, "a")
 	Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
 	files := map[string]string{
-		"artifact.json": fmt.Sprintf(`{"id":%d,"name":"a","created_at":"2026-10-01T00:00:00Z"}`, id),
-		"fetch.json":    `{"lg_format":1,"run_id":5,"run_created_at":"2026-10-01T00:00:00Z","run_attempt_at_fetch":1}`,
-		name:            content,
+		"artifact.json": fmt.Sprintf(`{"id":%d,"name":"a","created_at":%q}`, id, createdAt),
+		"fetch.json":    `{"lg_format":1,"run_id":5,"run_created_at":"2026-10-01T00:00:00Z",` + fetch + `}`,
 	}
+	maps.Copy(files, extra)
 	for name, content := range files {
 		Expect(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)).To(Succeed())
 	}
 }
 
-// writeAttempt writes a hand-made attempt of run 5 with no jobs and no
-// artifacts, whose own created_at is a day after the run's.
+// writeAttempt writes a hand-made attempt n of run 5 with no jobs and no
+// artifacts. It starts n hours into 2026-10-02, after the run's
+// created_at.
 func writeAttempt(runDir string, n int, label string, prs ...int) {
 	GinkgoHelper()
 	dir := layout.AttemptDir(runDir, n)
@@ -115,8 +145,8 @@ func writeAttempt(runDir string, n int, label string, prs ...int) {
 	files := map[string]string{
 		"attempt.json": fmt.Sprintf(`{"id":5,"name":%[1]q,"head_branch":"branch-%[1]s","head_sha":"sha-%[1]s","event":"event-%[1]s",
 			"display_title":"title-%[1]s","workflow_id":%[2]d,"pull_requests":%[3]s,"status":"completed","conclusion":"success",
-			"created_at":"2026-10-01T23:59:59Z","run_started_at":"2026-10-01T23:59:59Z","updated_at":"2026-10-02T00:00:00Z",
-			"run_attempt":%[2]d,"repository":{"full_name":"o/r"}}`, label, n, prsJSON),
+			"created_at":%[4]q,"run_started_at":%[4]q,"updated_at":%[4]q,
+			"run_attempt":%[2]d,"repository":{"full_name":"o/r"}}`, label, n, prsJSON, attemptStart(n).Format(time.RFC3339)),
 		"jobs.json":      `[]`,
 		"artifacts.json": `[]`,
 		"fetch.json": fmt.Sprintf(`{"lg_format":1,"host":"example.com","repo":"o/r","run_id":5,"run_created_at":"2026-09-30T23:59:59Z",
@@ -126,3 +156,5 @@ func writeAttempt(runDir string, n int, label string, prs ...int) {
 		Expect(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)).To(Succeed())
 	}
 }
+
+func attemptStart(n int) time.Time { return time.Date(2026, 10, 2, n, 0, 0, 0, time.UTC) }
