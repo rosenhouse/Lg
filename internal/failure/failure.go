@@ -49,7 +49,7 @@ func FromStatus(status int, header http.Header, message, detail string, now time
 			strings.Contains(strings.ToLower(message), "secondary rate limit")))
 	switch {
 	case rateLimited:
-		return Blocked{Kind: RateLimit, Detail: detail, RetryAt: retryAt(header, now)}, true
+		return Blocked{Kind: RateLimit, Detail: detail, RetryAt: ceilSecond(retryAt(header, now))}, true
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		return Blocked{Kind: Auth, Detail: detail}, true
 	}
@@ -104,8 +104,11 @@ func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 		return Blocked{}, false
 	}
 	detail := fmt.Sprintf("X-RateLimit-Remaining %d is below 10%% of X-RateLimit-Limit %d", remaining, limit)
-	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: capped(reset, now)}, true
+	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: ceilSecond(capped(reset, now))}, true
 }
+
+// ceilSecond rounds t up to a whole second, so a retry at it is never early.
+func ceilSecond(t time.Time) time.Time { return t.Add(time.Second - 1).Truncate(time.Second) }
 
 // FromErrno blocks on a local error that no retry fixes: a full, read-only or
 // unwritable or immutable store, or a tmp/ that cannot be renamed into data/. It returns

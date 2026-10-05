@@ -169,7 +169,7 @@ func nextBlocked(prev *Status, err error, started time.Time) *Blocked {
 	if last != nil {
 		since = last.Since
 	}
-	return &Blocked{Since: since, Kind: b.Kind, Detail: b.Detail, RetryAt: timeOrNil(b.RetryAt.Add(time.Second - 1).Truncate(time.Second))}
+	return &Blocked{Since: since, Kind: b.Kind, Detail: b.Detail, RetryAt: timeOrNil(b.RetryAt)}
 }
 
 func timeOrNil(t time.Time) *time.Time {

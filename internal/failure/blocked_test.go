@@ -134,3 +134,22 @@ var _ = Describe("Reserve", Label("blocked"), func() {
 		Expect(b.RetryAt).To(Equal(now.Add(24 * time.Hour)))
 	})
 })
+
+var _ = Describe("retry_at", Label("status"), func() {
+	late := now.Add(250 * time.Millisecond)
+
+	It("rounds up to a whole second from FromStatus, so a retry is never early", func() {
+		b, _ := failure.FromStatus(429, headers("Retry-After", "30"), "", "", late)
+		Expect(b.RetryAt).To(Equal(now.Add(31 * time.Second)))
+	})
+
+	It("rounds up to a whole second from Reserve", func() {
+		b, _ := failure.Reserve(headers("X-RateLimit-Limit", "100", "X-RateLimit-Remaining", "9", "X-RateLimit-Reset", behindResetUnix, "Date", behindDate), late, late)
+		Expect(b.RetryAt).To(Equal(reset.Add(time.Second)))
+	})
+
+	It("stays on a whole second", func() {
+		b, _ := failure.FromStatus(429, headers("Retry-After", "30"), "", "", now)
+		Expect(b.RetryAt).To(Equal(now.Add(30 * time.Second)))
+	})
+})
