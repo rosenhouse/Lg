@@ -3,12 +3,15 @@ package status_test
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/status"
+	"github.com/rosenhouse/lg/internal/store"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 )
 
 var _ = Describe("Read", Label("status"), func() {
@@ -38,7 +41,7 @@ var _ = Describe("Write", Label("status"), func() {
 		ok := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
 		st := status.Status{LgFormat: 1, Cycle: 2, LastSyncOKAt: &ok, Repos: map[string]status.Repo{"github.com/o/r": {Runs: 3}}}
 
-		Expect(status.Write(path, st)).To(Succeed())
+		Expect(status.Write(store.OSFS{}, path, st)).To(Succeed())
 
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
@@ -47,12 +50,35 @@ var _ = Describe("Write", Label("status"), func() {
 		Expect(status.Read(path)).To(Equal(&st))
 	})
 
+	It("writes a file that other accounts can read", func() {
+		Expect(status.Write(store.OSFS{}, path, status.Status{LgFormat: 1})).To(Succeed())
+
+		info, err := os.Stat(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o644)))
+	})
+
+	It("writes <, > and & as they are", func() {
+		st := status.Status{Repos: map[string]status.Repo{"github.com/o/r": {Pending: []string{"runs?created=a..b&per_page=100: <html>"}}}}
+
+		Expect(status.Write(store.OSFS{}, path, st)).To(Succeed())
+		Expect(os.ReadFile(path)).To(ContainSubstring(`"runs?created=a..b&per_page=100: <html>"`))
+	})
+
+	It("writes through fsys", func() {
+		fsys := faultfs.New()
+		fsys.FailOn("rename", syscall.ENOSPC)
+
+		Expect(status.Write(fsys, path, status.Status{LgFormat: 1})).To(MatchError(syscall.ENOSPC))
+		Expect(path).NotTo(BeAnExistingFile())
+	})
+
 	It("replaces the file by renaming a temp file over it, leaving no temp file", func() {
 		Expect(os.WriteFile(path, []byte("old\n"), 0o644)).To(Succeed())
 		link := path + ".link"
 		Expect(os.Link(path, link)).To(Succeed())
 
-		Expect(status.Write(path, status.Status{LgFormat: 1})).To(Succeed())
+		Expect(status.Write(store.OSFS{}, path, status.Status{LgFormat: 1})).To(Succeed())
 
 		Expect(os.ReadFile(path)).To(HavePrefix("{"))
 		Expect(os.ReadFile(link)).To(Equal([]byte("old\n")))

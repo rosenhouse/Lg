@@ -17,6 +17,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/status"
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 type syncCmd struct{}
@@ -43,7 +44,7 @@ func (syncCmd) Run(deps *Deps) error {
 	defer stop()
 	started := deps.Clock.Now()
 	report, err := runCycle(ctx, roots, cfg, api, deps)
-	return errors.Join(err, writeStatus(roots, cfg, status.Cycle{
+	return errors.Join(err, writeStatus(deps.StoreFS, roots, cfg, status.Cycle{
 		Started:       started,
 		Finished:      deps.Clock.Now(),
 		Err:           err,
@@ -79,12 +80,12 @@ func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *u
 
 // writeStatus completes c from cfg and the disk, and writes it over
 // state/status.json. Callers hold state/write.lock.
-func writeStatus(roots config.Roots, cfg config.Config, c status.Cycle) error {
+func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
 	path := filepath.Join(roots.State, "status.json")
 	prev, err := status.Read(path)
 	c.Repo = cfg.Host + "/" + cfg.Repo
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	var measureErr error
 	c.Disk, measureErr = status.Measure(roots.Data, roots.State, c.Repo)
-	return failure.FromErrno(errors.Join(err, measureErr, status.Write(path, status.Next(prev, c))))
+	return failure.FromErrno(errors.Join(err, measureErr, status.Write(fsys, path, status.Next(prev, c))))
 }

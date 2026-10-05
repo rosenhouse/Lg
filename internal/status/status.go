@@ -2,17 +2,18 @@
 package status
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/retention"
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 type Status struct {
@@ -195,30 +196,17 @@ func Read(path string) (*Status, error) {
 	return &st, nil
 }
 
-// Write replaces path through a temp file, so readers see the old or the new file whole.
-func Write(path string, st Status) error {
-	raw, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
+// Write replaces path through fsys, so readers see the old or the new file
+// whole. It writes <, > and & as they are, so rg finds them.
+func Write(fsys store.FS, path string, st Status) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(st); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".status-*.json")
-	if err != nil {
-		return err
-	}
-	_, err = tmp.Write(append(raw, '\n'))
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(tmp.Name(), path)
-	}
-	if err != nil {
-		return errors.Join(err, os.Remove(tmp.Name()))
-	}
-	return nil
+	return store.ReplaceFileFS(fsys, path, buf.Bytes())
 }
 
 // Measure finds the runs of repo, as <host>/<owner>/<name> in any case, under
