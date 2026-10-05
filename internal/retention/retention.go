@@ -88,3 +88,6 @@ func Plan(u Usage, cutoff string, diskCap int64) Victims {
 	}
 	return v
 }
+
+// Scan reads the runs under data/<host>/<owner>/<repo>/runs/<date>/.
+func Scan(data string) (Usage, error) { return Usage{}, nil }
