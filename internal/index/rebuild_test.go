@@ -39,6 +39,15 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		Expect(column[string](db, "SELECT name FROM pragma_table_info('jobs') WHERE name = 'note'")).To(BeEmpty())
 	})
 
+	It("drops a table whose name holds a quote and a backslash", func(ctx SpecContext) {
+		reconcile(ctx, dbPath(env), env.Data())
+		_, err := openDB(dbPath(env)).ExecContext(ctx, `CREATE TABLE "a""b\c" (x)`)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
+		Expect(column[string](openDB(dbPath(env)), "SELECT name FROM sqlite_master WHERE name = ?", `a"b\c`)).To(BeEmpty())
+	})
+
 	It("empties lg.db when data/ holds no runs", func(ctx SpecContext) {
 		reconcile(ctx, dbPath(env), env.Data())
 		Expect(os.RemoveAll(runDir(env.Data(), runID))).To(Succeed())
