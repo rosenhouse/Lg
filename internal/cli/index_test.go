@@ -32,4 +32,15 @@ var _ = Describe("lg index rebuild", Label("index"), func() {
 		Expect(os.ReadDir(home)).To(BeEmpty())
 		Expect(store.Init(home)).To(Succeed())
 	})
+
+	It("makes state/ again when it is missing", func() {
+		home := GinkgoT().TempDir()
+		Expect(store.Init(home)).To(Succeed())
+		Expect(os.RemoveAll(filepath.Join(home, "state"))).To(Succeed())
+		var stderr bytes.Buffer
+
+		code := cli.Main([]string{"index", "rebuild"}, cli.Deps{Env: map[string]string{"LG_HOME": home}, Stdout: &bytes.Buffer{}, Stderr: &stderr})
+		Expect(code).To(Equal(0), stderr.String())
+		Expect(filepath.Join(home, "state", "lg.db")).To(BeARegularFile())
+	})
 })
