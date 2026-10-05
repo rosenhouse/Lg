@@ -157,15 +157,16 @@ func IndexRun(runDir string) (Rows, error) {
 		return Rows{}, err
 	}
 	slices.SortFunc(attempts, func(a, b attemptFiles) int { return cmp.Compare(a.n, b.n) })
-	r := &runFiles{dir: runDir}
+	b := &builder{dir: runDir, rows: &rows}
 	rows.Run = runRow(attempts, artifacts)
 	for i, a := range attempts {
-		if err := r.addAttempt(&rows, a, attempts[:i]); err != nil {
+		if err := b.addAttempt(a, attempts[:i]); err != nil {
 			return Rows{}, err
 		}
 	}
+	snapshots := snapshotsOf(attempts)
 	for _, a := range artifacts {
-		if err := r.addArtifact(&rows, a, attempts); err != nil {
+		if err := b.addArtifact(a, snapshots); err != nil {
 			return Rows{}, err
 		}
 	}
@@ -233,9 +234,14 @@ func union(numbers []int) []int {
 	return slices.Compact(numbers)
 }
 
-type runFiles struct{ dir string }
+// builder adds the rows of the run at dir.
+type builder struct {
+	dir  string
+	rows *Rows
+}
 
-func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles) error {
+func (b *builder) addAttempt(a attemptFiles, earlier []attemptFiles) error {
+	rows := b.rows
 	dir := layout.AttemptDir("", a.n)
 	rows.Attempts = append(rows.Attempts, Attempt{
 		Attempt: a.n, Path: dir, Status: a.run.Status, Conclusion: a.run.Conclusion,
@@ -259,7 +265,7 @@ func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles
 			}
 		}
 		var err error
-		row.HasLog, row.LogBytes, _, err = r.file(rows, filepath.Join(jobDir, "log.txt"))
+		row.HasLog, row.LogBytes, _, err = b.file(filepath.Join(jobDir, "log.txt"))
 		if err != nil {
 			return err
 		}
@@ -274,7 +280,7 @@ func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles
 	return nil
 }
 
-func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFiles) error {
+func snapshotsOf(attempts []attemptFiles) []model.Snapshot {
 	snapshots := make([]model.Snapshot, len(attempts))
 	for i, at := range attempts {
 		snapshots[i] = model.Snapshot{Attempt: at.n, RunStartedAt: at.run.RunStartedAt, ListedDuring: at.fetch.RunAttemptAtFetch}
@@ -282,25 +288,29 @@ func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFi
 			snapshots[i].Listed = append(snapshots[i].Listed, listed.ID)
 		}
 	}
+	return snapshots
+}
+
+func (b *builder) addArtifact(a artifactFiles, snapshots []model.Snapshot) error {
 	row := Artifact{
 		ArtifactID: a.artifact.ID, Name: a.artifact.Name, Size: a.artifact.SizeInBytes,
 		CreatedAt: a.artifact.CreatedAt, Path: a.dir,
 	}
 	row.AttributedAttempt, row.Attribution = model.Attribute(a.artifact.ID, a.artifact.CreatedAt, a.fetch.RunAttemptAtFetch, snapshots)
-	hasZip, _, lost, err := r.file(rows, filepath.Join(a.dir, "artifact.zip"))
+	hasZip, _, lost, err := b.file(filepath.Join(a.dir, "artifact.zip"))
 	if err != nil {
 		return err
 	}
 	row.HasZip, row.Expired = hasZip, lost == tombstone.Expired
-	_, row.Extracted = slices.BinarySearch(rows.Units, filepath.Join(a.dir, "extracted"))
-	rows.Artifacts = append(rows.Artifacts, row)
+	_, row.Extracted = slices.BinarySearch(b.rows.Units, filepath.Join(a.dir, "extracted"))
+	b.rows.Artifacts = append(b.rows.Artifacts, row)
 	return nil
 }
 
 // file reports whether name exists and its size. Otherwise it adds the row
 // of its tombstone, if any, and gives the tombstone's reason.
-func (r *runFiles) file(rows *Rows, name string) (exists bool, size int64, lost tombstone.Reason, err error) {
-	info, err := os.Lstat(filepath.Join(r.dir, name))
+func (b *builder) file(name string) (exists bool, size int64, lost tombstone.Reason, err error) {
+	info, err := os.Lstat(filepath.Join(b.dir, name))
 	if err == nil {
 		return true, info.Size(), "", nil
 	}
@@ -308,14 +318,14 @@ func (r *runFiles) file(rows *Rows, name string) (exists bool, size int64, lost 
 		return false, 0, "", err
 	}
 	var ts tombstone.Tombstone
-	err = readJSON(filepath.Join(r.dir, name+".tombstone"), &ts)
+	err = readJSON(filepath.Join(b.dir, name+".tombstone"), &ts)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, 0, "", nil
 	}
 	if err != nil {
 		return false, 0, "", err
 	}
-	rows.Tombstones = append(rows.Tombstones, Tombstone{
+	b.rows.Tombstones = append(b.rows.Tombstones, Tombstone{
 		Path: name + ".tombstone", Reason: string(ts.Reason), HTTPStatus: ts.HTTPStatus, TombstonedAt: ts.TombstonedAt,
 	})
 	return false, 0, ts.Reason, nil
