@@ -24,12 +24,12 @@ import (
 // Format is meta.format. Open empties a db of any other format.
 const Format = 1
 
+const busyTimeout = 10 * time.Second
+
 type Index struct {
 	db   *sql.DB
 	data string
 }
-
-const busyTimeout = 10 * time.Second
 
 // Open opens the index at path over the data dir data. A transaction takes
 // the write lock at its start, and waits up to busyTimeout for another
@@ -175,8 +175,8 @@ func (ix *Index) Close() error { return ix.db.Close() }
 
 // index reads the rows of each run on disk whose unit dirs differ from
 // indexed. Then, holding the write lock, it runs prepare and writes them. It
-// returns the errors of the runs
-// whose files it could not read, after indexing the others.
+// returns the errors of the runs whose files it could not read, after
+// indexing the others.
 func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare func(context.Context, *sql.Tx) error) error {
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
@@ -192,12 +192,13 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare
 			continue
 		}
 		rows, err := IndexRun(runDir)
-		if _, statErr := os.Lstat(runDir); err != nil && errors.Is(statErr, fs.ErrNotExist) {
-			delete(onDisk, runDir)
-			continue
-		}
 		if err != nil {
-			unreadable = append(unreadable, err)
+			if _, statErr := os.Lstat(runDir); errors.Is(statErr, fs.ErrNotExist) {
+				// Retention evicted the run while IndexRun read it.
+				delete(onDisk, runDir)
+			} else {
+				unreadable = append(unreadable, err)
+			}
 			continue
 		}
 		read[runDir] = rows
@@ -211,7 +212,7 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare
 	return errors.Join(append([]error{err}, unreadable...)...)
 }
 
-// write drops the rows of runs not on disk, and replaces those of each read run.
+// write drops the rows of indexed runs not on disk, and replaces those of each read run.
 func write(ctx context.Context, tx *sql.Tx, onDisk map[string][]string, read map[string]Rows) (err error) {
 	indexed, err := indexedUnits(ctx, tx)
 	if err != nil {

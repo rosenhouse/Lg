@@ -83,6 +83,10 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		ix, err := index.Open(dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+		for _, run := range []int64{runID, deletedRun} {
+			Expect(os.Mkdir(filepath.Join(env.ArtifactDirs(run)[0], "extracted"), 0o755)).To(Succeed())
+		}
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "attempt.json"))
 		reconciled := make(chan error, 1)
 		go func() { reconciled <- ix.Reconcile(ctx) }()
