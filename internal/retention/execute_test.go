@@ -162,6 +162,15 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		Expect(kept).To(BeADirectory())
 	})
 
+	It("counts only run dirs toward disk_cap, since it can evict nothing else", func() {
+		writeSized(s.Data(), "github.com/o/r/notes.txt", 1000)
+		kept := runOf("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+
+		Expect(retention.Retain(s, now, 90*24*time.Hour, 100, &out)).To(Succeed())
+		Expect(out.String()).To(BeEmpty())
+		Expect(kept).To(BeADirectory())
+	})
+
 	It("moves a corrupt horizon aside, evicts, writes the raised horizon, and then reports it", func() {
 		path := filepath.Join(s.State(), "horizon.json")
 		Expect(os.WriteFile(path, []byte("{"), 0o644)).To(Succeed())

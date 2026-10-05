@@ -38,12 +38,6 @@ type Tree struct {
 	Bytes int64
 }
 
-// Usage is data/: its runs, and the apparent bytes of all its files.
-type Usage struct {
-	Runs  []Run
-	Bytes int64
-}
-
 // Victims are what retention removes, in order.
 type Victims struct {
 	// Expired are runs in date dirs before the cutoff.
@@ -77,16 +71,19 @@ func Expired(createdAt, now time.Time, retention time.Duration) bool {
 }
 
 // Plan expires the runs in date dirs before cutoff. Then, while data/ is
-// over diskCap, it removes extracted/ trees and then whole runs, oldest
+// over diskCap, counting only run dirs, it removes extracted/ trees and then whole runs, oldest
 // first: by date dir, then run id. Discovery skips runs created at or before
 // the horizon, so Plan also evicts each kept run that the stored horizon h,
 // or one raised past the evicted runs, passes.
-func Plan(u Usage, h Horizon, cutoff string, diskCap int64) Victims {
-	runs := slices.SortedFunc(slices.Values(u.Runs), func(a, b Run) int {
+func Plan(runs []Run, h Horizon, cutoff string, diskCap int64) Victims {
+	runs = slices.SortedFunc(slices.Values(runs), func(a, b Run) int {
 		return cmp.Or(cmp.Compare(a.Date, b.Date), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Dir, b.Dir))
 	})
 	var v Victims
-	total := u.Bytes
+	var total int64
+	for _, r := range runs {
+		total += r.Bytes
+	}
 	var kept []Run
 	for _, r := range runs {
 		if r.Date < cutoff {
@@ -137,11 +134,11 @@ func newestCreatedAt(runs []Run) time.Time {
 
 // Find gives what retention removes from data/ at now, past the stored horizon h.
 func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
-	u, err := Scan(data)
+	runs, err := Scan(data)
 	if err != nil {
 		return Victims{}, err
 	}
-	return Plan(u, h, Cutoff(now, retention), diskCap), nil
+	return Plan(runs, h, Cutoff(now, retention), diskCap), nil
 }
 
 // Retain executes what Find gives at now, printing each dir it removes. It
@@ -159,11 +156,11 @@ func Retain(s *store.Store, now time.Time, retention time.Duration, diskCap int6
 }
 
 // Scan finds the run dirs under every data/<host>/<owner>/<repo>/runs/<date>/,
-// and sums the apparent bytes of the regular files under data/.
-func Scan(data string) (Usage, error) { return scan(data, filepath.WalkDir) }
+// with the apparent bytes of their regular files.
+func Scan(data string) ([]Run, error) { return scan(data, filepath.WalkDir) }
 
-func scan(data string, walk func(string, fs.WalkDirFunc) error) (Usage, error) {
-	var u Usage
+func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
+	var runs []Run
 	err := walk(data, func(path string, d fs.DirEntry, err error) error {
 		// Only eviction removes what is under data/.
 		if errors.Is(err, fs.ErrNotExist) {
@@ -179,16 +176,16 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) (Usage, error) {
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		// WalkDir visits all of a dir before its next sibling, so a path
 		// within any run is within the last run found.
-		run := last(u.Runs)
+		run := last(runs)
 		if d.IsDir() {
 			if r, ok := runAt(path, parts); ok {
-				u.Runs = append(u.Runs, r)
+				runs = append(runs, r)
 			} else if isExtracted(parts) && run != nil && within(path, run.Dir) {
 				run.Extracted = append(run.Extracted, Tree{Dir: path})
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if run == nil || !within(path, run.Dir) || !d.Type().IsRegular() {
 			return nil
 		}
 		info, err := d.Info()
@@ -198,19 +195,16 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) (Usage, error) {
 		if err != nil {
 			return err
 		}
-		u.Bytes += info.Size()
-		if run != nil && within(path, run.Dir) {
-			run.Bytes += info.Size()
-			if tree := last(run.Extracted); tree != nil && within(path, tree.Dir) {
-				tree.Bytes += info.Size()
-			}
+		run.Bytes += info.Size()
+		if tree := last(run.Extracted); tree != nil && within(path, tree.Dir) {
+			tree.Bytes += info.Size()
 		}
 		return nil
 	})
-	for i := range u.Runs {
-		u.Runs[i].CreatedAt = runCreatedAt(u.Runs[i].Dir)
+	for i := range runs {
+		runs[i].CreatedAt = runCreatedAt(runs[i].Dir)
 	}
-	return u, err
+	return runs, err
 }
 
 // runAt gives the run at path, when parts, its path below data/, are

@@ -31,7 +31,7 @@ func writeSized(root, rel string, size int) {
 }
 
 var _ = Describe("retention.Scan", Label("retention"), func() {
-	It("counts the apparent bytes of regular files under data/ only, per run and per extracted/ tree", func() {
+	It("counts the apparent bytes of regular files in run dirs under data/, per run and per extracted/ tree", func() {
 		root := GinkgoT().TempDir()
 		data := filepath.Join(root, "data")
 		run := filepath.Join(data, "github.com/o/r/runs/2026-10-01/12_ci_main")
@@ -48,10 +48,9 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		writeSized(root, "state/lg.db", 1000)
 		writeSized(root, "tmp/unit-x/log.txt", 1000)
 
-		u, err := retention.Scan(data)
+		runs, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(u.Bytes).To(Equal(int64(145)))
-		Expect(u.Runs).To(ConsistOf(
+		Expect(runs).To(ConsistOf(
 			retention.Run{Dir: run, Date: "2026-10-01", ID: 12, Bytes: 120, Extracted: []retention.Tree{
 				{Dir: filepath.Join(run, "artifacts/5_report/extracted"), Bytes: 7},
 				{Dir: filepath.Join(run, "artifacts/6_cov/extracted"), Bytes: 3},
@@ -68,9 +67,9 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		writeFetch(filepath.Join(runs, "2_ci_main", "artifacts", "5_report"), time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC))
 		Expect(os.MkdirAll(filepath.Join(runs, "3_ci_main", "artifacts"), 0o755)).To(Succeed())
 
-		u, err := retention.Scan(data)
+		got, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(u.Runs).To(HaveExactElements(
+		Expect(got).To(HaveExactElements(
 			HaveField("CreatedAt", time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC)),
 			HaveField("CreatedAt", time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)),
 			HaveField("CreatedAt", BeZero()),
@@ -82,9 +81,9 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		writeSized(data, "github.com/o/r/runs/2026-10-01/5_ci_main/attempt-1/log.txt", 1)
 		writeSized(data, "github.com/o/r/runs/notes/1_x/artifacts/a/extracted/b.txt", 1)
 
-		u, err := retention.Scan(data)
+		runs, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(u.Runs).To(ConsistOf(HaveField("Extracted", BeEmpty())))
+		Expect(runs).To(ConsistOf(HaveField("Extracted", BeEmpty())))
 	})
 
 	DescribeTable("skips what an eviction removes during the walk, since gc --dry-run takes no lock",
@@ -102,17 +101,17 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 				})
 			}
 
-			u, err := retention.ScanWith(data, removingWalk)
+			runs, err := retention.ScanWith(data, removingWalk)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(u.Runs).To(ContainElement(HaveField("ID", int64(2))))
+			Expect(runs).To(ContainElement(HaveField("ID", int64(2))))
 		},
 		Entry("a run dir", "github.com/o/r/runs/2026-10-01/1_ci_main"),
 		Entry("a file", "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1/log.txt"),
 	)
 
 	It("finds nothing in a missing data/", func() {
-		u, err := retention.Scan(filepath.Join(GinkgoT().TempDir(), "data"))
+		runs, err := retention.Scan(filepath.Join(GinkgoT().TempDir(), "data"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(u).To(BeZero())
+		Expect(runs).To(BeEmpty())
 	})
 })
