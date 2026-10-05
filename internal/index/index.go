@@ -38,6 +38,9 @@ type Index struct {
 // write lock at its start, and waits up to busyTimeout for another process
 // to release it.
 func Open(ctx context.Context, path, data string) (*Index, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
 	// Every opener holds path.lock, so none opens a file while another replaces it.
 	l, err := lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
 	if err != nil {
