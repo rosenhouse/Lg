@@ -3,6 +3,7 @@ package index_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 
@@ -68,6 +69,8 @@ var _ = DescribeTable("starting from empty over a file SQLite cannot read", Labe
 	Entry("index.Open, over a file that is not a db beside a stale WAL", syncTimeout, notADBBesideAStaleWAL, reconcile),
 	Entry("index.Rebuild, over a file that is not a db", syncTimeout, notADB, rebuild),
 	Entry("index.Rebuild, over a db with corrupt pages", syncTimeout, corruptPages, rebuild),
+	Entry("index.Rebuild, over a db whose jobs table has a corrupt page", syncTimeout, corruptRootPage("jobs"), rebuild),
+	Entry("index.Reconcile, over a db whose index of unit paths has a corrupt page", syncTimeout, corruptRootPage("units_path"), reconcile),
 )
 
 func notADB(path string) {
@@ -99,6 +102,23 @@ func corruptPages(path string) {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(f.WriteAt(garbage, pageSize)).To(Equal(len(garbage)))
 	Expect(f.Close()).To(Succeed())
+}
+
+// corruptRootPage overwrites the root page of a table or index, leaving meta readable.
+func corruptRootPage(name string) func(path string) {
+	return func(path string) {
+		GinkgoHelper()
+		db, err := sql.Open("sqlite", path)
+		Expect(err).NotTo(HaveOccurred())
+		var page, pageSize int64
+		Expect(db.QueryRow("SELECT rootpage FROM sqlite_master WHERE name = ?", name).Scan(&page)).To(Succeed())
+		Expect(db.QueryRow("PRAGMA page_size").Scan(&pageSize)).To(Succeed())
+		Expect(db.Close()).To(Succeed())
+		f, err := os.OpenFile(path, os.O_WRONLY, 0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(f.WriteAt(bytes.Repeat([]byte{0x5a}, int(pageSize)), (page-1)*pageSize)).To(Equal(int(pageSize)))
+		Expect(f.Close()).To(Succeed())
+	}
 }
 
 func rebuild(ctx context.Context, path, data string) {

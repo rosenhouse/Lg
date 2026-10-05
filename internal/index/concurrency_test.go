@@ -104,6 +104,31 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(os.Stat(dbPath(env))).To(WithTransform(func(now os.FileInfo) bool { return os.SameFile(kept, now) }, BeTrue()))
 	}, syncTimeout)
 
+	It("keep the db another made while Reconcile waited to start over from a corrupt page", func(ctx SpecContext) {
+		reconcile(ctx, dbPath(env), env.Data())
+		corruptRootPage("units_path")(dbPath(env))
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		opening, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		reconciled := make(chan error, 1)
+		go func() { reconciled <- ix.Reconcile(ctx) }()
+		Consistently(reconciled, "200ms").ShouldNot(Receive())
+
+		made := filepath.Join(GinkgoT().TempDir(), "lg.db")
+		reconcile(ctx, made, env.Data())
+		Expect(os.Rename(made, dbPath(env))).To(Succeed())
+		kept, err := os.Stat(dbPath(env))
+		Expect(err).NotTo(HaveOccurred())
+		// An open connection keeps the made db's inode from reuse.
+		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
+		Expect(opening.Release()).To(Succeed())
+
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
+		Expect(os.Stat(dbPath(env))).To(WithTransform(func(now os.FileInfo) bool { return os.SameFile(kept, now) }, BeTrue()))
+	}, syncTimeout)
+
 	It("let another writer commit while Reconcile reads data/", func(ctx SpecContext) {
 		ix, err := index.Open(ctx, dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
