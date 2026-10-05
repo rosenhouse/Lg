@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
@@ -86,6 +87,19 @@ func (p *pending) set(run github.Run, candidates []candidate) error {
 		delete(p.runs, run.ID)
 	} else {
 		p.runs[run.ID] = pendingRun{Run: run.Run, Artifacts: candidates}
+	}
+	return p.save()
+}
+
+// prune drops each of the repo's runs that evicted reports for its
+// created_at, and saves the file when it dropped one.
+func (p *pending) prune(repo github.Repo, evicted func(createdAt time.Time) bool) error {
+	before := len(p.runs)
+	maps.DeleteFunc(p.runs, func(_ int64, r pendingRun) bool {
+		return ofRepo(github.Run{Run: r.Run}, repo) && evicted(r.Run.CreatedAt)
+	})
+	if len(p.runs) == before {
+		return nil
 	}
 	return p.save()
 }

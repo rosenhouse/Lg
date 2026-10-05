@@ -61,6 +61,7 @@ var _ = Describe("discovery with an eviction horizon", Label("retention"), func(
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(4)))
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(pendingRun)))
+		Expect(os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))).To(MatchJSON(`{"github.com":{}}`))
 	}, cycleTimeout)
 })
 

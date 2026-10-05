@@ -167,7 +167,10 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	if i := slices.IndexFunc(listed, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
 		return discovery{}, fmt.Errorf("run %d belongs to %q, not %q", listed[i].ID, listed[i].Repository.FullName, repo.FullName)
 	}
-	unlisted := slices.DeleteFunc(p.unlisted(listed, repo), func(run github.Run) bool { return evicted(run.CreatedAt) })
+	if err := p.prune(repo, evicted); err != nil {
+		return discovery{}, err
+	}
+	unlisted := p.unlisted(listed, repo)
 	for _, run := range merge(listed, unlisted) {
 		dir, err := m.Store.FindRunDir(m.runDir(repo, run))
 		if err != nil {
