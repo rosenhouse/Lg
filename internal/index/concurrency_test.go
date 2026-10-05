@@ -294,6 +294,11 @@ func stall(path string) (waiting func() bool, release func()) {
 	waiting = func() bool {
 		if fifo == nil {
 			fifo, _ = os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+			if fifo != nil {
+				// Go leaves FIFOs off the darwin poller, so a nonblocking write
+				// larger than the pipe buffer fails with EAGAIN instead of waiting.
+				Expect(syscall.SetNonblock(int(fifo.Fd()), false)).To(Succeed())
+			}
 		}
 		return fifo != nil
 	}
