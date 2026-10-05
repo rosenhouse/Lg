@@ -45,6 +45,7 @@ type commands struct {
 	Init    initCmd    `cmd:"" help:"Write config.yaml for one repository and initialize the store."`
 	Root    rootCmd    `cmd:"" help:"Print the data directory."`
 	Version versionCmd `cmd:"" help:"Print lg's version."`
+	Status  statusCmd  `cmd:"" help:"Print when lg last synced, how far behind it is, and why it is blocked."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`

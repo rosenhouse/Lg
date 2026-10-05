@@ -165,3 +165,16 @@ var _ = DescribeTable("cli.Main exit codes", Label("status"),
 		return []string{"sync"}
 	}),
 )
+
+var _ = Describe("lg status before any sync", Label("status"), func() {
+	It("prints that it never synced, and with --json exits 1 naming state/status.json", func() {
+		s := newSyncEnv()
+
+		Expect(s.main("status")).To(Equal(0))
+		Expect(s.stdout.String()).To(Equal("last sync: never\ndaemon: not running\n"))
+
+		Expect(s.main("status", "--json")).To(Equal(1))
+		Expect(s.stdout.String()).To(BeEmpty())
+		Expect(s.stderr.String()).To(HaveSuffix("lg: " + s.statusFile() + " does not exist; run `lg sync`\n"))
+	})
+})
