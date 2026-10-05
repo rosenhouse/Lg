@@ -29,7 +29,7 @@ var _ = Describe("Measure", Label("status"), func() {
 		root := GinkgoT().TempDir()
 		data, state := filepath.Join(root, "data"), filepath.Join(root, "state")
 		completed := time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC)
-		older := filepath.Join("github.com/rosenhouse/Lg/runs/2026-10-02/1_ci_main")
+		older := "github.com/rosenhouse/Lg/runs/2026-10-02/1_ci_main"
 		writeFile(data, older+"/attempt-1/fetch.json", fetchJSON(completed.Add(-24*time.Hour)))
 		run := "github.com/rosenhouse/Lg/runs/2026-10-03/2_ci_main"
 		writeFile(data, run+"/attempt-1/fetch.json", fetchJSON(completed))
