@@ -121,7 +121,49 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(os.Rename(runDir(env.Data(), deletedRun), filepath.Join(env.Tmp(), "evicted"))).To(Succeed())
 		release()
 		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
-		Expect(column[int64](openDB(dbPath(env)), "SELECT DISTINCT run_id FROM jobs")).To(Equal([]int64{runID}))
+		db := openDB(dbPath(env))
+		Expect(column[int64](db, "SELECT run_id FROM runs")).To(Equal([]int64{runID}))
+		Expect(column[int64](db, "SELECT DISTINCT run_id FROM jobs")).To(Equal([]int64{runID}))
+	}, syncTimeout)
+
+	It("drop a run that retention evicts after Reconcile starts reading it", func(ctx SpecContext) {
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		evicted := runDir(env.Data(), deletedRun)
+		waiting, release := stall(filepath.Join(layout.AttemptDir(evicted, 1), "fetch.json"))
+		reconciled := make(chan error, 1)
+		go func() { reconciled <- ix.Reconcile(ctx) }()
+		Eventually(waiting, waitTimeout).Should(BeTrue())
+
+		Expect(os.Rename(evicted, filepath.Join(env.Tmp(), "evicted"))).To(Succeed())
+		release()
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
+		db := openDB(dbPath(env))
+		Expect(column[int64](db, "SELECT run_id FROM runs")).To(Equal([]int64{runID}))
+		Expect(column[int64](db, "SELECT DISTINCT run_id FROM jobs")).To(Equal([]int64{runID}))
+	}, syncTimeout)
+
+	It("index at the next Reconcile an attempt published while Reconcile reads its run", func(ctx SpecContext) {
+		Expect(env.Fake.Advance(runID, "after-attempt-2")).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		attempt2 := layout.AttemptDir(runDir(env.Data(), runID), 2)
+		staged := filepath.Join(env.Tmp(), "staged")
+		Expect(os.Rename(attempt2, staged)).To(Succeed())
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "fetch.json"))
+		reconciled := make(chan error, 1)
+		go func() { reconciled <- ix.Reconcile(ctx) }()
+		Eventually(waiting, waitTimeout).Should(BeTrue())
+
+		Expect(os.Rename(staged, attempt2)).To(Succeed())
+		release()
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+		Expect(column[int64](openDB(dbPath(env)), "SELECT attempt FROM attempts WHERE run_id = ? ORDER BY attempt", runID)).
+			To(Equal([]int64{1, 2}))
 	}, syncTimeout)
 })
 
@@ -136,6 +178,7 @@ func impatientWriter(path string) *sql.DB {
 
 // stall replaces the file at path with a FIFO, so that a reader of path waits
 // until release writes the file's content. waiting reports whether one does.
+// release puts the file back unless its dir has moved.
 func stall(path string) (waiting func() bool, release func()) {
 	GinkgoHelper()
 	content, err := os.ReadFile(path)
@@ -154,6 +197,9 @@ func stall(path string) (waiting func() bool, release func()) {
 		Expect(waiting()).To(BeTrue())
 		Expect(fifo.Write(content)).To(Equal(len(content)))
 		Expect(fifo.Close()).To(Succeed())
+		if !exists(path) {
+			return
+		}
 		Expect(os.Remove(path)).To(Succeed())
 		Expect(os.WriteFile(path, content, 0o644)).To(Succeed())
 	}
