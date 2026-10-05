@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
@@ -104,7 +105,7 @@ var _ = Describe("lg gc", Label("retention"), func() {
 			Expect(fixture).NotTo(BeADirectory())
 			Expect(filepath.Dir(fixture)).NotTo(BeADirectory())
 			Expect(runDirs(env, 1)).To(HaveLen(1))
-			Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+			Expect(env.Tmp()).To(matchers.BeSwept())
 		})
 	})
 

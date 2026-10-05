@@ -4,6 +4,8 @@ package matchers
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 
 	"github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
@@ -28,4 +30,21 @@ func BeBlocked(kind failure.Kind, fields ...types.GomegaMatcher) types.GomegaMat
 		}
 		return blocked, nil
 	}, gomega.SatisfyAll(append([]types.GomegaMatcher{gomega.HaveField("Kind", kind)}, fields...)...))
+}
+
+// BeSwept matches a store's tmp/ dir that holds nothing but an empty trash/.
+func BeSwept() types.GomegaMatcher {
+	return gomega.WithTransform(func(tmp string) ([]string, error) {
+		var left []string
+		err := filepath.WalkDir(tmp, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if rel, _ := filepath.Rel(tmp, path); rel != "." && (rel != "trash" || !d.IsDir()) {
+				left = append(left, rel)
+			}
+			return nil
+		})
+		return left, err
+	}, gomega.BeEmpty())
 }

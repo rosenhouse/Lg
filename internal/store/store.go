@@ -57,8 +57,8 @@ type File interface {
 }
 
 type Store struct {
-	fs               FS
-	data, state, tmp string
+	fs                      FS
+	data, state, tmp, trash string
 }
 
 // Init makes root a store, finishing one that an earlier Init left part
@@ -84,6 +84,9 @@ func InitFS(fsys FS, root string) error {
 		}
 	}
 	if err := s.checkDirs(); err != nil {
+		return err
+	}
+	if err := mkdirAll(fsys, s.trash); err != nil {
 		return err
 	}
 	formatFile := filepath.Join(root, "FORMAT")
@@ -152,7 +155,7 @@ func isOwn(fsys FS, root, name string) (bool, error) {
 	case "state":
 		ownChild = func(child string) bool { return child == "write.lock" }
 	case "tmp":
-		ownChild = isUnit
+		ownChild = func(child string) bool { return isUnit(child) || child == "trash" }
 	default:
 		return false, nil
 	}
@@ -184,10 +187,14 @@ func OpenFS(fsys FS, root string) (*Store, error) {
 }
 
 // checkDirs refuses a tmp/ that units cannot be renamed from into data/, and
-// a symlinked tmp/ or data/, since Sweep would empty what tmp/ points at.
+// a symlinked tmp/, tmp/trash/ or data/, since Sweep would empty what they
+// point at.
 func (s *Store) checkDirs() error {
-	for _, dir := range []string{s.data, s.tmp} {
+	for _, dir := range []string{s.data, s.tmp, s.trash} {
 		info, err := s.fs.Lstat(dir)
+		if dir == s.trash && errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -224,7 +231,8 @@ func checkFormat(root string) error {
 }
 
 func newStore(fsys FS, root string) *Store {
-	return &Store{fs: fsys, data: filepath.Join(root, "data"), state: filepath.Join(root, "state"), tmp: filepath.Join(root, "tmp")}
+	tmp := filepath.Join(root, "tmp")
+	return &Store{fs: fsys, data: filepath.Join(root, "data"), state: filepath.Join(root, "state"), tmp: tmp, trash: filepath.Join(tmp, "trash")}
 }
 
 func (s *Store) Data() string { return s.data }
@@ -283,16 +291,26 @@ func (s *Store) FindRunDir(runDir string) (string, error) {
 	return runDir, nil
 }
 
-// Sweep empties tmp/ of what dead writers left. Callers hold
-// state/write.lock, so no live writer uses it.
+// Sweep empties tmp/ and tmp/trash/ of what dead writers left, and keeps
+// tmp/trash/ so that Evict needs no mkdir. Callers hold state/write.lock, so
+// no live writer uses them.
 func (s *Store) Sweep() error {
-	entries, err := s.fs.ReadDir(s.tmp)
+	if err := s.removeChildren(s.tmp, s.trash); err != nil {
+		return err
+	}
+	return s.removeChildren(s.trash, "")
+}
+
+func (s *Store) removeChildren(dir, except string) error {
+	entries, err := s.fs.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := s.fs.RemoveAll(filepath.Join(s.tmp, e.Name())); err != nil {
-			return err
+		if child := filepath.Join(dir, e.Name()); child != except {
+			if err := s.fs.RemoveAll(child); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -548,11 +566,11 @@ func (s *Store) RemoveEmpty(dir string) error {
 	return s.fs.RemoveAll(dir)
 }
 
-// Evict moves dir to tmp/trash-<id> with one rename, so a reader sees all of
+// Evict moves dir into tmp/trash/ with one rename, so a reader sees all of
 // it or none, and then deletes it. It makes nothing, so it works on a full
 // disk. Callers hold state/write.lock.
 func (s *Store) Evict(dir string) error {
-	trashed := filepath.Join(s.tmp, "trash-"+randomName())
+	trashed := filepath.Join(s.trash, randomName())
 	if err := s.Rename(dir, trashed); err != nil {
 		return err
 	}

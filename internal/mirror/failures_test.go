@@ -109,7 +109,7 @@ var _ = DescribeTable("mirror.Cycle on a transient log failure publishes no atte
 		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.Tombstones()).To(BeEmpty())
-		Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
+		Expect(env.Tmp()).To(BeSwept())
 	},
 	Entry("API 502", "api", ranJobLog, fakegithub.Fault{Status: http.StatusBadGateway}, cycleTimeout),
 	Entry("blob 503", "blob", ranJobBlob, fakegithub.Fault{Status: http.StatusServiceUnavailable}, cycleTimeout),

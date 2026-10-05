@@ -5,13 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
 var _ = Describe("store.Evict", Label("retention"), func() {
@@ -36,7 +36,7 @@ var _ = Describe("store.Evict", Label("retention"), func() {
 		journal := fsys.Journal()
 		trash := filepath.Join(root, "tmp", "trash")
 		renamed := slices.IndexFunc(journal, func(op faultfs.Op) bool {
-			return op.Name == "rename" && op.Path == runDir && strings.HasPrefix(op.To, trash)
+			return op.Name == "rename" && op.Path == runDir && filepath.Dir(op.To) == trash
 		})
 		Expect(renamed).To(BeNumerically(">=", 0), "journal: %v", journal)
 		removed := slices.IndexFunc(journal, func(op faultfs.Op) bool {
@@ -44,7 +44,7 @@ var _ = Describe("store.Evict", Label("retention"), func() {
 		})
 		Expect(removed).To(BeNumerically(">", renamed), "journal: %v", journal)
 		Expect(io.ReadAll(reader)).To(Equal([]byte("old log\n")))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 
 	It("makes no dir, so it frees space on a full disk after a sweep", func() {

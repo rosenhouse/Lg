@@ -60,7 +60,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(out.String()).To(Equal(strings.Join(v.Dirs(), "\n") + "\n"))
 		var trashed []string
 		for _, op := range fsys.Journal() {
-			if op.Name == "rename" && strings.HasPrefix(op.To, filepath.Join(root, "tmp", "trash")) {
+			if op.Name == "rename" && filepath.Dir(op.To) == filepath.Join(root, "tmp", "trash") {
 				trashed = append(trashed, op.Path)
 			}
 		}

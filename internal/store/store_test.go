@@ -22,12 +22,12 @@ var _ = Describe("Init", Label("store"), func() {
 		root = filepath.Join(GinkgoT().TempDir(), "lg")
 	})
 
-	It("creates FORMAT, .rgignore, data/, state/ and tmp/", func() {
+	It("creates FORMAT, .rgignore, data/, state/, tmp/ and tmp/trash/", func() {
 		Expect(store.Init(root)).To(Succeed())
 
 		Expect(os.ReadFile(filepath.Join(root, "FORMAT"))).To(Equal([]byte("lg-store 1\n")))
 		Expect(os.ReadFile(filepath.Join(root, ".rgignore"))).To(Equal([]byte("/state/\n/tmp/\n")))
-		for _, dir := range []string{"data", "state", "tmp"} {
+		for _, dir := range []string{"data", "state", "tmp", "tmp/trash"} {
 			Expect(filepath.Join(root, dir)).To(BeADirectory())
 		}
 	})
@@ -56,18 +56,20 @@ var _ = Describe("Init", Label("store"), func() {
 	It("recreates a missing data/, state/ and tmp/ in an lg-store 1 store", func() {
 		Expect(store.Init(root)).To(Succeed())
 		for _, dir := range []string{"data", "state", "tmp"} {
-			Expect(os.Remove(filepath.Join(root, dir))).To(Succeed())
+			Expect(os.RemoveAll(filepath.Join(root, dir))).To(Succeed())
 		}
 
 		Expect(store.Init(root)).To(Succeed())
 		Expect(store.Open(root)).Error().NotTo(HaveOccurred())
 		Expect(filepath.Join(root, "state")).To(BeADirectory())
+		Expect(filepath.Join(root, "tmp", "trash")).To(BeADirectory())
 	})
 
 	It("claims a root holding only what lg writes before FORMAT, and lg's config.yaml", func() {
 		Expect(os.MkdirAll(filepath.Join(root, "data"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "unit-1"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "unit-1", "FORMAT"), nil, 0o644)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(root, "tmp", "trash"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "state", "write.lock"), []byte("1\n"), 0o644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, ".rgignore"), []byte("state/\n"), 0o644)).To(Succeed())
@@ -145,8 +147,8 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
 
 		ops := journal()
-		Expect(len(ops)).To(BeNumerically(">", 6))
-		unit := strings.TrimPrefix(ops[6], "mkdir ")
+		Expect(len(ops)).To(BeNumerically(">", 8))
+		unit := strings.TrimPrefix(ops[8], "mkdir ")
 		Expect(unit).To(HavePrefix("lg/tmp/unit-"))
 		Expect(ops).To(HaveExactElements(
 			"mkdir lg/data",
@@ -155,6 +157,8 @@ var _ = Describe("Init", Label("store"), func() {
 			"fsync lg",
 			"fsync lg",
 			"fsync "+filepath.Dir(root),
+			"mkdir lg/tmp/trash",
+			"fsync lg/tmp",
 			"mkdir "+unit,
 			"create "+unit+"/.rgignore",
 			"write "+unit+"/.rgignore",
@@ -231,7 +235,7 @@ var _ = Describe("Open", Label("store"), func() {
 })
 
 var _ = Describe("Sweep", Label("store"), func() {
-	It("empties tmp/ and leaves FORMAT, .rgignore, state/ and data/ untouched", func() {
+	It("empties tmp/ and tmp/trash/, keeps tmp/trash/ so Evict needs no mkdir, and leaves FORMAT, .rgignore, state/ and data/ untouched", func() {
 		root := newStore()
 		s := open(root)
 		Expect(publishAttempt(s, "{}")).To(Succeed())
@@ -243,7 +247,7 @@ var _ = Describe("Sweep", Label("store"), func() {
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "stray"), nil, 0o644)).To(Succeed())
 		kept := treesnap.Snap{}
 		for path, entry := range treesnap.Snapshot(root) {
-			if !strings.HasPrefix(path, "tmp/") {
+			if !strings.HasPrefix(path, "tmp/") || path == "tmp/trash" {
 				kept[path] = entry
 			}
 		}

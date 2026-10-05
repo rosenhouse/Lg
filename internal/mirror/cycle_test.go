@@ -23,6 +23,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
@@ -147,7 +148,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			Expect(m.Cycle(context.Background())).To(MatchError(
 				`run 37129390741 belongs to "` + fullName + `", not "rosenhouse/Lg"`))
 			Expect(os.ReadDir(filepath.Join(root, "data"))).To(BeEmpty())
-			Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+			Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 		},
 		Entry("another repo", "other/lg"),
 		Entry("a path out of the store", "../../../../escaped"),
@@ -172,7 +173,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusInternalServerError})
 
 		Expect(m.Cycle(context.Background())).To(MatchError(ContainSubstring("500")))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 		Expect(filepath.Glob(filepath.Join(root, "data/*/*/*/runs/*/*/attempt-*"))).To(BeEmpty())
 	})
 

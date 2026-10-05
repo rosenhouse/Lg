@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/store"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -46,7 +47,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 		Expect(s.Publish(unit, target)).To(Succeed())
 
 		Expect(os.ReadFile(filepath.Join(target, "jobs/1_build/log.txt"))).To(Equal([]byte("\xef\xbb\xbflog")))
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 
 	It("publishes the unit dir with the mode MkdirAll gives its siblings", func() {
@@ -75,7 +76,7 @@ var _ = Describe("Unit", Label("sync"), func() {
 	It("Abort removes the staged unit", Label("store"), func() {
 		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(Succeed())
 		Expect(unit.Abort()).To(Succeed())
-		Expect(os.ReadDir(filepath.Join(root, "tmp"))).To(BeEmpty())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 
 	It("fails and publishes nothing when its staging dir vanishes", Label("store"), func() {
