@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -48,5 +49,5 @@ func (c gcCmd) Run(deps *Deps) error {
 		return failure.FromErrno(err)
 	}
 	defer release()
-	return failure.FromErrno(retention.Retain(s, now, keep, diskCap, deps.Stdout))
+	return failure.FromErrno(retention.Retain(context.Background(), s, now, keep, diskCap, deps.Stdout))
 }

@@ -2,6 +2,7 @@ package retention_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,7 +57,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(os.MkdirAll(leftover, 0o755)).To(Succeed())
 
 		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{evicted}}
-		Expect(retention.Execute(s, v, &out)).To(Succeed())
+		Expect(retention.Execute(context.Background(), s, v, &out)).To(Succeed())
 		Expect(out.String()).To(Equal(strings.Join(v.Dirs(), "\n") + "\n"))
 		var trashed []string
 		for _, op := range fsys.Journal() {
@@ -71,10 +72,25 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(filepath.Join(kept.Dir, "attempt-1", "log.txt")).To(BeARegularFile())
 	})
 
+	It("stops between evictions once its context is done", func() {
+		first := runWithLog("2026-06-01/1_ci_main", time.Time{})
+		second := runWithLog("2026-06-01/2_ci_main", time.Time{})
+		ctx, cancel := context.WithCancel(context.Background())
+		cancelling := writerFunc(func(p []byte) (int, error) {
+			cancel()
+			return len(p), nil
+		})
+
+		err := retention.Execute(ctx, s, retention.Victims{Expired: []string{first.Dir, second.Dir}}, cancelling)
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(first.Dir).NotTo(BeADirectory())
+		Expect(second.Dir).To(BeADirectory())
+	})
+
 	It("leaves a file among the date dirs alone", func() {
 		writeSized(runs, "notes.txt", 1)
 
-		Expect(retention.Execute(s, retention.Victims{}, &out)).To(Succeed())
+		Expect(retention.Execute(context.Background(), s, retention.Victims{}, &out)).To(Succeed())
 		Expect(filepath.Join(runs, "notes.txt")).To(BeARegularFile())
 	})
 
@@ -91,7 +107,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		newer := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC))
 
 		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{newer, older}, Horizon: retention.Horizon{At: older.CreatedAt}}
-		Expect(retention.Execute(s, v, &out)).To(Succeed())
+		Expect(retention.Execute(context.Background(), s, v, &out)).To(Succeed())
 		h, _, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
@@ -108,7 +124,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 			second := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC))
 			fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), full)
 
-			err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}, Horizon: retention.Horizon{At: second.CreatedAt}}, &out)
+			err := retention.Execute(context.Background(), s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}, Horizon: retention.Horizon{At: second.CreatedAt}}, &out)
 			Expect(err).To(MatchError(full))
 			for _, dir := range []string{expired.Dir, first.Dir, second.Dir} {
 				Expect(dir).NotTo(BeADirectory())
@@ -122,7 +138,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 	It("writes no horizon when the victims raise none", func() {
 		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 
-		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
+		Expect(retention.Execute(context.Background(), s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
 		Expect(evicted.Dir).NotTo(BeADirectory())
 		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
 	})
@@ -157,7 +173,7 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		passed := runOf("2026-10-01/9_ci_main", at)
 		kept := runOf("2026-10-01/10_ci_main", at.Add(time.Second))
 
-		Expect(retention.Retain(s, now, 90*24*time.Hour, 1<<30, &out)).To(Succeed())
+		Expect(retention.Retain(context.Background(), s, now, 90*24*time.Hour, 1<<30, &out)).To(Succeed())
 		Expect(out.String()).To(Equal(passed + "\n"))
 		Expect(kept).To(BeADirectory())
 	})
@@ -166,7 +182,7 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		writeSized(s.Data(), "github.com/o/r/notes.txt", 1000)
 		kept := runOf("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 
-		Expect(retention.Retain(s, now, 90*24*time.Hour, 100, &out)).To(Succeed())
+		Expect(retention.Retain(context.Background(), s, now, 90*24*time.Hour, 100, &out)).To(Succeed())
 		Expect(out.String()).To(BeEmpty())
 		Expect(kept).To(BeADirectory())
 	})
@@ -178,7 +194,7 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		evicted := runOf("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 		kept := runOf("2026-10-02/10_ci_main", time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC))
 
-		err := retention.Retain(s, now, 90*24*time.Hour, 100, &out)
+		err := retention.Retain(context.Background(), s, now, 90*24*time.Hour, 100, &out)
 		Expect(err).To(MatchError(ContainSubstring(path)))
 		Expect(expired).NotTo(BeADirectory())
 		Expect(evicted).NotTo(BeADirectory())
@@ -189,3 +205,7 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
 	})
 })
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

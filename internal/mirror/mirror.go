@@ -44,7 +44,8 @@ type Mirror struct {
 // re-run of all jobs deletes them. An error that runScoped
 // accepts aborts only its artifact or attempt; Cycle returns these after
 // trying every other. Any other error stops the cycle, and a local error that
-// no retry fixes blocks it. Retention runs after the cycle, however it ended.
+// no retry fixes blocks it. Retention runs after the cycle, also a blocked
+// one, unless ctx is done.
 func (m *Mirror) Cycle(ctx context.Context) error {
 	// A zero DiskCap or Retention would evict everything.
 	if m.DiskCap < 1 {
@@ -54,7 +55,13 @@ func (m *Mirror) Cycle(ctx context.Context) error {
 		return fmt.Errorf("retention must be positive, not %s", m.Retention)
 	}
 	err := m.classify(m.cycle(ctx))
-	retained := failure.FromErrno(m.retain())
+	if ctx.Err() != nil {
+		if err == nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	retained := failure.FromErrno(m.retain(ctx))
 	if retained == nil {
 		return err
 	}
@@ -72,8 +79,8 @@ func (m *Mirror) classify(err error) error {
 	return failure.FromErrno(err)
 }
 
-func (m *Mirror) retain() error {
-	return retention.Retain(m.Store, m.Clock.Now(), m.Retention, m.DiskCap, io.Discard)
+func (m *Mirror) retain(ctx context.Context) error {
+	return retention.Retain(ctx, m.Store, m.Clock.Now(), m.Retention, m.DiskCap, io.Discard)
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {

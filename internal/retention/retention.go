@@ -4,6 +4,7 @@ package retention
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -143,7 +144,7 @@ func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCa
 
 // Retain executes what Find gives at now, printing each dir it removes. It
 // reports a corrupt horizon after evicting. Callers hold state/write.lock.
-func Retain(s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed io.Writer) error {
+func Retain(ctx context.Context, s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed io.Writer) error {
 	h, discarded, err := ReadHorizon(s)
 	if err != nil {
 		return err
@@ -152,7 +153,7 @@ func Retain(s *store.Store, now time.Time, retention time.Duration, diskCap int6
 	if err != nil {
 		return err
 	}
-	return errors.Join(Execute(s, v, removed), discarded)
+	return errors.Join(Execute(ctx, s, v, removed), discarded)
 }
 
 // Scan finds the run dirs under every data/<host>/<owner>/<repo>/runs/<date>/,
@@ -239,9 +240,13 @@ func last[T any](s []T) *T {
 // Execute evicts the victims in order, printing each to removed, and then
 // removes empty date dirs. It writes the raised horizon before the evicted
 // runs go, so that a crash part way leaves no evicted run for discovery to
-// fetch again. Callers hold state/write.lock.
-func Execute(s *store.Store, v Victims, removed io.Writer) error {
+// fetch again. It stops between evictions once ctx is done. Callers hold
+// state/write.lock.
+func Execute(ctx context.Context, s *store.Store, v Victims, removed io.Writer) error {
 	evict := func(dir string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := s.Evict(dir); err != nil {
 			return err
 		}

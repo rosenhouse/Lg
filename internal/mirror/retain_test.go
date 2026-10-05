@@ -1,6 +1,7 @@
 package mirror_test
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,5 +40,18 @@ var _ = Describe("mirror.Cycle", Label("retention"), func() {
 		err := env.Sync(ctx)
 		Expect(err).To(BeTransient())
 		Expect(err).To(BeBlocked(failure.LocalIO))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle after its context is cancelled", Label("retention"), func() {
+	It("does not evict", func(ctx SpecContext) {
+		env := harness.InProcess()
+		old := filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-06-01/1_ci_main")
+		Expect(os.MkdirAll(old, 0o755)).To(Succeed())
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		Expect(env.Sync(cancelled)).To(MatchError(context.Canceled))
+		Expect(old).To(BeADirectory())
 	}, cycleTimeout)
 })
