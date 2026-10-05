@@ -308,12 +308,14 @@ type Unit struct {
 }
 
 func (s *Store) NewUnit() (*Unit, error) {
-	dir := filepath.Join(s.tmp, unitPrefix+strconv.FormatUint(rand.Uint64(), 36))
+	dir := filepath.Join(s.tmp, unitPrefix+randomName())
 	if err := s.fs.Mkdir(dir); err != nil {
 		return nil, err
 	}
 	return &Unit{fs: s.fs, dir: dir, unclosed: map[string]bool{}, sums: map[string]Sum{}}, nil
 }
+
+func randomName() string { return strconv.FormatUint(rand.Uint64(), 36) }
 
 func isUnit(name string) bool { return strings.HasPrefix(name, unitPrefix) }
 
@@ -537,5 +539,16 @@ func (s *Store) Rename(oldpath, newpath string) error {
 	return s.fs.SyncDir(filepath.Dir(newpath))
 }
 
-// Evict removes dir.
-func (s *Store) Evict(dir string) error { return nil }
+// Evict moves dir into tmp/trash/ with one rename, so a reader sees all of
+// it or none, and then deletes it. Callers hold state/write.lock.
+func (s *Store) Evict(dir string) error {
+	trash := filepath.Join(s.tmp, "trash")
+	if err := mkdirAll(s.fs, trash); err != nil {
+		return err
+	}
+	trashed := filepath.Join(trash, randomName())
+	if err := s.Rename(dir, trashed); err != nil {
+		return err
+	}
+	return s.fs.RemoveAll(trashed)
+}
