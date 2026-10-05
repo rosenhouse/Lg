@@ -126,14 +126,14 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 	})
 
 	It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
-		recorded, err := recordings.Artifacts(fixtureRun, artifactsStage)
-		Expect(err).NotTo(HaveOccurred())
+		recorded := unexpiredRecordedArtifacts()
 		listed := artifactIDs(storedArtifacts(fixtureDir, fixtureLastAttempt))
 		Expect(listed).To(ConsistOf(artifactIDs(recorded)))
 		Expect(listed).NotTo(ContainElement(expiredArtifact))
 	})
 
 	It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
+		unexpiredRecordedArtifacts()
 		listed := storedArtifacts(fixtureDir, fixtureLastAttempt)
 		Expect(listed).NotTo(BeEmpty())
 
@@ -174,6 +174,19 @@ func liveWindow() string {
 		days = max(days, int(now.Sub(run.CreatedAt).Hours()/24)+2)
 	}
 	return fmt.Sprintf("%dd", days)
+}
+
+// unexpiredRecordedArtifacts fails once the recorded artifacts expire,
+// since GitHub then lists none and the fixture runs need re-recording.
+func unexpiredRecordedArtifacts() []model.Artifact {
+	GinkgoHelper()
+	recorded, err := recordings.Artifacts(fixtureRun, artifactsStage)
+	Expect(err).NotTo(HaveOccurred())
+	now := clock.Real{}.Now()
+	for _, artifact := range recorded {
+		Expect(now).To(BeTemporally("<", artifact.ExpiresAt), "artifact %d expired; re-record the fixture runs", artifact.ID)
+	}
+	return recorded
 }
 
 // syncLive retries, because one transient GitHub error on any run fails a
