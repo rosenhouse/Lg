@@ -104,7 +104,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			Expect(old).To(BeADirectory())
 		},
 		Entry("DiskCap", func(m *mirror.Mirror) { m.DiskCap = 0 }, "DiskCap must be at least 1, not 0"),
-		Entry("Retention", func(m *mirror.Mirror) { m.Retention = 0 }, "Retention must be positive, not 0s"),
+		Entry("Retention", func(m *mirror.Mirror) { m.Retention = 0 }, "retention must be positive, not 0s"),
 	)
 
 	It("returns an error and sends no request when ArtifactMaxBytes is not set", Label("artifacts"), func() {

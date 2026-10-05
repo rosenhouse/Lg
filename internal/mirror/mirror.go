@@ -46,6 +46,13 @@ type Mirror struct {
 // trying every other. Any other error stops the cycle, and a local error that
 // no retry fixes blocks it. Retention runs after the cycle, however it ended.
 func (m *Mirror) Cycle(ctx context.Context) error {
+	// A zero DiskCap or Retention would evict everything.
+	if m.DiskCap < 1 {
+		return fmt.Errorf("DiskCap must be at least 1, not %d", m.DiskCap)
+	}
+	if m.Retention <= 0 {
+		return fmt.Errorf("retention must be positive, not %s", m.Retention)
+	}
 	err := m.classify(m.cycle(ctx))
 	retained := failure.FromErrno(m.retain())
 	if retained == nil {
