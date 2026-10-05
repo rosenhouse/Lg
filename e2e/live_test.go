@@ -32,8 +32,9 @@ import (
 const liveSyncTimeout = 15 * time.Minute
 
 const (
-	fixtureStage     = "after-attempt-3"
-	logsDeletedStage = "after-expiry"
+	fixtureStage       = "after-attempt-3"
+	fixtureLastAttempt = 3
+	logsDeletedStage   = "after-expiry"
 	// GitHub delists an artifact once it expires, so the fixture run's live listing is the after-expiry one.
 	artifactsStage  = "after-expiry"
 	expiredArtifact = int64(11276327411)
@@ -69,7 +70,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 	})
 
 	It("mirrors run 37129390741 with attempts 1–3, the recorded job ids and the recorded job kinds", func() {
-		for attempt := 1; attempt <= 3; attempt++ {
+		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
 			dir := layout.AttemptDir(fixtureDir, attempt)
 			Expect(dir).To(BeADirectory())
 			kinds := storedKinds(dir)
@@ -79,7 +80,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 	})
 
 	It("stores each log byte-identical to the recording, or a tombstone with reason expired or deleted", func() {
-		for attempt := 1; attempt <= 3; attempt++ {
+		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
 			dir := layout.AttemptDir(fixtureDir, attempt)
 			logs := recordedLogs(fixtureRun, fixtureStage, attempt)
 			ran := 0
@@ -118,7 +119,7 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 				Expect(got).To(HaveKeyWithValue(key, want[key]), "run %d attempt %d", runID, attempt)
 			}
 		}
-		for attempt := 1; attempt <= 3; attempt++ {
+		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
 			compare(fixtureDir, fixtureRun, fixtureStage, attempt)
 		}
 		compare(logsDeletedDir, logsDeletedRun, logsDeletedStage, 1)
@@ -127,13 +128,13 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 	It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
 		recorded, err := recordings.Artifacts(fixtureRun, artifactsStage)
 		Expect(err).NotTo(HaveOccurred())
-		listed := artifactIDs(storedArtifacts(fixtureDir))
+		listed := artifactIDs(storedArtifacts(fixtureDir, fixtureLastAttempt))
 		Expect(listed).To(ConsistOf(artifactIDs(recorded)))
 		Expect(listed).NotTo(ContainElement(expiredArtifact))
 	})
 
 	It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
-		listed := storedArtifacts(fixtureDir)
+		listed := storedArtifacts(fixtureDir, fixtureLastAttempt)
 		Expect(listed).NotTo(BeEmpty())
 
 		for _, artifact := range listed {
@@ -249,10 +250,10 @@ func recordedLogs(runID int64, stage string, attempt int) map[int64][]byte {
 	return logs
 }
 
-func storedArtifacts(runDir string) []model.Artifact {
+func storedArtifacts(runDir string, attempt int) []model.Artifact {
 	GinkgoHelper()
 	var listed []model.Artifact
-	raw, err := os.ReadFile(filepath.Join(layout.AttemptDir(runDir, 3), "artifacts.json"))
+	raw, err := os.ReadFile(filepath.Join(layout.AttemptDir(runDir, attempt), "artifacts.json"))
 	Expect(err).NotTo(HaveOccurred())
 	Expect(json.Unmarshal(raw, &listed)).To(Succeed())
 	return listed
