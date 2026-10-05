@@ -82,10 +82,11 @@ func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *u
 // state/status.json. Callers hold state/write.lock.
 func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
 	path := filepath.Join(roots.State, "status.json")
-	prev, err := status.Read(path)
+	// Main's warning named a status.json that Read fails on, and Write replaces it.
+	prev, _ := status.Read(path)
 	c.Repo = cfg.Host + "/" + cfg.Repo
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
-	var measureErr error
-	c.Disk, measureErr = status.Measure(roots.Data, roots.State, c.Repo)
-	return failure.FromErrno(errors.Join(err, measureErr, status.Write(fsys, path, status.Next(prev, c))))
+	var err error
+	c.Disk, err = status.Measure(roots.Data, roots.State, c.Repo)
+	return failure.FromErrno(errors.Join(err, status.Write(fsys, path, status.Next(prev, c))))
 }

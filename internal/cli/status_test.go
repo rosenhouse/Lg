@@ -237,6 +237,15 @@ var _ = Describe("cli.Main with a status.json it cannot parse", Label("status"),
 		Expect(s.stdout.String()).To(Equal(version.Version + "\n"))
 		Expect(s.stderr.String()).To(MatchRegexp(`^lg: warning: ` + regexp.QuoteMeta(s.statusFile()) + `: [^\n]+\n$`))
 	})
+
+	It("replaces it after a good sync, which exits 0", func() {
+		s := newSyncEnv()
+		Expect(s.main("sync")).To(Equal(0))
+		Expect(os.WriteFile(s.statusFile(), []byte(`{"cycle": 5,`), 0o644)).To(Succeed())
+
+		Expect(s.main("sync")).To(Equal(0), s.stderr.String())
+		Expect(s.status()).To(HaveKeyWithValue("cycle", 1.0))
+	})
 })
 
 var _ = DescribeTable("lg sync that GitHub stops before the cycle ends", Label("status"),
