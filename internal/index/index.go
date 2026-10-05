@@ -75,9 +75,6 @@ func open(ctx context.Context, path, data string) (*Index, error) {
 // resetUnlessCurrent empties a db whose meta.format is not Format. It takes
 // the write lock only to do so.
 func (ix *Index) resetUnlessCurrent(ctx context.Context) error {
-	if err := ix.connect(ctx); err != nil {
-		return err
-	}
 	if isCurrent(ctx, ix.db) {
 		return nil
 	}
@@ -87,20 +84,6 @@ func (ix *Index) resetUnlessCurrent(ctx context.Context) error {
 		}
 		return reset(ctx, tx)
 	})
-}
-
-// connect retries while SQLITE_BUSY, which SQLite gives at once, without
-// waiting, when another connection reads a fresh db as it turns it to WAL.
-func (ix *Index) connect(ctx context.Context) error {
-	clk := clock.Real{}
-	deadline := clk.Now().Add(busyTimeout)
-	for {
-		err := ix.db.PingContext(ctx)
-		if !hasCode(err, sqlite3.SQLITE_BUSY) || clk.Now().After(deadline) {
-			return err
-		}
-		<-clk.After(10 * time.Millisecond)
-	}
 }
 
 // hasCode reports whether err is an SQLite error with one of the primary codes.
@@ -201,9 +184,6 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh b
 	read := map[string]Rows{}
 	var unreadable []error
 	for _, runDir := range slices.Sorted(maps.Keys(onDisk)) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		if slices.Equal(onDisk[runDir], indexed[runDir]) {
 			continue
 		}
