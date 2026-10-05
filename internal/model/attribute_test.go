@@ -27,7 +27,10 @@ var _ = Describe("Attribute", Label("index"), func() {
 
 	It("gives attempt N by listing-diff when attempt-N lists the id and attempt-(N-1) does not, both listed during their own attempt", func() {
 		Expect(attribute(7, at(99), 2, snapshot(1, 1, 5), snapshot(2, 2, 5, 7))).To(Equal(result{2, model.ByListing}))
-		Expect(attribute(5, at(99), 2, snapshot(1, 1, 5), snapshot(2, 2, 5, 7))).To(Equal(result{1, model.ByListing}))
+	})
+
+	It("gives attempt 1 by timestamp, since no snapshot precedes it", func() {
+		Expect(attribute(5, at(15), 1, snapshot(1, 1, 5))).To(Equal(result{1, model.ByTimestamp}))
 	})
 
 	DescribeTable("falls back to the window [run_started_at(N), run_started_at(N+1)) when a snapshot was listed during another attempt",

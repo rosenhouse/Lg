@@ -31,8 +31,7 @@ const (
 // attempt known. No attempt after fetchedDuring can hold the artifact.
 func Attribute(id int64, createdAt time.Time, fetchedDuring int, snapshots []Snapshot) (int, Attribution) {
 	last := fetchedDuring
-	// Before attempt 1, the run listed no artifacts.
-	byAttempt := map[int]Snapshot{0: {}}
+	byAttempt := map[int]Snapshot{}
 	for _, s := range snapshots {
 		byAttempt[s.Attempt] = s
 		last = max(last, s.Attempt)
