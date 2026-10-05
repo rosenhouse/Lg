@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/config"
@@ -22,6 +24,8 @@ type gcCmd struct {
 // Run prints each dir it removes. A dry run takes no lock, so it reads the
 // store as it is.
 func (c gcCmd) Run(deps *Deps) error {
+	// A closed stdout must not kill gc between evictions.
+	signal.Ignore(syscall.SIGPIPE)
 	roots, cfg, err := loadConfig(deps.Env)
 	if err != nil {
 		return err
@@ -57,7 +61,14 @@ func (c gcCmd) Run(deps *Deps) error {
 		return failure.FromErrno(err)
 	}
 	defer release()
-	return failure.FromErrno(retention.Retain(context.Background(), s, now, keep, diskCap, deps.Stdout))
+	// A failed print is no reason to stop removing, nor a blocked store.
+	var printErr error
+	err = retention.Retain(context.Background(), s, now, keep, diskCap, func(dir string) {
+		if printErr == nil {
+			_, printErr = fmt.Fprintln(deps.Stdout, dir)
+		}
+	})
+	return errors.Join(failure.FromErrno(err), printErr)
 }
 
 func exists(path string) bool {

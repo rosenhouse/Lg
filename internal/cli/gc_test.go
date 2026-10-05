@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -68,6 +69,31 @@ var _ = Describe("lg gc", Label("retention"), func() {
 		Expect(code).To(Equal(0))
 		Expect(stdout.String()).To(Equal(run + "\n"))
 		Expect(run).To(BeADirectory())
+	})
+
+	It("evicts every victim when stdout fails, and exits 1, not as blocked", func() {
+		home := GinkgoT().TempDir()
+		Expect(store.Init(home)).To(Succeed())
+		var runs []string
+		for _, rel := range []string{"2026-06-01/1_ci_main", "2026-06-02/2_ci_main", "2026-06-03/3_ci_main"} {
+			run := filepath.Join(home, "data", "github.com", "rosenhouse", "lg", "runs", rel)
+			Expect(os.MkdirAll(run, 0o755)).To(Succeed())
+			runs = append(runs, run)
+		}
+		var stderr bytes.Buffer
+
+		code := cli.Main([]string{"gc"}, cli.Deps{
+			Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+			Stdout:  failingWriter{syscall.ENOSPC},
+			Stderr:  &stderr,
+			Clock:   clock.NewFake(time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)),
+			StoreFS: store.OSFS{},
+		})
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(ContainSubstring(syscall.ENOSPC.Error()))
+		for _, run := range runs {
+			Expect(filepath.Dir(run)).NotTo(BeAnExistingFile())
+		}
 	})
 
 	It("waits for a writer making the store, rather than calling LG_HOME a typo", func() {

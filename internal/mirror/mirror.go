@@ -80,7 +80,7 @@ func (m *Mirror) classify(err error) error {
 }
 
 func (m *Mirror) retain(ctx context.Context) error {
-	return retention.Retain(ctx, m.Store, m.Clock.Now(), m.Retention, m.DiskCap, io.Discard)
+	return retention.Retain(ctx, m.Store, m.Clock.Now(), m.Retention, m.DiskCap, func(string) {})
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {

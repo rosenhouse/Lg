@@ -162,6 +162,23 @@ var _ = Describe("lg gc", Label("retention"), func() {
 	})
 })
 
+var _ = Describe("lg gc into a pipe whose reader has closed", Label("retention"), func() {
+	It("evicts every victim and exits 1, not by SIGPIPE", func() {
+		env := harness.New(lgPath)
+		env.WriteConfig("http://127.0.0.1:1")
+		first := handMadeRun(env, "github.com/rosenhouse/Lg/runs/2026-06-01/1_ci_main")
+		second := handMadeRun(env, "github.com/rosenhouse/Lg/runs/2026-06-02/2_ci_main")
+		dir := GinkgoT().TempDir()
+
+		// lg gc starts once the pipe's only reader has closed it.
+		session := env.Sh(fmt.Sprintf(`cd %q && mkfifo closed && { read _ < closed; lg gc; echo $? > code; } | { exec <&-; echo > closed; }`, dir))
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(os.ReadFile(filepath.Join(dir, "code"))).To(Equal([]byte("1\n")))
+		Expect(filepath.Dir(first)).NotTo(BeADirectory())
+		Expect(filepath.Dir(second)).NotTo(BeADirectory())
+	})
+})
+
 var _ = Describe("lg gc over disk_cap", Label("retention"), func() {
 	// Runs 9 and 10 share a date dir, and 10 was created first.
 	var (

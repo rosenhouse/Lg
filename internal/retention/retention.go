@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -134,9 +132,10 @@ func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCa
 	return Plan(runs, h, Cutoff(now, retention), diskCap), nil
 }
 
-// Retain executes what Find gives at now, printing each dir it removes. It
-// reports a corrupt horizon after evicting. Callers hold state/write.lock.
-func Retain(ctx context.Context, s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed io.Writer) error {
+// Retain executes what Find gives at now, calling removed with each dir it
+// removes. It reports a corrupt horizon after evicting. Callers hold
+// state/write.lock.
+func Retain(ctx context.Context, s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed func(dir string)) error {
 	h, discarded, err := ReadHorizon(s)
 	if err != nil {
 		return err
@@ -229,12 +228,12 @@ func last[T any](s []T) *T {
 	return &s[len(s)-1]
 }
 
-// Execute evicts the victims in order, printing each to removed, and then
+// Execute evicts the victims in order, calling removed with each, and then
 // removes empty date dirs. It writes the raised horizon before the evicted
 // runs go, so that a crash part way leaves no evicted run for discovery to
 // fetch again. It stops between evictions once ctx is done. Callers hold
 // state/write.lock.
-func Execute(ctx context.Context, s *store.Store, v Victims, removed io.Writer) error {
+func Execute(ctx context.Context, s *store.Store, v Victims, removed func(dir string)) error {
 	evict := func(dir string) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -242,8 +241,8 @@ func Execute(ctx context.Context, s *store.Store, v Victims, removed io.Writer) 
 		if err := s.Evict(dir); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintln(removed, dir)
-		return err
+		removed(dir)
+		return nil
 	}
 	for _, dir := range slices.Concat(v.Expired, v.Extracted) {
 		if err := evict(dir); err != nil {
