@@ -43,7 +43,7 @@ type Tree struct {
 type Victims struct {
 	// Expired are runs in date dirs before the cutoff.
 	Expired []string
-	// Extracted and then Evicted are removed while data/ is over disk_cap.
+	// Extracted and then Evicted are removed while the runs are over disk_cap.
 	// Evicted also holds the kept runs that Horizon passes.
 	Extracted []string
 	Evicted   []Run
@@ -71,8 +71,8 @@ func Expired(createdAt, now time.Time, retention time.Duration) bool {
 	return createdAt.UTC().Format(time.DateOnly) < Cutoff(now, retention)
 }
 
-// Plan expires the runs in date dirs before cutoff. Then, while data/ is
-// over diskCap, counting only run dirs, it removes extracted/ trees and then whole runs, oldest
+// Plan expires the runs in date dirs before cutoff. Then, while the runs
+// are over diskCap, it removes extracted/ trees and then whole runs, oldest
 // first: by date dir, then run id. Discovery skips runs created at or before
 // the horizon, so Plan also evicts each kept run that the stored horizon h,
 // or one raised past the evicted runs, passes.
