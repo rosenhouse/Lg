@@ -83,14 +83,14 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		return slices.IndexFunc(fsys.Journal(), func(op faultfs.Op) bool { return op.Name == "rename" && op.Path == path })
 	}
 
-	It("writes the horizon at the newest run_created_at of the evicted runs, after the expired runs and extracted trees go and before any evicted run", func() {
+	It("writes the victims' horizon after the expired runs and extracted trees go and before any evicted run", func() {
 		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
 		extracted := filepath.Join(runs, "2026-10-02", "3_ci_main", "artifacts", "5_report", "extracted")
 		writeSized(extracted, "report.xml", 10)
 		older := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 		newer := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC))
 
-		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{newer, older}}
+		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{newer, older}, Horizon: retention.Horizon{At: older.CreatedAt}}
 		Expect(retention.Execute(s, v, &out)).To(Succeed())
 		h, _, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
@@ -108,7 +108,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 			second := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC))
 			fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), full)
 
-			err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}}, &out)
+			err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}, Horizon: retention.Horizon{At: second.CreatedAt}}, &out)
 			Expect(err).To(MatchError(full))
 			for _, dir := range []string{expired.Dir, first.Dir, second.Dir} {
 				Expect(dir).NotTo(BeADirectory())
@@ -119,45 +119,64 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Entry("EDQUOT", syscall.EDQUOT),
 	)
 
-	It("keeps a newer horizon", func() {
-		newer := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
-		Expect(retention.Horizon{At: newer}.Write(s)).To(Succeed())
+	It("writes no horizon when the victims raise none", func() {
 		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
-
-		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
-		h, _, err := retention.ReadHorizon(s)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(h.At).To(BeTemporally("==", newer))
-	})
-
-	It("does not raise the horizon for an evicted run without created_at", func() {
-		evicted := runWithLog("2026-10-01/9_ci_main", time.Time{})
 
 		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
 		Expect(evicted.Dir).NotTo(BeADirectory())
 		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
 	})
+})
 
-	It("moves a corrupt horizon aside, writes the raised one, evicts everything, and then reports it", func() {
+var _ = Describe("retention.Retain", Label("retention"), func() {
+	var (
+		s    *store.Store
+		runs string
+		out  bytes.Buffer
+		now  = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	)
+
+	// runOf writes a run dir of 65 bytes created at createdAt.
+	runOf := func(rel string, createdAt time.Time) string {
+		GinkgoHelper()
+		dir := filepath.Join(runs, rel)
+		writeSized(dir, "attempt-1/log.txt", 10)
+		writeFetch(filepath.Join(dir, "attempt-1"), createdAt)
+		return dir
+	}
+
+	BeforeEach(func() {
+		s = newStore()
+		runs = filepath.Join(s.Data(), "github.com", "o", "r", "runs")
+		out.Reset()
+	})
+
+	It("evicts a kept run at or before the stored horizon, under disk_cap too", func() {
+		at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+		Expect(retention.Horizon{At: at}.Write(s)).To(Succeed())
+		passed := runOf("2026-10-01/9_ci_main", at)
+		kept := runOf("2026-10-01/10_ci_main", at.Add(time.Second))
+
+		Expect(retention.Retain(s, now, 90*24*time.Hour, 1<<30, &out)).To(Succeed())
+		Expect(out.String()).To(Equal(passed + "\n"))
+		Expect(kept).To(BeADirectory())
+	})
+
+	It("moves a corrupt horizon aside, evicts, writes the raised horizon, and then reports it", func() {
 		path := filepath.Join(s.State(), "horizon.json")
 		Expect(os.WriteFile(path, []byte("{"), 0o644)).To(Succeed())
-		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
-		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+		expired := runOf("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
+		evicted := runOf("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+		kept := runOf("2026-10-02/10_ci_main", time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC))
 
-		err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{evicted}}, &out)
+		err := retention.Retain(s, now, 90*24*time.Hour, 100, &out)
 		Expect(err).To(MatchError(ContainSubstring(path)))
-		Expect(expired.Dir).NotTo(BeADirectory())
-		Expect(evicted.Dir).NotTo(BeADirectory())
+		Expect(expired).NotTo(BeADirectory())
+		Expect(evicted).NotTo(BeADirectory())
+		Expect(kept).To(BeADirectory())
 		Expect(os.ReadFile(path + ".corrupt")).To(Equal([]byte("{")))
 		h, _, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(h.At).To(BeTemporally("==", evicted.CreatedAt))
-	})
-
-	It("writes no horizon when it evicts nothing for disk_cap", func() {
-		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
-
-		Expect(retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}}, &out)).To(Succeed())
-		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
+		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
 	})
 })

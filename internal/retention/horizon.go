@@ -2,6 +2,10 @@ package retention
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/store"
@@ -24,6 +28,24 @@ func ReadHorizon(s *store.Store) (h Horizon, discarded, err error) {
 		return Horizon{}, discarded, err
 	}
 	return h, nil, nil
+}
+
+// PeekHorizon reads the horizon in state without the write lock. It leaves
+// a corrupt file for ReadHorizon to move aside, and skips nothing for it, as
+// ReadHorizon does.
+func PeekHorizon(state string) (Horizon, error) {
+	raw, err := os.ReadFile(filepath.Join(state, horizonFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Horizon{}, nil
+	}
+	if err != nil {
+		return Horizon{}, err
+	}
+	var h Horizon
+	if json.Unmarshal(raw, &h) != nil {
+		return Horizon{}, nil
+	}
+	return h, nil
 }
 
 func (h Horizon) Write(s *store.Store) error { return s.WriteState(horizonFile, h) }

@@ -49,8 +49,12 @@ type Victims struct {
 	// Expired are runs in date dirs before the cutoff.
 	Expired []string
 	// Extracted and then Evicted are removed while data/ is over disk_cap.
+	// Evicted also holds the kept runs that Horizon passes.
 	Extracted []string
 	Evicted   []Run
+	// Horizon is what Execute raises state/horizon.json to, and zero when it
+	// stays.
+	Horizon Horizon
 }
 
 func (v Victims) Dirs() []string {
@@ -74,9 +78,10 @@ func Expired(createdAt, now time.Time, retention time.Duration) bool {
 
 // Plan expires the runs in date dirs before cutoff. Then, while data/ is
 // over diskCap, it removes extracted/ trees and then whole runs, oldest
-// first: by date dir, then run id. It also evicts each kept run created at
-// or before an evicted run.
-func Plan(u Usage, cutoff string, diskCap int64) Victims {
+// first: by date dir, then run id. Discovery skips runs created at or before
+// the horizon, so Plan also evicts each kept run that the stored horizon h,
+// or one raised past the evicted runs, passes.
+func Plan(u Usage, h Horizon, cutoff string, diskCap int64) Victims {
 	runs := slices.SortedFunc(slices.Values(u.Runs), func(a, b Run) int {
 		return cmp.Or(cmp.Compare(a.Date, b.Date), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Dir, b.Dir))
 	})
@@ -108,11 +113,11 @@ func Plan(u Usage, cutoff string, diskCap int64) Victims {
 		v.Evicted = append(v.Evicted, r)
 		total -= r.Bytes
 	}
-	// Discovery skips runs created at or before the horizon, so the kept
-	// runs that the horizon would pass go too.
-	horizon := newestCreatedAt(v.Evicted)
+	if newest := newestCreatedAt(v.Evicted); newest.After(h.At) {
+		h.At, v.Horizon = newest, Horizon{At: newest}
+	}
 	for _, r := range kept[len(v.Evicted):] {
-		if !r.CreatedAt.IsZero() && !r.CreatedAt.After(horizon) {
+		if !r.CreatedAt.IsZero() && h.Skips(r.CreatedAt) {
 			v.Evicted = append(v.Evicted, r)
 		}
 	}
@@ -130,13 +135,27 @@ func newestCreatedAt(runs []Run) time.Time {
 	return newest
 }
 
-// Find gives what retention removes from data/ at now.
-func Find(data string, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
+// Find gives what retention removes from data/ at now, past the stored horizon h.
+func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
 	u, err := Scan(data)
 	if err != nil {
 		return Victims{}, err
 	}
-	return Plan(u, Cutoff(now, retention), diskCap), nil
+	return Plan(u, h, Cutoff(now, retention), diskCap), nil
+}
+
+// Retain executes what Find gives at now, printing each dir it removes. It
+// reports a corrupt horizon after evicting. Callers hold state/write.lock.
+func Retain(s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed io.Writer) error {
+	h, discarded, err := ReadHorizon(s)
+	if err != nil {
+		return err
+	}
+	v, err := Find(s.Data(), h, now, retention, diskCap)
+	if err != nil {
+		return err
+	}
+	return errors.Join(Execute(s, v, removed), discarded)
 }
 
 // Scan finds the run dirs under every data/<host>/<owner>/<repo>/runs/<date>/,
@@ -224,9 +243,9 @@ func last[T any](s []T) *T {
 }
 
 // Execute evicts the victims in order, printing each to removed, and then
-// removes empty date dirs. It raises the horizon past the runs evicted for
-// disk_cap before they go, so that a crash part way leaves no evicted run
-// for discovery to fetch again. Callers hold state/write.lock.
+// removes empty date dirs. It writes the raised horizon before the evicted
+// runs go, so that a crash part way leaves no evicted run for discovery to
+// fetch again. Callers hold state/write.lock.
 func Execute(s *store.Store, v Victims, removed io.Writer) error {
 	evict := func(dir string) error {
 		if err := s.Evict(dir); err != nil {
@@ -240,17 +259,9 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 			return err
 		}
 	}
-	h, discarded, err := ReadHorizon(s)
-	if err != nil {
-		return err
-	}
-	raised := h
-	if newest := newestCreatedAt(v.Evicted); newest.After(raised.At) {
-		raised.At = newest
-	}
 	runs := v.Evicted
-	if raised != h {
-		err := raised.Write(s)
+	if !v.Horizon.At.IsZero() {
+		err := v.Horizon.Write(s)
 		// On a full disk, a run must go first to make room for the horizon.
 		// A crash before the horizon is written costs one re-download of it.
 		for isFull(err) && len(runs) > 0 {
@@ -258,7 +269,7 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 				return err
 			}
 			runs = runs[1:]
-			err = raised.Write(s)
+			err = v.Horizon.Write(s)
 		}
 		if err != nil {
 			return err
@@ -269,7 +280,7 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 			return err
 		}
 	}
-	return errors.Join(removeEmptyDates(s), discarded)
+	return removeEmptyDates(s)
 }
 
 func isFull(err error) bool { return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT) }

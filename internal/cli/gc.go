@@ -29,11 +29,13 @@ func (c gcCmd) Run(deps *Deps) error {
 	if _, err := os.Lstat(filepath.Join(roots.Store, "FORMAT")); errors.Is(err, fs.ErrNotExist) {
 		return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
 	}
-	find := func() (retention.Victims, error) {
-		return retention.Find(roots.Data, deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap))
-	}
+	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
-		v, err := find()
+		h, err := retention.PeekHorizon(roots.State)
+		if err != nil {
+			return err
+		}
+		v, err := retention.Find(roots.Data, h, now, keep, diskCap)
 		for _, dir := range v.Dirs() {
 			if _, err := fmt.Fprintln(deps.Stdout, dir); err != nil {
 				return err
@@ -46,9 +48,5 @@ func (c gcCmd) Run(deps *Deps) error {
 		return failure.FromErrno(err)
 	}
 	defer release()
-	v, err := find()
-	if err == nil {
-		err = retention.Execute(s, v, deps.Stdout)
-	}
-	return failure.FromErrno(err)
+	return failure.FromErrno(retention.Retain(s, now, keep, diskCap, deps.Stdout))
 }

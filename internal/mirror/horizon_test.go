@@ -58,10 +58,11 @@ var _ = Describe("discovery with an eviction horizon", Label("retention"), func(
 		Expect(retention.Horizon{At: horizon}.Write(env.Mirror.Store)).To(Succeed())
 		before := len(env.Fake.Requests())
 
-		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(4)))
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(pendingRun)))
 		Expect(os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))).To(MatchJSON(`{"github.com":{}}`))
+		Expect(env.ArtifactDirs(pendingRun)).To(BeEmpty(), "retention evicts the run the horizon passes")
 	}, cycleTimeout)
 })
 

@@ -62,4 +62,16 @@ var _ = Describe("retention.Horizon", Label("retention"), func() {
 		Entry("truncated", "{"),
 		Entry("a horizon that is not a time", `{"horizon":"garbage"}`),
 	)
+
+	It("is peeked at without the write lock, which skips nothing for a missing or corrupt file and leaves it in place", func() {
+		s := newStore()
+		Expect(retention.PeekHorizon(s.State())).To(BeZero())
+		Expect(retention.Horizon{At: at}.Write(s)).To(Succeed())
+		Expect(retention.PeekHorizon(s.State())).To(HaveField("At", BeTemporally("==", at)))
+
+		path := filepath.Join(s.State(), "horizon.json")
+		Expect(os.WriteFile(path, []byte("{"), 0o644)).To(Succeed())
+		Expect(retention.PeekHorizon(s.State())).To(BeZero())
+		Expect(path).To(BeARegularFile())
+	})
 })

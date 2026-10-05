@@ -73,11 +73,7 @@ func (m *Mirror) classify(err error) error {
 }
 
 func (m *Mirror) retain() error {
-	v, err := retention.Find(m.Store.Data(), m.Clock.Now(), m.Retention, m.DiskCap)
-	if err != nil {
-		return err
-	}
-	return retention.Execute(m.Store, v, io.Discard)
+	return retention.Retain(m.Store, m.Clock.Now(), m.Retention, m.DiskCap, io.Discard)
 }
 
 func (m *Mirror) cycle(ctx context.Context) error {

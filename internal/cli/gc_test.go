@@ -49,6 +49,26 @@ var _ = Describe("lg gc", Label("retention"), func() {
 		Expect(stderr.String()).To(HaveSuffix(fmt.Sprintf("lg: %s is held by pid %d; gave up after 5m0s\n", writeLock, os.Getpid())))
 	})
 
+	It("--dry-run prints a run at or before the stored horizon", func() {
+		home := GinkgoT().TempDir()
+		Expect(store.Init(home)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(home, "state", "horizon.json"), []byte(`{"horizon":"2026-10-01T12:00:00Z"}`), 0o644)).To(Succeed())
+		run := filepath.Join(home, "data", "github.com", "rosenhouse", "lg", "runs", "2026-10-01", "9_ci_main")
+		Expect(os.MkdirAll(filepath.Join(run, "attempt-1"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(run, "attempt-1", "fetch.json"), []byte(`{"run_created_at":"2026-10-01T12:00:00Z"}`), 0o644)).To(Succeed())
+		var stdout bytes.Buffer
+
+		code := cli.Main([]string{"gc", "--dry-run"}, cli.Deps{
+			Env:    map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+			Stdout: &stdout,
+			Stderr: GinkgoWriter,
+			Clock:  clock.NewFake(time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)),
+		})
+		Expect(code).To(Equal(0))
+		Expect(stdout.String()).To(Equal(run + "\n"))
+		Expect(run).To(BeADirectory())
+	})
+
 	DescribeTable("exits 2 naming LG_HOME, and makes nothing, when LG_HOME holds no store",
 		func(args ...string) {
 			home := filepath.Join(GinkgoT().TempDir(), "typo")
