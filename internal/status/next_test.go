@@ -110,6 +110,15 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(st.Repos[repo].Runs).To(Equal(3))
 	})
 
+	DescribeTable("rounds blocked.retry_at up to a whole second, so a retry is never early",
+		func(retryAt, want time.Time) {
+			st := status.Next(nil, blockedCycle(started, failure.Blocked{Kind: failure.RateLimit, Detail: "429", RetryAt: retryAt}))
+			Expect(st.Blocked.RetryAt).To(Equal(&want))
+		},
+		Entry("past a second", time.Date(2026, 10, 4, 1, 5, 0, 1, time.UTC), time.Date(2026, 10, 4, 1, 5, 1, 0, time.UTC)),
+		Entry("on a second", time.Date(2026, 10, 4, 1, 5, 0, 0, time.UTC), time.Date(2026, 10, 4, 1, 5, 0, 0, time.UTC)),
+	)
+
 	It("keeps blocked.since across blocked cycles, and clears blocked after a good cycle", func() {
 		first := status.Next(nil, blockedCycle(started, failure.Blocked{Kind: failure.Auth, Detail: "401"}))
 		second := status.Next(&first, blockedCycle(started.Add(time.Hour), failure.Blocked{Kind: failure.Unreachable, Detail: "dial"}))
