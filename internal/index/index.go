@@ -85,65 +85,77 @@ func (ix *Index) inTx(ctx context.Context, f func(*sql.Tx) error) error {
 }
 
 // Reconcile re-indexes each run whose unit dirs differ from those indexed,
-// and drops the rows of runs no longer on disk.
+// and drops the rows of runs no longer on disk. It returns the errors of
+// the runs whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
-	return ix.inTx(ctx, func(tx *sql.Tx) error { return ix.reconcile(ctx, tx) })
+	var unreadable error
+	err := ix.inTx(ctx, func(tx *sql.Tx) (err error) {
+		unreadable, err = ix.reconcile(ctx, tx)
+		return err
+	})
+	return errors.Join(err, unreadable)
 }
 
-// Rebuild indexes every run on disk anew.
+// Rebuild indexes every run on disk anew, as Reconcile does.
 func (ix *Index) Rebuild(ctx context.Context) error {
-	return ix.inTx(ctx, func(tx *sql.Tx) error {
+	var unreadable error
+	err := ix.inTx(ctx, func(tx *sql.Tx) (err error) {
 		for _, table := range tables {
 			if _, err := tx.Exec("DELETE FROM " + table); err != nil {
 				return err
 			}
 		}
-		return ix.reconcile(ctx, tx)
+		unreadable, err = ix.reconcile(ctx, tx)
+		return err
 	})
+	return errors.Join(err, unreadable)
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
 
-func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) error {
+// reconcile gives the errors of IndexRun apart from those that stop it.
+func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) (unreadable, err error) {
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	indexed, err := indexedUnits(tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for runDir := range indexed {
 		if _, ok := onDisk[runDir]; !ok {
 			if err := deleteRun(tx, runDir); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	in, err := newInserter(tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer in.close()
+	var failed []error
 	for runDir, units := range onDisk {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		if slices.Equal(units, indexed[runDir]) {
 			continue
 		}
 		rows, err := IndexRun(runDir)
-		if err == nil {
-			err = deleteRun(tx, runDir)
-		}
-		if err == nil {
-			err = in.insert(runDir, rows)
-		}
 		if err != nil {
-			return err
+			failed = append(failed, err)
+			continue
+		}
+		if err := deleteRun(tx, runDir); err != nil {
+			return nil, err
+		}
+		if err := in.insert(runDir, rows); err != nil {
+			return nil, err
 		}
 	}
-	return nil
+	return errors.Join(failed...), nil
 }
 
 // unitsOnDisk gives the sorted unit dirs of each run dir under data.
