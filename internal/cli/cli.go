@@ -46,6 +46,7 @@ type commands struct {
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
+	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 }
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.
