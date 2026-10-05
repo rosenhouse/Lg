@@ -101,19 +101,23 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(horizon).To(BeNumerically("<", renamed(newer.Dir)))
 	})
 
-	It("on a full disk, evicts runs for disk_cap until it can write the horizon", func() {
-		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
-		first := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
-		second := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC))
-		fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), syscall.ENOSPC)
+	DescribeTable("on a full disk, evicts runs for disk_cap until it can write the horizon",
+		func(full syscall.Errno) {
+			expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
+			first := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+			second := runWithLog("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC))
+			fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), full)
 
-		err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}}, &out)
-		Expect(err).To(MatchError(syscall.ENOSPC))
-		for _, dir := range []string{expired.Dir, first.Dir, second.Dir} {
-			Expect(dir).NotTo(BeADirectory())
-		}
-		Expect(out.String()).To(Equal(expired.Dir + "\n" + first.Dir + "\n" + second.Dir + "\n"))
-	})
+			err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{first, second}}, &out)
+			Expect(err).To(MatchError(full))
+			for _, dir := range []string{expired.Dir, first.Dir, second.Dir} {
+				Expect(dir).NotTo(BeADirectory())
+			}
+			Expect(out.String()).To(Equal(expired.Dir + "\n" + first.Dir + "\n" + second.Dir + "\n"))
+		},
+		Entry("ENOSPC", syscall.ENOSPC),
+		Entry("EDQUOT", syscall.EDQUOT),
+	)
 
 	It("keeps a newer horizon", func() {
 		newer := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)

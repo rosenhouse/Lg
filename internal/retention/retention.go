@@ -253,7 +253,7 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 		err := raised.Write(s)
 		// On a full disk, a run must go first to make room for the horizon.
 		// A crash before the horizon is written costs one re-download of it.
-		for errors.Is(err, syscall.ENOSPC) && len(runs) > 0 {
+		for isFull(err) && len(runs) > 0 {
 			if err := evict(runs[0].Dir); err != nil {
 				return err
 			}
@@ -271,6 +271,8 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 	}
 	return errors.Join(removeEmptyDates(s), discarded)
 }
+
+func isFull(err error) bool { return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT) }
 
 // runCreatedAt is the run_created_at in a fetch.json of the run, and zero
 // when it has none.
