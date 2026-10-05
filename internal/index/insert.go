@@ -28,7 +28,7 @@ var columns = map[string][]string{
 		"created_at", "expired", "has_zip", "extracted", "path",
 	},
 	"tombstones": {"path", "reason", "http_status", "tombstoned_at"},
-	"units":      {"path"},
+	"units":      {"path", "modified"},
 }
 
 // inserter inserts rows through a statement per table, prepared once per transaction.
@@ -95,7 +95,7 @@ func (in inserter) insert(ctx context.Context, runDir string, rows Rows) error {
 		}
 	}
 	for _, u := range rows.Units {
-		if _, err := in["units"].ExecContext(ctx, at(u)); err != nil {
+		if _, err := in["units"].ExecContext(ctx, at(u.Path), u.Modified); err != nil {
 			return err
 		}
 	}

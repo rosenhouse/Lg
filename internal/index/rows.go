@@ -24,7 +24,14 @@ type Rows struct {
 	Steps      []Step
 	Artifacts  []Artifact
 	Tombstones []Tombstone
-	Units      []string
+	Units      []Unit
+}
+
+// Unit is a unit dir with its mtime in Unix nanoseconds. A unit published
+// again under the same path has a new mtime.
+type Unit struct {
+	Path     string
+	Modified int64
 }
 
 type Run struct {
@@ -133,13 +140,13 @@ func IndexRun(runDir string) (Rows, error) {
 	var attempts []attemptFiles
 	var artifacts []artifactFiles
 	for _, unit := range units {
-		rel, err := filepath.Rel(runDir, unit)
+		rel, err := filepath.Rel(runDir, unit.Path)
 		if err != nil {
 			return Rows{}, err
 		}
-		rows.Units = append(rows.Units, rel)
+		rows.Units = append(rows.Units, Unit{Path: rel, Modified: unit.Modified})
 		if n, ok := layout.AttemptNumber(rel); ok {
-			a, err := readAttempt(unit, n)
+			a, err := readAttempt(unit.Path, n)
 			if err != nil {
 				return Rows{}, err
 			}
@@ -302,7 +309,8 @@ func (b *builder) addArtifact(a artifactFiles, snapshots []model.Snapshot) error
 		return err
 	}
 	row.HasZip, row.Expired = hasZip, lost == tombstone.Expired
-	_, row.Extracted = slices.BinarySearch(b.rows.Units, filepath.Join(a.dir, "extracted"))
+	extracted := filepath.Join(a.dir, "extracted")
+	row.Extracted = slices.ContainsFunc(b.rows.Units, func(u Unit) bool { return u.Path == extracted })
 	b.rows.Artifacts = append(b.rows.Artifacts, row)
 	return nil
 }

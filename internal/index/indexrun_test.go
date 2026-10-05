@@ -28,14 +28,19 @@ var _ = Describe("IndexRun", Label("index"), func() {
 
 		want, err := index.IndexRun(dir)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(index.IndexRun(elsewhere)).To(Equal(want))
+		got, err := index.IndexRun(elsewhere)
+		Expect(err).NotTo(HaveOccurred())
+		// A copy's unit dirs have new mtimes.
+		Expect(unitPaths(got)).To(Equal(unitPaths(want)))
+		got.Units = want.Units
+		Expect(got).To(Equal(want))
 		Expect(want.Run).To(MatchFields(IgnoreExtras, Fields{
 			"Host":    Equal("github.com"),
 			"Repo":    Equal("rosenhouse/Lg"),
 			"RunID":   BeEquivalentTo(runID),
 			"DateDir": Equal("2026-10-03"),
 		}))
-		Expect(want.Units).To(ConsistOf(
+		Expect(unitPaths(want)).To(ConsistOf(
 			"attempt-1", "attempt-2",
 			"artifacts/11276401837_flaky-report", "artifacts/11276272069_pass-artifact",
 			"artifacts/11275917910_expires-in-1-day",
@@ -103,7 +108,7 @@ var _ = Describe("IndexRun", Label("index"), func() {
 			MatchFields(IgnoreExtras, Fields{"ArtifactID": BeEquivalentTo(1), "HasZip": BeFalse(), "Expired": BeTrue(), "Extracted": BeFalse()}),
 			MatchFields(IgnoreExtras, Fields{"ArtifactID": BeEquivalentTo(2), "HasZip": BeTrue(), "Expired": BeFalse(), "Extracted": BeTrue()}),
 		))
-		Expect(rows.Units).To(ConsistOf("artifacts/1_a", "artifacts/2_a", "artifacts/2_a/extracted"))
+		Expect(unitPaths(rows)).To(ConsistOf("artifacts/1_a", "artifacts/2_a", "artifacts/2_a/extracted"))
 		Expect(rows.Tombstones).To(ConsistOf(MatchAllFields(Fields{
 			"Path":         Equal("artifacts/1_a/artifact.zip.tombstone"),
 			"Reason":       Equal("expired"),
@@ -119,9 +124,17 @@ var _ = Describe("IndexRun", Label("index"), func() {
 
 		rows, err := index.IndexRun(dir)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(rows.Units).To(Equal([]string{"attempt-1"}))
+		Expect(unitPaths(rows)).To(Equal([]string{"attempt-1"}))
 	})
 })
+
+func unitPaths(rows index.Rows) []string {
+	var paths []string
+	for _, u := range rows.Units {
+		paths = append(paths, u.Path)
+	}
+	return paths
+}
 
 // writeArtifact writes a hand-made artifact of run 5 named a, created at
 // createdAt, whose fetch.json adds the members fetch, and the files extra.

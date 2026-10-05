@@ -18,7 +18,7 @@ CREATE TABLE artifacts (artifact_id INTEGER, run_id INTEGER, attributed_attempt 
 	attribution TEXT, name TEXT, size INTEGER, created_at TEXT, expired INTEGER, has_zip INTEGER, extracted INTEGER,
 	path TEXT);
 CREATE TABLE tombstones (path TEXT, reason TEXT, http_status INTEGER, tombstoned_at TEXT);
-CREATE TABLE units (path TEXT);
+CREATE TABLE units (path TEXT, modified INTEGER);
 CREATE TABLE meta (format INTEGER);
 CREATE INDEX runs_path ON runs (path);
 CREATE INDEX attempts_path ON attempts (path);
