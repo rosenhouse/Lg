@@ -21,15 +21,7 @@ import (
 type syncCmd struct{}
 
 func (syncCmd) Run(deps *Deps) error {
-	roots, err := config.Locations(deps.Env)
-	if err != nil {
-		return err
-	}
-	file, err := config.File(deps.Env)
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Load(file)
+	roots, cfg, err := loadConfig(deps.Env)
 	if err != nil {
 		return err
 	}
@@ -40,7 +32,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps)
+	s, release, err := openForWriting(roots, deps, writeLockWait)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
@@ -58,6 +50,7 @@ func (syncCmd) Run(deps *Deps) error {
 		ArtifactMaxBytes: int64(cfg.ArtifactMaxBytes),
 		Backfill:         time.Duration(cfg.Backfill),
 		Retention:        time.Duration(cfg.Retention),
+		DiskCap:          int64(cfg.DiskCap),
 	}
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -65,17 +58,32 @@ func (syncCmd) Run(deps *Deps) error {
 	return m.Cycle(ctx)
 }
 
+// loadConfig gives the store's roots and the config they name.
+func loadConfig(env map[string]string) (config.Roots, config.Config, error) {
+	roots, err := config.Locations(env)
+	if err != nil {
+		return config.Roots{}, config.Config{}, err
+	}
+	file, err := config.File(env)
+	if err != nil {
+		return config.Roots{}, config.Config{}, err
+	}
+	cfg, err := config.Load(file)
+	return roots, cfg, err
+}
+
 // writeLockWait bounds how long a writer waits for another to finish.
 const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
-// holds, then initializes the store and sweeps what dead writers left in tmp/.
-func openForWriting(roots config.Roots, deps *Deps) (*store.Store, func(), error) {
+// holds, waiting up to timeout, then initializes the store and sweeps what
+// dead writers left in tmp/.
+func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration) (*store.Store, func(), error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")
-	held, err := lock.Wait(writeLock, writeLockWait, deps.Clock, func(holder string) {
+	held, err := lock.Wait(writeLock, timeout, deps.Clock, func(holder string) {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
 	})
 	if err != nil {

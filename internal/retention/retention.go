@@ -100,6 +100,15 @@ func Plan(u Usage, cutoff string, diskCap int64) Victims {
 	return v
 }
 
+// Find gives what retention removes from data/ at now.
+func Find(data string, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
+	u, err := Scan(data)
+	if err != nil {
+		return Victims{}, err
+	}
+	return Plan(u, Cutoff(now, retention), diskCap), nil
+}
+
 // Scan finds the run dirs under every data/<host>/<owner>/<repo>/runs/<date>/,
 // and sums the apparent bytes of the regular files under data/.
 func Scan(data string) (Usage, error) {

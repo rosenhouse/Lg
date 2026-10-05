@@ -35,6 +35,7 @@ type Mirror struct {
 	ArtifactMaxBytes int64
 	Backfill         time.Duration
 	Retention        time.Duration
+	DiskCap          int64
 }
 
 // Cycle publishes each listed artifact and completed attempt that is not on
