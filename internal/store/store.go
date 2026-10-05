@@ -548,14 +548,11 @@ func (s *Store) RemoveEmpty(dir string) error {
 	return s.fs.RemoveAll(dir)
 }
 
-// Evict moves dir into tmp/trash/ with one rename, so a reader sees all of
-// it or none, and then deletes it. Callers hold state/write.lock.
+// Evict moves dir to tmp/trash-<id> with one rename, so a reader sees all of
+// it or none, and then deletes it. It makes nothing, so it works on a full
+// disk. Callers hold state/write.lock.
 func (s *Store) Evict(dir string) error {
-	trash := filepath.Join(s.tmp, "trash")
-	if err := mkdirAll(s.fs, trash); err != nil {
-		return err
-	}
-	trashed := filepath.Join(trash, randomName())
+	trashed := filepath.Join(s.tmp, "trash-"+randomName())
 	if err := s.Rename(dir, trashed); err != nil {
 		return err
 	}

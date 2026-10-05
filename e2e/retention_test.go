@@ -104,7 +104,7 @@ var _ = Describe("lg gc", Label("retention"), func() {
 			Expect(fixture).NotTo(BeADirectory())
 			Expect(filepath.Dir(fixture)).NotTo(BeADirectory())
 			Expect(runDirs(env, 1)).To(HaveLen(1))
-			Expect(os.ReadDir(filepath.Join(env.Tmp(), "trash"))).To(BeEmpty())
+			Expect(os.ReadDir(env.Tmp())).To(BeEmpty())
 		})
 	})
 

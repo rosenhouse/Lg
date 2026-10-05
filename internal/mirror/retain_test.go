@@ -25,7 +25,7 @@ var _ = Describe("mirror.Cycle", Label("retention"), func() {
 		env = harness.InProcess()
 		old = filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-06-01/1_ci_main")
 		Expect(os.MkdirAll(old, 0o755)).To(Succeed())
-		env.FS.FailOnUnder("rename", filepath.Join(env.Tmp(), "trash"), syscall.EACCES)
+		env.FS.FailOnUnder("rename", old, syscall.EACCES)
 	})
 
 	It("returns retention's error, blocked as local_io when it cannot evict", func(ctx SpecContext) {
