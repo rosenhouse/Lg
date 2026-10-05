@@ -40,6 +40,7 @@ type FS interface {
 	Rename(oldpath, newpath string) error
 	SyncDir(path string) error
 	RemoveAll(path string) error
+	Chmod(path string, mode fs.FileMode) error
 	ReadDir(path string) ([]fs.DirEntry, error)
 	Lstat(path string) (fs.FileInfo, error)
 	Mount(path string) (Mount, error)
@@ -308,7 +309,7 @@ func (s *Store) removeChildren(dir, except string) error {
 	}
 	for _, e := range entries {
 		if child := filepath.Join(dir, e.Name()); child != except {
-			if err := s.fs.RemoveAll(child); err != nil {
+			if err := removeTree(s.fs, child); err != nil {
 				return err
 			}
 		}
@@ -439,7 +440,44 @@ func (u *Unit) Remove(name string) error {
 }
 
 // Abort removes the staged unit.
-func (u *Unit) Abort() error { return u.fs.RemoveAll(u.dir) }
+func (u *Unit) Abort() error { return removeTree(u.fs, u.dir) }
+
+// removeTree removes dir, which is under tmp/, also when a dir in it lacks
+// owner write permission, as one from an extracted archive may.
+func removeTree(fsys FS, dir string) error {
+	err := fsys.RemoveAll(dir)
+	if !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	if err := makeWritable(fsys, dir); err != nil {
+		return err
+	}
+	return fsys.RemoveAll(dir)
+}
+
+// makeWritable gives the owner rwx permission on dir and each dir in it.
+func makeWritable(fsys FS, dir string) error {
+	info, err := fsys.Lstat(dir)
+	if err != nil || !info.IsDir() {
+		return err
+	}
+	if err := fsys.Chmod(dir, info.Mode().Perm()|0o700); err != nil {
+		return err
+	}
+	entries, err := fsys.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if err := makeWritable(fsys, filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Unlimited lets a member grow to any size.
 const Unlimited int64 = math.MaxInt64
@@ -575,5 +613,5 @@ func (s *Store) Evict(dir string) error {
 	if err := s.Rename(dir, trashed); err != nil {
 		return err
 	}
-	return s.fs.RemoveAll(trashed)
+	return removeTree(s.fs, trashed)
 }

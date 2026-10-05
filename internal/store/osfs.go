@@ -31,6 +31,8 @@ func (OSFS) SyncDir(path string) error {
 
 func (OSFS) RemoveAll(path string) error { return os.RemoveAll(path) }
 
+func (OSFS) Chmod(path string, mode fs.FileMode) error { return os.Chmod(path, mode) }
+
 func (OSFS) ReadDir(path string) ([]fs.DirEntry, error) { return os.ReadDir(path) }
 
 func (OSFS) Lstat(path string) (fs.FileInfo, error) { return os.Lstat(path) }

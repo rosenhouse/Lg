@@ -12,6 +12,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
@@ -254,6 +255,17 @@ var _ = Describe("Sweep", Label("store"), func() {
 
 		Expect(s.Sweep()).To(Succeed())
 		Expect(treesnap.Snapshot(root)).To(Equal(kept))
+	})
+
+	It("empties tmp/ and tmp/trash/ of trees holding a dir without owner write permission", func() {
+		root := newStore()
+		writeReadOnlyDir(filepath.Join(root, "tmp", "unit-x"))
+		writeReadOnlyDir(filepath.Join(root, "tmp", "trash", "y"))
+		fsys := faultfs.New()
+		fsys.ActAsNonRoot()
+
+		Expect(openFS(fsys, root).Sweep()).To(Succeed())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 })
 

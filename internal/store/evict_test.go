@@ -47,6 +47,15 @@ var _ = Describe("store.Evict", Label("retention"), func() {
 		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
 
+	It("removes a tree holding a dir without owner write permission, as an extracted archive may", func() {
+		writeReadOnlyDir(filepath.Join(runDir, "artifacts", "5_report", "extracted"))
+		fsys := faultfs.New()
+		fsys.ActAsNonRoot()
+
+		Expect(openFS(fsys, root).Evict(runDir)).To(Succeed())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
+	})
+
 	It("makes no dir, so it frees space on a full disk after a sweep", func() {
 		fsys := faultfs.New()
 		s := openFS(fsys, root)
@@ -57,3 +66,12 @@ var _ = Describe("store.Evict", Label("retention"), func() {
 		Expect(runDir).NotTo(BeADirectory())
 	})
 })
+
+// writeReadOnlyDir writes dir/ro/file and takes write permission from dir/ro.
+func writeReadOnlyDir(dir string) {
+	GinkgoHelper()
+	readOnly := filepath.Join(dir, "ro")
+	Expect(os.MkdirAll(readOnly, 0o755)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(readOnly, "file"), nil, 0o644)).To(Succeed())
+	Expect(os.Chmod(readOnly, 0o555)).To(Succeed())
+}

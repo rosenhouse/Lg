@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/store"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
@@ -75,6 +76,22 @@ var _ = Describe("Unit", Label("sync"), func() {
 
 	It("Abort removes the staged unit", Label("store"), func() {
 		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(Succeed())
+		Expect(unit.Abort()).To(Succeed())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
+	})
+
+	It("Abort removes a unit holding a dir without owner write permission", Label("store"), func() {
+		Expect(unit.Abort()).To(Succeed())
+		fsys := faultfs.New()
+		fsys.ActAsNonRoot()
+		unit, err := openFS(fsys, root).NewUnit()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(unit.WriteJSON("a.json", []byte("{}"))).To(Succeed())
+		dirs, err := filepath.Glob(filepath.Join(root, "tmp", "unit-*"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(dirs).To(HaveLen(1))
+		writeReadOnlyDir(dirs[0])
+
 		Expect(unit.Abort()).To(Succeed())
 		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
 	})
