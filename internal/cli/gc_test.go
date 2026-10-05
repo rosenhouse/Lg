@@ -102,10 +102,11 @@ var _ = Describe("lg gc", Label("retention"), func() {
 		var stderr bytes.Buffer
 
 		code := cli.Main([]string{"gc"}, cli.Deps{
-			Env:    map[string]string{"LG_HOME": home, "LG_CONFIG": config},
-			Stdout: &bytes.Buffer{},
-			Stderr: &stderr,
-			Clock:  clock.Real{},
+			Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+			Stdout:  &bytes.Buffer{},
+			Stderr:  &stderr,
+			Clock:   clock.Real{},
+			StoreFS: store.OSFS{},
 		})
 		Expect(code).To(Equal(2))
 		Expect(stderr.String()).To(ContainSubstring("LG_HOME"))
