@@ -15,7 +15,7 @@ import (
 // appears in no listing once it completes, so the cycle gets each watched
 // run that no listing named.
 type watch struct {
-	file  stateFile
+	store *store.Store
 	host  string
 	hosts map[string]map[int64]watchedRun
 	// runs are the host's runs. The cycle removes each one it resolves and
@@ -29,9 +29,8 @@ type watchedRun struct {
 }
 
 func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
-	file := newStateFile(s, "watch.json")
 	hosts := map[string]map[int64]watchedRun{}
-	discarded, err = file.read(func(raw []byte) error {
+	discarded, err = s.ReadState("watch.json", func(raw []byte) error {
 		var decoded map[string]map[int64]watchedRun
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
@@ -48,7 +47,7 @@ func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 	if runs == nil {
 		runs = map[int64]watchedRun{}
 	}
-	return &watch{file: file, host: host, hosts: hosts, runs: runs, loaded: slices.Sorted(maps.Keys(runs))}, discarded, nil
+	return &watch{store: s, host: host, hosts: hosts, runs: runs, loaded: slices.Sorted(maps.Keys(runs))}, discarded, nil
 }
 
 // add watches the run.
@@ -67,5 +66,5 @@ func (w *watch) save() error {
 		return nil
 	}
 	w.hosts[w.host] = w.runs
-	return w.file.write(w.hosts)
+	return w.store.WriteState("watch.json", w.hosts)
 }

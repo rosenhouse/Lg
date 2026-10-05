@@ -211,7 +211,7 @@ func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo,
 		return nil, time.Time{}, nil, nil
 	}
 	var last rescan
-	discarded, err := newStateFile(m.Store, "rescan.json").read(func(raw []byte) error { return json.Unmarshal(raw, &last) })
+	discarded, err := m.Store.ReadState("rescan.json", func(raw []byte) error { return json.Unmarshal(raw, &last) })
 	since := now.Sub(last.RescannedAt)
 	if err != nil || (since >= 0 && since < rescanEvery) {
 		return nil, time.Time{}, discarded, err
@@ -242,7 +242,7 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 	if rescannedAt.IsZero() {
 		return nil
 	}
-	return newStateFile(m.Store, "rescan.json").write(rescan{RescannedAt: rescannedAt.UTC().Truncate(time.Second)})
+	return m.Store.WriteState("rescan.json", rescan{RescannedAt: rescannedAt.UTC().Truncate(time.Second)})
 }
 
 // fetchWatched gets each watched run that no listing named, since a run

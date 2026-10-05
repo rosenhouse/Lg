@@ -260,10 +260,9 @@ func runScoped(err error) bool {
 	var transient failure.Transient
 	var statusErr *github.StatusError
 	var malformed *github.MalformedError
-	var corrupt *corruptFileError
-	var corruptHorizon *retention.CorruptError
+	var corrupt *store.CorruptFileError
 	var capped *cappedError
-	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt) || errors.As(err, &corruptHorizon) || errors.As(err, &capped)
+	return errors.As(err, &transient) || errors.As(err, &statusErr) || errors.As(err, &malformed) || errors.As(err, &corrupt) || errors.As(err, &capped)
 }
 
 // errRunGone is a 404 on an attempt or its jobs, which skips the run.

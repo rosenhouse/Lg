@@ -256,7 +256,7 @@ func (m *Mirror) retrySet(runDir string, onDisk []int, listing *artifactListing,
 func snapshots(runDir string, attempts []int) (all []candidate, unreadable, err error) {
 	for _, n := range slices.Sorted(slices.Values(attempts)) {
 		snapshot, err := readSnapshot(layout.AttemptDir(runDir, n))
-		var corrupt *corruptFileError
+		var corrupt *store.CorruptFileError
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 		case errors.As(err, &corrupt):
@@ -293,17 +293,7 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return &corruptFileError{Path: path, Err: err}
+		return &store.CorruptFileError{Path: path, Err: err}
 	}
 	return nil
 }
-
-// corruptFileError is a file in the store that lg cannot parse.
-type corruptFileError struct {
-	Path string
-	Err  error
-}
-
-func (e *corruptFileError) Error() string { return e.Path + ": " + e.Err.Error() }
-
-func (e *corruptFileError) Unwrap() error { return e.Err }
