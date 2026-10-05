@@ -21,6 +21,9 @@ func (indexRebuildCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	if !exists(filepath.Join(roots.Store, "FORMAT")) {
+		return noStore(roots)
+	}
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return err
 	}

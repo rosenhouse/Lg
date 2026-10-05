@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/retention"
 )
@@ -32,10 +31,9 @@ func (c gcCmd) Run(deps *Deps) error {
 	}
 	// gc only removes, so a root without a store is a mistyped LG_HOME, unless
 	// a writer holding state/write.lock is making the store.
-	noStore := config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
 	format := filepath.Join(roots.Store, "FORMAT")
 	if !exists(format) && !exists(filepath.Join(roots.State, "write.lock")) {
-		return noStore
+		return noStore(roots)
 	}
 	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
@@ -53,7 +51,7 @@ func (c gcCmd) Run(deps *Deps) error {
 	}
 	s, release, err := openForWriting(roots, deps, c.Timeout, func() error {
 		if !exists(format) {
-			return noStore
+			return noStore(roots)
 		}
 		return nil
 	})
