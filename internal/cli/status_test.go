@@ -24,6 +24,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 	"github.com/rosenhouse/lg/internal/version"
 )
 
@@ -48,10 +49,15 @@ func (s *syncEnv) writeConfig(content string) {
 	Expect(os.WriteFile(s.config, []byte(content), 0o644)).To(Succeed())
 }
 
+// main runs lg with args, and asserts that a sync left every earlier file
+// under data/ unchanged.
 func (s *syncEnv) main(args ...string) int {
+	GinkgoHelper()
 	s.stdout.Reset()
 	s.stderr.Reset()
-	return cli.Main(args, cli.Deps{
+	data := filepath.Join(s.home, "data")
+	before := treesnap.Snapshot(data)
+	code := cli.Main(args, cli.Deps{
 		Env:    map[string]string{"LG_HOME": s.home, "LG_CONFIG": s.config, "LG_GH": "gh", "LG_TEST_NOW": harness.DefaultNow().Format(time.RFC3339)},
 		Stdout: &s.stdout,
 		Stderr: &s.stderr,
@@ -62,6 +68,10 @@ func (s *syncEnv) main(args ...string) int {
 		},
 		StoreFS: s.fs,
 	})
+	if len(args) > 0 && args[0] == "sync" {
+		Expect(treesnap.Snapshot(data)).To(treesnap.BeAppendOnlyFrom(before))
+	}
+	return code
 }
 
 func (s *syncEnv) statusFile() string { return filepath.Join(s.home, "state", "status.json") }
