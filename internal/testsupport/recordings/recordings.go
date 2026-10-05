@@ -3,9 +3,12 @@ package recordings
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/tombstone"
 )
 
 // DefaultNow is past log_grace for every recorded attempt.
@@ -97,4 +101,56 @@ func Artifacts(runID int64, stage string) ([]model.Artifact, error) {
 		return nil, err
 	}
 	return listing.Artifacts, nil
+}
+
+// Attempt is a stage's attempt-N/attempt.json.
+func Attempt(runID int64, stage string, attempt int) (model.Run, error) {
+	var run model.Run
+	err := readJSON(attemptFile(runID, stage, attempt, "attempt.json"), &run)
+	return run, err
+}
+
+// Jobs is the listing in a stage's attempt-N/jobs.json.
+func Jobs(runID int64, stage string, attempt int) ([]model.Job, error) {
+	var listing struct{ Jobs []model.Job }
+	err := readJSON(attemptFile(runID, stage, attempt, "jobs.json"), &listing)
+	return listing.Jobs, err
+}
+
+func attemptFile(runID int64, stage string, attempt int, name string) string {
+	return filepath.Join(Dir(runID, stage), fmt.Sprintf("attempt-%d", attempt), name)
+}
+
+func readJSON(path string, v any) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
+}
+
+// CompareLog accepts log.txt in jobDir byte-identical to want, or a
+// tombstone saying GitHub no longer serves the log.
+func CompareLog(want []byte, jobDir string) error {
+	logPath := filepath.Join(jobDir, "log.txt")
+	got, err := os.ReadFile(logPath)
+	switch {
+	case err == nil && bytes.Equal(got, want):
+		return nil
+	case err == nil:
+		return fmt.Errorf("%s differs from the recording", logPath)
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+	var stone tombstone.Tombstone
+	if err := readJSON(logPath+".tombstone", &stone); err != nil {
+		return err
+	}
+	if stone.Reason != tombstone.Expired && stone.Reason != tombstone.Deleted {
+		return fmt.Errorf("%s.tombstone has reason %q, not expired or deleted", logPath, stone.Reason)
+	}
+	return nil
 }

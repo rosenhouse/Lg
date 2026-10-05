@@ -610,6 +610,9 @@ func isRedirect(status int) bool {
 	return false
 }
 
+// UserAgent names lg and its version to GitHub.
+func UserAgent() string { return "lg/" + version.Version }
+
 // do sends the token only to the API host. Go's own rule would send it to a
 // blob host that differs only by port or is a subdomain.
 func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
@@ -619,7 +622,7 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "lg/"+version.Version)
+	req.Header.Set("User-Agent", UserAgent())
 	if !h.onAPIHost(u) {
 		return h.transport.RoundTrip(req)
 	}

@@ -42,3 +42,28 @@ func dropped(key string) bool {
 	}
 	return false
 }
+
+// liveKept are the dropped variables a live spec needs: the egress proxy,
+// its CA bundle, gh's token and config, and HOME for gh's keyring.
+var liveKept = map[string]bool{
+	"HTTPS_PROXY":   true,
+	"HTTP_PROXY":    true,
+	"NO_PROXY":      true,
+	"SSL_CERT_FILE": true,
+	"GH_TOKEN":      true,
+	"GITHUB_TOKEN":  true,
+	"GH_CONFIG_DIR": true,
+	"HOME":          true,
+}
+
+// ScrubLive is Scrub for specs that reach github.com through the real gh.
+func ScrubLive(environ []string, binDir string) map[string]string {
+	vars := Scrub(environ, binDir)
+	for _, kv := range environ {
+		key, value, _ := strings.Cut(kv, "=")
+		if liveKept[strings.ToUpper(key)] {
+			vars[key] = value
+		}
+	}
+	return vars
+}

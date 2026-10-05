@@ -89,6 +89,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("DownloadArtifact", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { return c.DownloadArtifact(ctx, 1, &bytes.Buffer{}) }),
 	)
 
+	It("names lg and its version in UserAgent", Label("transport"), func() {
+		Expect(github.UserAgent()).To(Equal("lg/" + version.Version))
+	})
+
 	It("lists runs with their fields and the body served for each", func() {
 		listing, err := client.ListRuns(context.Background(), github.RunQuery{})
 		Expect(err).NotTo(HaveOccurred())
