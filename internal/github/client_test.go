@@ -74,7 +74,6 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 			Expect(headers.Get("Accept")).To(Equal("application/vnd.github+json"))
 			Expect(headers.Get("X-GitHub-Api-Version")).To(Equal("2022-11-28"))
 			Expect(headers.Get("User-Agent")).To(Equal("lg/" + version.Version))
-			Expect(github.UserAgent()).To(Equal("lg/" + version.Version))
 			Expect(headers.Get("Authorization")).To(Equal("Bearer gho_header_test"))
 		},
 		Entry("GetRepo", func(ctx context.Context, c *github.HTTP) error { _, err := c.GetRepo(ctx); return err }),
@@ -89,6 +88,10 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		Entry("ListArtifacts", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { _, _, err := c.ListArtifacts(ctx, 1); return err }),
 		Entry("DownloadArtifact", Label("artifacts"), func(ctx context.Context, c *github.HTTP) error { return c.DownloadArtifact(ctx, 1, &bytes.Buffer{}) }),
 	)
+
+	It("names lg and its version in UserAgent", Label("transport"), func() {
+		Expect(github.UserAgent()).To(Equal("lg/" + version.Version))
+	})
 
 	It("lists runs with their fields and the body served for each", func() {
 		listing, err := client.ListRuns(context.Background(), github.RunQuery{})
