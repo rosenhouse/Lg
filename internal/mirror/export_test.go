@@ -7,6 +7,7 @@ import (
 )
 
 var (
+	RunScoped    = runScoped
 	NonTerminal  = nonTerminal
 	Merge        = merge
 	RescanWindow = rescanWindow

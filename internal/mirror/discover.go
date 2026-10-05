@@ -18,7 +18,7 @@ import (
 
 // Discover lists the runs created in [from, to], newest first, halving the
 // range while GitHub caps its listing. A single second that GitHub still
-// caps gives the runs GitHub lists and a cappedError, which RunScoped accepts.
+// caps gives the runs GitHub lists and a cappedError, which runScoped accepts.
 func Discover(ctx context.Context, gh github.Client, from, to time.Time) (runs []github.Run, capped, err error) {
 	return listRange(ctx, gh, created(github.RunQuery{}, from, to))
 }
@@ -110,7 +110,7 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
-	// failed joins the errors that RunScoped accepts.
+	// failed joins the errors that runScoped accepts.
 	failed error
 }
 
@@ -249,7 +249,7 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 // fetchWatched gets each watched run that no listing named, since a run
 // created before the backfill window appears in no listing once it
 // completes. A run GitHub no longer has leaves the watch list. It joins
-// the errors that RunScoped accepts, leaving their runs watched.
+// the errors that runScoped accepts, leaving their runs watched.
 func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed, err error) {
 	for _, id := range slices.Sorted(maps.Keys(w.runs)) {
 		if slices.ContainsFunc(listed, func(run github.Run) bool { return run.ID == id }) {
@@ -260,7 +260,7 @@ func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, l
 		switch {
 		case errors.Is(err, github.ErrNotFound):
 			delete(w.runs, id)
-		case RunScoped(err):
+		case runScoped(err):
 			failed = errors.Join(failed, fmt.Errorf("run %d: %w", id, err))
 		case err != nil:
 			return nil, nil, err

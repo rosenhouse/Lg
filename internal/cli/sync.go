@@ -47,7 +47,7 @@ func (syncCmd) Run(deps *Deps) error {
 		Started:       started,
 		Finished:      deps.Clock.Now(),
 		Err:           err,
-		Completed:     err == nil || mirror.RunScoped(err),
+		Completed:     report.Completed,
 		DefaultBranch: report.DefaultBranch,
 	}))
 }

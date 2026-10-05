@@ -206,3 +206,20 @@ var _ = Describe("cli.Main with a status.json it cannot parse", Label("status"),
 		Expect(s.stderr.String()).To(MatchRegexp(`^lg: warning: ` + regexp.QuoteMeta(s.statusFile()) + `: [^\n]+\n$`))
 	})
 })
+
+var _ = DescribeTable("lg sync that GitHub stops before the cycle ends", Label("status"),
+	func(match string) {
+		s := newSyncEnv()
+		s.fake.Fail("api", match, fakegithub.Fault{Status: http.StatusBadGateway})
+
+		Expect(s.main("sync")).To(Equal(1))
+
+		st := s.status()
+		Expect(st).To(HaveKeyWithValue("last_sync_ok_at", BeNil()))
+		Expect(st["repos"]).To(HaveKeyWithValue("github.com/rosenhouse/lg", HaveKeyWithValue("pending", BeEmpty())))
+		Expect(s.main("paths")).To(Equal(0))
+		Expect(s.stderr.String()).To(Equal("lg: warning: no sync has succeeded yet\n"))
+	},
+	Entry("on GET /repos", "/repos/rosenhouse/lg"),
+	Entry("on the runs listing", "/actions/runs"),
+)

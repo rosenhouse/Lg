@@ -34,6 +34,13 @@ var _ = Describe("mirror.Cycle", Label("retention"), func() {
 		Expect(old).To(BeADirectory())
 	}, cycleTimeout)
 
+	It("reports a cycle whose retention fails as not completed", Label("status"), func(ctx SpecContext) {
+		report, err := env.Mirror.Cycle(ctx)
+
+		Expect(err).To(BeBlocked(failure.LocalIO))
+		Expect(report.Completed).To(BeFalse())
+	}, cycleTimeout)
+
 	It("returns retention's error beside the cycle's", func(ctx SpecContext) {
 		env.Fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusInternalServerError})
 

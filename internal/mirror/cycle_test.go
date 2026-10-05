@@ -87,11 +87,20 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(os.ReadDir(filepath.Join(root, "data/ghe.corp.example"))).NotTo(BeEmpty())
 	})
 
-	It("reports the repo's default branch from GET /repos", Label("status"), func() {
+	It("reports the repo's default branch from GET /repos, and that the cycle ran to its end", Label("status"), func() {
 		report, err := m.Cycle(context.Background())
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(report).To(Equal(mirror.Report{DefaultBranch: "main"}))
+		Expect(report).To(Equal(mirror.Report{DefaultBranch: "main", Completed: true}))
+	})
+
+	It("reports a cycle that a listing stopped as not completed", Label("status"), func() {
+		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusBadGateway})
+
+		report, err := m.Cycle(context.Background())
+
+		Expect(err).To(MatchError(ContainSubstring("502")))
+		Expect(report.Completed).To(BeFalse())
 	})
 
 	It("returns the error from Tokens and sends no request", Label("transport"), func() {

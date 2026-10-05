@@ -40,7 +40,7 @@ type candidate struct {
 // syncArtifacts lists the run's artifacts into run.artifacts, which stays nil
 // when ListArtifacts fails, and publishes its retry set. A run complete on
 // disk with nothing to retry needs no listing. It returns the errors that
-// RunScoped accepts, and stops at any other.
+// runScoped accepts, and stops at any other.
 func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
 	onDisk, err := m.attemptsOnDisk(run.dir)
 	if err != nil {
@@ -61,9 +61,9 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 	switch {
 	case errors.Is(err, github.ErrNotFound):
 		// The run is deleted, but its artifacts that lg saw still need dirs.
-	case RunScoped(err) && listing != nil:
+	case runScoped(err) && listing != nil:
 		failed = append(failed, fmt.Errorf("run %d: %w", run.ID, err))
-	case RunScoped(err):
+	case runScoped(err):
 		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
 	case err != nil:
 		return nil, err
@@ -83,7 +83,7 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 	for _, c := range retry {
 		err := m.publishArtifact(ctx, gh, run.Run, c, layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
 		switch {
-		case RunScoped(err):
+		case runScoped(err):
 			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, c.Artifact.ID, err))
 			unpublished = append(unpublished, c)
 		case err != nil:
