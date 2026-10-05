@@ -133,3 +133,34 @@ func (c *recordingClock) requested() []time.Duration {
 	defer c.mu.Unlock()
 	return append([]time.Duration(nil), c.durations...)
 }
+
+var _ = Describe("Held", Label("status"), func() {
+	var path string
+
+	BeforeEach(func() {
+		path = filepath.Join(GinkgoT().TempDir(), "daemon.lock")
+	})
+
+	It("reports false, creating nothing, when no file is there", func() {
+		Expect(lock.Held(path)).To(BeFalse())
+		Expect(path).NotTo(BeAnExistingFile())
+	})
+
+	It("reports true while a holder holds the lock, and false after it releases", func() {
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(lock.Held(path)).To(BeTrue())
+		Expect(held.Release()).To(Succeed())
+		Expect(lock.Held(path)).To(BeFalse())
+	})
+
+	It("leaves the lock free for Wait", func() {
+		Expect(os.WriteFile(path, nil, 0o644)).To(Succeed())
+		Expect(lock.Held(path)).To(BeFalse())
+
+		held, err := lock.Wait(path, 0, clock.Real{}, ignore)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(held.Release()).To(Succeed())
+	})
+})
