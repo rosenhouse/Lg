@@ -82,17 +82,20 @@ func Classify(job Job, runStartedAt time.Time) JobKind {
 
 // Artifact is an element of a run's artifacts listing.
 type Artifact struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	SizeInBytes int64     `json:"size_in_bytes"`
-	Expired     bool      `json:"expired"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	Digest      string    `json:"digest"`
-	WorkflowRun struct {
-		HeadBranch string `json:"head_branch"`
-		HeadSHA    string `json:"head_sha"`
-	} `json:"workflow_run"`
+	ID          int64       `json:"id"`
+	Name        string      `json:"name"`
+	SizeInBytes int64       `json:"size_in_bytes"`
+	Expired     bool        `json:"expired"`
+	CreatedAt   time.Time   `json:"created_at"`
+	ExpiresAt   time.Time   `json:"expires_at"`
+	Digest      string      `json:"digest"`
+	WorkflowRun ArtifactRun `json:"workflow_run"`
+}
+
+// ArtifactRun is the run an artifact lists itself under.
+type ArtifactRun struct {
+	HeadBranch string `json:"head_branch"`
+	HeadSHA    string `json:"head_sha"`
 }
 
 // ArtifactAction is what lg does with a listed artifact.

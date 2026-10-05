@@ -22,6 +22,7 @@ var _ = Describe("Artifacts", Label("artifacts"), func() {
 			CreatedAt:   time.Date(2026, 10, 3, 14, 23, 2, 0, time.UTC),
 			ExpiresAt:   time.Date(2026, 10, 4, 14, 23, 1, 0, time.UTC),
 			Digest:      "sha256:fd151fe190b853dc69d973a927588591cdab0e90cd5320abe040b70fc82ce765",
+			WorkflowRun: model.ArtifactRun{HeadBranch: "lg-fixture", HeadSHA: "1a51097dadb5b55978ac401b93f1ca9d8d317b02"},
 		}))
 	})
 
