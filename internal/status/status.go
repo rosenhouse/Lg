@@ -108,6 +108,8 @@ type Disk struct {
 	NewestCompleted, Horizon time.Time
 }
 
+const day = 24 * time.Hour
+
 // Next is the status after cycle c, given the status before it, prev,
 // which is nil when there is none.
 func Next(prev *Status, c Cycle) Status {
@@ -124,7 +126,7 @@ func Next(prev *Status, c Cycle) Status {
 		Runs:          c.Disk.Runs,
 		Attempts:      c.Disk.Attempts,
 		BytesData:     c.Disk.Bytes,
-		RetentionDays: int64(c.Retention / (24 * time.Hour)),
+		RetentionDays: int64((c.Retention + day - 1) / day),
 		DiskCapBytes:  c.DiskCap,
 		Horizon:       timeOrNil(c.Disk.Horizon),
 	}

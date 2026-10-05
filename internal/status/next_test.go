@@ -76,6 +76,17 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(r.LagSeconds).To(BeNil())
 	})
 
+	DescribeTable("rounds retention up to whole days",
+		func(retention time.Duration, days int64) {
+			c := good(started)
+			c.Retention = retention
+			Expect(status.Next(nil, c).Repos[repo].RetentionDays).To(Equal(days))
+		},
+		Entry("under a day", 12*time.Hour, int64(1)),
+		Entry("past a day", 36*time.Hour, int64(2)),
+		Entry("on a day", 48*time.Hour, int64(2)),
+	)
+
 	It("counts cycles on from the previous status", func() {
 		Expect(status.Next(&status.Status{Cycle: 41}, good(started)).Cycle).To(Equal(int64(42)))
 	})
