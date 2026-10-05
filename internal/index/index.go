@@ -34,21 +34,30 @@ type Index struct {
 }
 
 // Open opens the index at path over the data dir data. It starts from empty
-// over a file SQLite finds is not a db or is corrupt. A transaction takes the
-// write lock at its start, and waits up to busyTimeout for another process
-// to release it.
+// when SQLite cannot read meta. A transaction takes the write lock at its
+// start, and waits up to busyTimeout for another process to release it.
 func Open(ctx context.Context, path, data string) (*Index, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	// Every opener holds path.lock, so none opens a file while another replaces it.
-	l, err := lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
+	l, err := lockFile(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = l.Release() }()
+	return openReadable(ctx, path, data)
+}
+
+// lockFile takes path.lock. Every opener holds it, so none opens a file
+// while another replaces it.
+func lockFile(path string) (*lock.Lock, error) {
+	return lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
+}
+
+// openReadable opens path, first removing a file SQLite cannot read.
+func openReadable(ctx context.Context, path, data string) (*Index, error) {
 	ix, err := open(ctx, path, data)
-	if !hasCode(err, sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT) {
+	if !unreadable(err) {
 		return ix, err
 	}
 	// SQLite deletes a WAL beside an empty db.
@@ -57,6 +66,8 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 	}
 	return open(ctx, path, data)
 }
+
+func unreadable(err error) bool { return hasCode(err, sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT) }
 
 func open(ctx context.Context, path, data string) (*Index, error) {
 	// SQLite decodes a file: URI's path, so no character of path starts the query.
@@ -154,11 +165,13 @@ func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) erro
 // and drops the rows of runs no longer on disk. It returns the errors of
 // the runs whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
-	indexed, err := indexedUnits(ctx, ix.db)
-	if err != nil {
-		return ix.dbError(err)
-	}
-	return ix.index(ctx, indexed, false)
+	return ix.orStartOver(ctx, func() error {
+		indexed, err := indexedUnits(ctx, ix.db)
+		if err != nil {
+			return ix.dbError(err)
+		}
+		return ix.index(ctx, indexed, false)
+	})
 }
 
 // Rebuild indexes every run on disk into an empty lg.db at path.
@@ -167,7 +180,44 @@ func Rebuild(ctx context.Context, path, data string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(ix.index(ctx, nil, true), ix.Close())
+	return errors.Join(ix.orStartOver(ctx, func() error { return ix.index(ctx, nil, true) }), ix.Close())
+}
+
+// orStartOver runs f. If SQLite cannot read lg.db, it then indexes every run
+// into an empty db.
+func (ix *Index) orStartOver(ctx context.Context, f func() error) error {
+	err := f()
+	if !unreadable(err) {
+		return err
+	}
+	if err := ix.startOver(ctx); err != nil {
+		return err
+	}
+	return ix.index(ctx, nil, true)
+}
+
+// startOver replaces lg.db, which SQLite cannot read, with an empty db,
+// unless another has replaced it meanwhile.
+func (ix *Index) startOver(ctx context.Context) error {
+	unread, statErr := os.Stat(ix.path)
+	// The unreadable db is about to go.
+	_ = ix.db.Close()
+	l, err := lockFile(ix.path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = l.Release() }()
+	if now, err := os.Stat(ix.path); err == nil && statErr == nil && os.SameFile(unread, now) {
+		if err := os.Remove(ix.path); err != nil {
+			return err
+		}
+	}
+	replaced, err := openReadable(ctx, ix.path, ix.data)
+	if err != nil {
+		return err
+	}
+	ix.db = replaced.db
+	return nil
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
