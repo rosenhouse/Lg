@@ -325,3 +325,16 @@ var _ = DescribeTable("lg sync that GitHub stops before the cycle ends", Label("
 	Entry("on GET /repos", "/repos/rosenhouse/lg"),
 	Entry("on the runs listing", "/actions/runs"),
 )
+
+var _ = Describe("lg sync that cannot write status.json", Label("status"), func() {
+	It("exits 3, blocked as local_io, naming status.json", func() {
+		s := newSyncEnv()
+		s.fs.FailOnUnder("rename", s.statusFile(), syscall.ENOSPC)
+
+		Expect(s.main("sync")).To(Equal(3))
+
+		Expect(s.stderr.String()).To(ContainSubstring("blocked (local_io)"))
+		Expect(s.stderr.String()).To(ContainSubstring("status.json"))
+		Expect(s.statusFile()).NotTo(BeAnExistingFile())
+	})
+})
