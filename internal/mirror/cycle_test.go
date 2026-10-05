@@ -73,6 +73,7 @@ var _ = Describe("Cycle", Label("sync"), func() {
 			ArtifactMaxBytes: int64(config.Defaults().ArtifactMaxBytes),
 			Backfill:         time.Duration(config.Defaults().Backfill),
 			Retention:        time.Duration(config.Defaults().Retention),
+			DiskCap:          int64(config.Defaults().DiskCap),
 		}
 	})
 
@@ -91,6 +92,20 @@ var _ = Describe("Cycle", Label("sync"), func() {
 		Expect(m.Cycle(context.Background())).To(MatchError("gh: not logged in"))
 		Expect(fake.Requests()).To(BeEmpty())
 	})
+
+	DescribeTable("returns an error, sends no request and evicts nothing when DiskCap or Retention is not set", Label("retention"),
+		func(unset func(*mirror.Mirror), message string) {
+			old := filepath.Join(root, "data/github.com/rosenhouse/Lg/runs/2026-06-01/1_ci_main")
+			Expect(os.MkdirAll(old, 0o755)).To(Succeed())
+			unset(&m)
+
+			Expect(m.Cycle(context.Background())).To(MatchError(message))
+			Expect(fake.Requests()).To(BeEmpty())
+			Expect(old).To(BeADirectory())
+		},
+		Entry("DiskCap", func(m *mirror.Mirror) { m.DiskCap = 0 }, "DiskCap must be at least 1, not 0"),
+		Entry("Retention", func(m *mirror.Mirror) { m.Retention = 0 }, "Retention must be positive, not 0s"),
+	)
 
 	It("returns an error and sends no request when ArtifactMaxBytes is not set", Label("artifacts"), func() {
 		m.ArtifactMaxBytes = 0
