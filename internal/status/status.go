@@ -17,9 +17,14 @@ import (
 type Status struct {
 	LgFormat            int             `json:"lg_format"`
 	Cycle               int64           `json:"cycle"`
+	LastSyncStartedAt   time.Time       `json:"last_sync_started_at"`
+	LastSyncFinishedAt  time.Time       `json:"last_sync_finished_at"`
 	LastSyncOKAt        *time.Time      `json:"last_sync_ok_at"`
+	NextSyncAt          *time.Time      `json:"next_sync_at"`
 	SyncIntervalSeconds int64           `json:"sync_interval_seconds"`
 	Blocked             *Blocked        `json:"blocked"`
+	DaemonPID           *int            `json:"daemon_pid"`
+	DaemonVersion       *string         `json:"daemon_version"`
 	Repos               map[string]Repo `json:"repos"`
 }
 
@@ -57,7 +62,116 @@ func (b Blocked) String() string {
 }
 
 type Repo struct {
-	Runs int `json:"runs"`
+	DefaultBranch               string     `json:"default_branch"`
+	NewestCompletedRunCreatedAt *time.Time `json:"newest_completed_run_created_at"`
+	LagSeconds                  *int64     `json:"lag_seconds"`
+	Runs                        int        `json:"runs"`
+	Attempts                    int        `json:"attempts"`
+	BytesData                   int64      `json:"bytes_data"`
+	PendingUnits                int        `json:"pending_units"`
+	Pending                     []string   `json:"pending"`
+	RetentionDays               int64      `json:"retention_days"`
+	DiskCapBytes                int64      `json:"disk_cap_bytes"`
+	Horizon                     *time.Time `json:"horizon"`
+}
+
+type Cycle struct {
+	Started, Finished time.Time
+	Err               error
+	Completed         bool
+	Repo              string
+	DefaultBranch     string
+	SyncInterval      time.Duration
+	Retention         time.Duration
+	DiskCap           int64
+	Disk              Disk
+}
+
+type Disk struct {
+	Runs, Attempts           int
+	Bytes                    int64
+	NewestCompleted, Horizon time.Time
+}
+
+// Next is the status after cycle c, given the status before it, prev,
+// which is nil when there is none.
+func Next(prev *Status, c Cycle) Status {
+	finished := c.Finished.UTC().Truncate(time.Second)
+	st := Status{
+		LgFormat:            1,
+		Cycle:               1,
+		LastSyncStartedAt:   c.Started.UTC().Truncate(time.Second),
+		LastSyncFinishedAt:  finished,
+		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
+	}
+	repo := Repo{
+		DefaultBranch: c.DefaultBranch,
+		Runs:          c.Disk.Runs,
+		Attempts:      c.Disk.Attempts,
+		BytesData:     c.Disk.Bytes,
+		RetentionDays: int64(c.Retention / (24 * time.Hour)),
+		DiskCapBytes:  c.DiskCap,
+		Horizon:       timeOrNil(c.Disk.Horizon),
+	}
+	if !c.Disk.NewestCompleted.IsZero() {
+		repo.NewestCompletedRunCreatedAt = timeOrNil(c.Disk.NewestCompleted)
+		lag := int64(finished.Sub(c.Disk.NewestCompleted) / time.Second)
+		repo.LagSeconds = &lag
+	}
+	var last Repo
+	if prev != nil {
+		st.Cycle = prev.Cycle + 1
+		st.LastSyncOKAt = prev.LastSyncOKAt
+		last = prev.Repos[c.Repo]
+	}
+	if repo.DefaultBranch == "" {
+		repo.DefaultBranch = last.DefaultBranch
+	}
+	if c.Completed {
+		st.LastSyncOKAt = &finished
+		repo.Pending = lines(c.Err)
+	} else {
+		repo.Pending = append([]string{}, last.Pending...)
+		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
+	}
+	repo.PendingUnits = len(repo.Pending)
+	st.Repos = map[string]Repo{c.Repo: repo}
+	return st
+}
+
+// nextBlocked is what err blocks, since prev's blocked.since when prev was
+// blocked too, else since started.
+func nextBlocked(prev *Status, err error, started time.Time) *Blocked {
+	var b failure.Blocked
+	if !errors.As(err, &b) {
+		return nil
+	}
+	since := started
+	if prev != nil && prev.Blocked != nil {
+		since = prev.Blocked.Since
+	}
+	return &Blocked{Since: since, Kind: b.Kind, Detail: b.Detail, RetryAt: timeOrNil(b.RetryAt)}
+}
+
+func timeOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	t = t.UTC()
+	return &t
+}
+
+// lines gives the message of each error that err joins, each on one line.
+func lines(err error) []string {
+	found := []string{}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, part := range joined.Unwrap() {
+			found = append(found, lines(part)...)
+		}
+	} else if err != nil {
+		found = append(found, strings.Join(strings.Fields(err.Error()), " "))
+	}
+	return found
 }
 
 // Read gives nil when path does not exist.
