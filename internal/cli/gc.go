@@ -39,7 +39,7 @@ func (c gcCmd) Run(deps *Deps) error {
 	}
 	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
-		h, err := retention.PeekHorizon(roots.State)
+		h, err := retention.PeekHorizons(roots.State)
 		if err != nil {
 			return err
 		}

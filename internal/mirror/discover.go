@@ -122,12 +122,13 @@ type discovery struct {
 // created_at as malformed.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
-	horizon, discarded, err := retention.ReadHorizon(m.Store)
+	horizons, discarded, err := retention.ReadHorizons(m.Store)
 	if err != nil {
 		return discovery{}, err
 	}
+	repoKey := retention.RepoKey(m.Host, repo.FullName)
 	evicted := func(createdAt time.Time) bool {
-		return retention.Expired(createdAt, now, m.Retention) || horizon.Skips(createdAt)
+		return retention.Expired(createdAt, now, m.Retention) || horizons.Skips(repoKey, createdAt)
 	}
 	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
 	if err != nil {

@@ -10,8 +10,10 @@ import (
 	"github.com/rosenhouse/lg/internal/retention"
 )
 
+const repo = "github.com/o/r"
+
 func run(date string, id int64, bytes int64, extracted ...retention.Tree) retention.Run {
-	return retention.Run{Dir: fmt.Sprintf("%s/%d", date, id), Date: date, ID: id, Bytes: bytes, Extracted: extracted}
+	return retention.Run{Dir: fmt.Sprintf("%s/%s/%d", repo, date, id), Repo: repo, Date: date, ID: id, Bytes: bytes, Extracted: extracted}
 }
 
 var _ = Describe("retention.Cutoff", Label("retention"), func() {
@@ -45,7 +47,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 	It("expires the runs of date dirs before the cutoff, by date dir and then run id, and keeps the cutoff's", func() {
 		runs := []retention.Run{run("2026-10-03", 1, 1), run("2026-10-01", 10, 1), run("2026-10-01", 9, 1), run("2026-09-30", 11, 1)}
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 100)
+		v := retention.Plan(runs, nil, cutoff, 100)
 		Expect(v.Expired).To(Equal([]string{runs[3].Dir, runs[2].Dir, runs[1].Dir}))
 		Expect(v.Extracted).To(BeEmpty())
 		Expect(v.Evicted).To(BeEmpty())
@@ -54,7 +56,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 	It("removes nothing under disk_cap, nor at it", func() {
 		runs := []retention.Run{run("2026-10-03", 1, 10, retention.Tree{Dir: "x", Bytes: 5})}
 
-		Expect(retention.Plan(runs, retention.Horizon{}, cutoff, 10)).To(BeZero())
+		Expect(retention.Plan(runs, nil, cutoff, 10)).To(BeZero())
 	})
 
 	It("over disk_cap removes extracted trees oldest run first, and only as many as it must", func() {
@@ -63,7 +65,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 			run("2026-10-04", 2, 10, retention.Tree{Dir: "old-1", Bytes: 2}, retention.Tree{Dir: "old-2", Bytes: 2}),
 		}
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 16)
+		v := retention.Plan(runs, nil, cutoff, 16)
 		Expect(v.Extracted).To(Equal([]string{"old-1", "old-2"}))
 		Expect(v.Evicted).To(BeEmpty())
 	})
@@ -76,7 +78,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 			run("2026-10-03", 11, 10, retention.Tree{Dir: "x", Bytes: 4}),
 		}
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 27)
+		v := retention.Plan(runs, nil, cutoff, 27)
 		Expect(v.Extracted).To(Equal([]string{"x"}))
 		Expect(v.Evicted).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
 	})
@@ -86,43 +88,64 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		runs := []retention.Run{run("2026-10-04", 9, 10), run("2026-10-04", 10, 10), run("2026-10-04", 11, 10), run("2026-10-04", 12, 10), run("2026-10-04", 13, 10)}
 		runs[0].CreatedAt, runs[1].CreatedAt, runs[2].CreatedAt, runs[3].CreatedAt = at(12), at(6), at(12), at(13)
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 40)
+		v := retention.Plan(runs, nil, cutoff, 40)
 		Expect(v.Evicted).To(Equal([]string{runs[0].Dir, runs[1].Dir, runs[2].Dir}))
 	})
 
 	It("evicts each kept run created at or before the stored horizon, under disk_cap too, and keeps that horizon", func() {
-		stored := retention.Horizon{At: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
+		stored := retention.Horizons{repo: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
 		runs := []retention.Run{run("2026-10-04", 9, 1), run("2026-10-04", 10, 1), run("2026-10-05", 11, 1)}
-		runs[0].CreatedAt, runs[1].CreatedAt = stored.At, stored.At.Add(time.Second)
+		runs[0].CreatedAt, runs[1].CreatedAt = stored[repo], stored[repo].Add(time.Second)
 
 		v := retention.Plan(runs, stored, cutoff, 100)
 		Expect(v.Evicted).To(Equal([]string{runs[0].Dir}))
-		Expect(v.Horizon).To(BeZero())
+		Expect(v.Horizons).To(BeNil())
 	})
 
 	It("raises the horizon to the newest created_at of the runs it evicts, past the stored one", func() {
-		stored := retention.Horizon{At: time.Date(2026, 10, 4, 6, 0, 0, 0, time.UTC)}
+		stored := retention.Horizons{repo: time.Date(2026, 10, 4, 6, 0, 0, 0, time.UTC)}
 		runs := []retention.Run{run("2026-10-04", 9, 10), run("2026-10-04", 10, 10), run("2026-10-05", 11, 10)}
 		runs[0].CreatedAt, runs[1].CreatedAt = time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
 
 		v := retention.Plan(runs, stored, cutoff, 10)
 		Expect(v.Evicted).To(Equal([]string{runs[0].Dir, runs[1].Dir}))
-		Expect(v.Horizon.At).To(BeTemporally("==", runs[0].CreatedAt))
+		Expect(v.Horizons).To(Equal(retention.Horizons{repo: runs[0].CreatedAt}))
 	})
 
 	It("keeps a newer stored horizon, and an evicted run without created_at raises none", func() {
-		stored := retention.Horizon{At: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
+		stored := retention.Horizons{repo: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
 		runs := []retention.Run{run("2026-10-04", 9, 10), run("2026-10-04", 10, 10), run("2026-10-05", 11, 10)}
 		runs[0].CreatedAt = time.Date(2026, 10, 4, 6, 0, 0, 0, time.UTC)
 
-		Expect(retention.Plan(runs, stored, cutoff, 20).Horizon).To(BeZero())
-		Expect(retention.Plan(runs[1:], retention.Horizon{}, cutoff, 10).Horizon).To(BeZero())
+		Expect(retention.Plan(runs, stored, cutoff, 20).Horizons).To(BeNil())
+		Expect(retention.Plan(runs[1:], nil, cutoff, 10).Horizons).To(BeNil())
+	})
+
+	It("raises and applies the horizon of each repo dir from that repo dir's evicted runs only", func() {
+		at := func(hour int) time.Time { return time.Date(2026, 10, 4, hour, 0, 0, 0, time.UTC) }
+		evicted, other := run("2026-10-04", 9, 10), run("2026-10-04", 10, 10)
+		other.Repo, other.Dir = "github.com/o/other", "github.com/o/other/2026-10-04/10"
+		evicted.CreatedAt, other.CreatedAt = at(12), at(6)
+
+		v := retention.Plan([]retention.Run{evicted, other}, nil, cutoff, 10)
+		Expect(v.Evicted).To(Equal([]string{evicted.Dir}))
+		Expect(v.Horizons).To(Equal(retention.Horizons{repo: at(12)}))
+	})
+
+	It("keeps the stored horizons of the other repo dirs when it raises one", func() {
+		stored := retention.Horizons{"ghe.example.com/a/b": time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}
+		evicted := run("2026-10-04", 9, 10)
+		evicted.CreatedAt = time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+
+		v := retention.Plan([]retention.Run{evicted}, stored, cutoff, 0)
+		Expect(v.Horizons).To(Equal(retention.Horizons{"ghe.example.com/a/b": stored["ghe.example.com/a/b"], repo: evicted.CreatedAt}))
+		Expect(stored).To(HaveLen(1))
 	})
 
 	It("counts expired runs as removed before checking disk_cap", func() {
 		runs := []retention.Run{run("2026-10-01", 1, 10), run("2026-10-04", 2, 10)}
 
-		v := retention.Plan(runs, retention.Horizon{}, cutoff, 10)
+		v := retention.Plan(runs, nil, cutoff, 10)
 		Expect(v.Expired).To(Equal([]string{runs[0].Dir}))
 		Expect(v.Evicted).To(BeEmpty())
 	})

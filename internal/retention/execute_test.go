@@ -127,11 +127,11 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		older := runWithLog("2026-10-01/9_ci_main")
 		newer := runWithLog("2026-10-01/10_ci_main")
 
-		v := retention.Victims{Expired: []string{expired}, Extracted: []string{extracted}, Evicted: []string{newer, older}, Horizon: retention.Horizon{At: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}}
+		v := retention.Victims{Expired: []string{expired}, Extracted: []string{extracted}, Evicted: []string{newer, older}, Horizons: retention.Horizons{"github.com/o/r": time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}}
 		Expect(retention.Execute(context.Background(), s, v, record)).To(Succeed())
-		h, _, err := retention.ReadHorizon(s)
+		h, _, err := retention.ReadHorizons(s)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
+		Expect(h).To(Equal(retention.Horizons{"github.com/o/r": time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}))
 		horizon := renamed(filepath.Join(s.State(), "horizon.json.tmp"))
 		Expect(renamed(expired)).To(BeNumerically("<", renamed(extracted)))
 		Expect(renamed(extracted)).To(BeNumerically("<", horizon))
@@ -145,7 +145,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 			second := runWithLog("2026-10-01/10_ci_main")
 			fsys.FailOnUnder("create", filepath.Join(s.State(), "horizon.json.tmp"), full)
 
-			err := retention.Execute(context.Background(), s, retention.Victims{Expired: []string{expired}, Evicted: []string{first, second}, Horizon: retention.Horizon{At: time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)}}, record)
+			err := retention.Execute(context.Background(), s, retention.Victims{Expired: []string{expired}, Evicted: []string{first, second}, Horizons: retention.Horizons{"github.com/o/r": time.Date(2026, 10, 1, 13, 0, 0, 0, time.UTC)}}, record)
 			Expect(err).To(MatchError(full))
 			for _, dir := range []string{expired, first, second} {
 				Expect(dir).NotTo(BeADirectory())
@@ -192,7 +192,7 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 
 	It("evicts a kept run at or before the stored horizon, under disk_cap too", func() {
 		at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-		Expect(retention.Horizon{At: at}.Write(s)).To(Succeed())
+		Expect(retention.Horizons{"github.com/o/r": at}.Write(s)).To(Succeed())
 		passed := runOf("2026-10-01/9_ci_main", at)
 		kept := runOf("2026-10-01/10_ci_main", at.Add(time.Second))
 
@@ -223,8 +223,8 @@ var _ = Describe("retention.Retain", Label("retention"), func() {
 		Expect(evicted).NotTo(BeADirectory())
 		Expect(kept).To(BeADirectory())
 		Expect(os.ReadFile(path + ".corrupt")).To(Equal([]byte("{")))
-		h, _, err := retention.ReadHorizon(s)
+		h, _, err := retention.ReadHorizons(s)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
+		Expect(h).To(Equal(retention.Horizons{"github.com/o/r": time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}))
 	})
 })

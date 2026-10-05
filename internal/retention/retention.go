@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,7 +23,9 @@ import (
 
 // Run is a run dir under a date dir.
 type Run struct {
-	Dir   string
+	Dir string
+	// Repo is its repo dir, as RepoKey names it.
+	Repo  string
 	Date  string
 	ID    int64
 	Bytes int64
@@ -46,9 +49,9 @@ type Victims struct {
 	// Evicted also holds the kept runs that Horizon passes.
 	Extracted []string
 	Evicted   []string
-	// Horizon is what Execute raises state/horizon.json to, and zero when it
+	// Horizons is what Execute writes to state/horizon.json, and nil when it
 	// stays.
-	Horizon Horizon
+	Horizons Horizons
 }
 
 func (v Victims) Dirs() []string { return slices.Concat(v.Expired, v.Extracted, v.Evicted) }
@@ -67,9 +70,9 @@ func Expired(createdAt, now time.Time, retention time.Duration) bool {
 // Plan expires the runs in date dirs before cutoff. Then, while the runs
 // are over diskCap, it removes extracted/ trees and then whole runs, oldest
 // first: by date dir, then run id. Discovery skips runs created at or before
-// the horizon, so Plan also evicts each kept run that the stored horizon h,
-// or one raised past the evicted runs, passes.
-func Plan(runs []Run, h Horizon, cutoff string, diskCap int64) Victims {
+// their repo dir's horizon, so Plan also evicts each kept run that its stored
+// horizon in h, or one raised past the evicted runs, passes.
+func Plan(runs []Run, h Horizons, cutoff string, diskCap int64) Victims {
 	runs = slices.SortedFunc(slices.Values(runs), func(a, b Run) int {
 		return cmp.Or(cmp.Compare(a.Date, b.Date), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Dir, b.Dir))
 	})
@@ -102,30 +105,36 @@ func Plan(runs []Run, h Horizon, cutoff string, diskCap int64) Victims {
 		v.Evicted = append(v.Evicted, kept[n].Dir)
 		total -= kept[n].Bytes
 	}
-	if newest := newestCreatedAt(kept[:n]); newest.After(h.At) {
-		h.At, v.Horizon = newest, Horizon{At: newest}
+	if raised := raise(h, kept[:n]); raised != nil {
+		h, v.Horizons = raised, raised
 	}
 	for _, r := range kept[n:] {
-		if !r.CreatedAt.IsZero() && h.Skips(r.CreatedAt) {
+		if !r.CreatedAt.IsZero() && h.Skips(r.Repo, r.CreatedAt) {
 			v.Evicted = append(v.Evicted, r.Dir)
 		}
 	}
 	return v
 }
 
-// newestCreatedAt is the newest CreatedAt of runs, and zero when none has one.
-func newestCreatedAt(runs []Run) time.Time {
-	var newest time.Time
-	for _, r := range runs {
-		if r.CreatedAt.After(newest) {
-			newest = r.CreatedAt
+// raise gives h with each repo dir's horizon raised to the newest CreatedAt
+// of its evicted runs, and nil when none is raised.
+func raise(h Horizons, evicted []Run) Horizons {
+	raised := Horizons{}
+	maps.Copy(raised, h)
+	changed := false
+	for _, r := range evicted {
+		if r.CreatedAt.After(raised[r.Repo]) {
+			raised[r.Repo], changed = r.CreatedAt, true
 		}
 	}
-	return newest
+	if !changed {
+		return nil
+	}
+	return raised
 }
 
-// Find gives what retention removes from data/ at now, past the stored horizon h.
-func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
+// Find gives what retention removes from data/ at now, past the stored horizons h.
+func Find(data string, h Horizons, now time.Time, retention time.Duration, diskCap int64) (Victims, error) {
 	runs, err := Scan(data)
 	if err != nil {
 		return Victims{}, err
@@ -137,7 +146,7 @@ func Find(data string, h Horizon, now time.Time, retention time.Duration, diskCa
 // removes. It reports a corrupt horizon after evicting. Callers hold
 // state/write.lock.
 func Retain(ctx context.Context, s *store.Store, now time.Time, retention time.Duration, diskCap int64, removed func(dir string)) error {
-	h, discarded, err := ReadHorizon(s)
+	h, discarded, err := ReadHorizons(s)
 	if err != nil {
 		return err
 	}
@@ -218,7 +227,7 @@ func runAt(path string, parts []string) (Run, bool) {
 	}
 	idPart, _, _ := strings.Cut(parts[5], "_")
 	id, _ := strconv.ParseInt(idPart, 10, 64)
-	return Run{Dir: path, Date: date, ID: id}, true
+	return Run{Dir: path, Repo: strings.Join(parts[:3], "/"), Date: date, ID: id}, true
 }
 
 // isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
@@ -257,8 +266,8 @@ func Execute(ctx context.Context, s *store.Store, v Victims, removed func(dir st
 		}
 	}
 	runs := v.Evicted
-	if !v.Horizon.At.IsZero() {
-		err := v.Horizon.Write(s)
+	if v.Horizons != nil {
+		err := v.Horizons.Write(s)
 		// On a full disk, a run must go first to make room for the horizon.
 		// A crash before the horizon is written costs one re-download of it.
 		for isFull(err) && len(runs) > 0 {
@@ -266,7 +275,7 @@ func Execute(ctx context.Context, s *store.Store, v Victims, removed func(dir st
 				return err
 			}
 			runs = runs[1:]
-			err = v.Horizon.Write(s)
+			err = v.Horizons.Write(s)
 		}
 		if err != nil {
 			return err

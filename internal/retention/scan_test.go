@@ -51,12 +51,12 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		runs, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(ConsistOf(
-			retention.Run{Dir: run, Date: "2026-10-01", ID: 12, Bytes: 120, Extracted: []retention.Tree{
+			retention.Run{Dir: run, Repo: "github.com/o/r", Date: "2026-10-01", ID: 12, Bytes: 120, Extracted: []retention.Tree{
 				{Dir: filepath.Join(run, "artifacts/5_report/extracted"), Bytes: 7},
 				{Dir: filepath.Join(run, "artifacts/6_cov/extracted"), Bytes: 3},
 			}},
-			retention.Run{Dir: other, Date: "2026-09-01", ID: 3, Bytes: 20},
-			retention.Run{Dir: empty, Date: "2026-09-02", ID: 4},
+			retention.Run{Dir: other, Repo: "ghe.example.com/a/b", Date: "2026-09-01", ID: 3, Bytes: 20},
+			retention.Run{Dir: empty, Repo: "ghe.example.com/a/b", Date: "2026-09-02", ID: 4},
 		))
 	})
 

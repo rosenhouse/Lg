@@ -54,7 +54,7 @@ var _ = Describe("lg gc", Label("retention"), func() {
 	It("--dry-run prints a run at or before the stored horizon", func() {
 		home := GinkgoT().TempDir()
 		Expect(store.Init(home)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(home, "state", "horizon.json"), []byte(`{"horizon":"2026-10-01T12:00:00Z"}`), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(home, "state", "horizon.json"), []byte(`{"github.com/rosenhouse/lg":"2026-10-01T12:00:00Z"}`), 0o644)).To(Succeed())
 		run := filepath.Join(home, "data", "github.com", "rosenhouse", "lg", "runs", "2026-10-01", "9_ci_main")
 		Expect(os.MkdirAll(filepath.Join(run, "attempt-1"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(run, "attempt-1", "fetch.json"), []byte(`{"run_created_at":"2026-10-01T12:00:00Z"}`), 0o644)).To(Succeed())
