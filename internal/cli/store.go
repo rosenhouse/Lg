@@ -34,17 +34,11 @@ func noStore(roots config.Roots) error {
 // writeLockWait bounds how long a writer waits for another to finish.
 const writeLockWait = 5 * time.Minute
 
-// openForWriting takes state/write.lock, which every writer of data/ and tmp/
-// holds, waiting up to timeout. Then it runs check, unless it is nil,
-// initializes the store and sweeps what dead writers left in tmp/.
+// openForWriting takes state/write.lock, as lockWrites does. Then it runs
+// check, unless it is nil, initializes the store and sweeps what dead writers
+// left in tmp/.
 func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check func() error) (*store.Store, func(), error) {
-	if err := os.MkdirAll(roots.State, 0o755); err != nil {
-		return nil, nil, err
-	}
-	writeLock := filepath.Join(roots.State, "write.lock")
-	held, err := lock.Wait(writeLock, timeout, deps.Clock, func(holder string) {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
-	})
+	held, err := lockWrites(roots, deps, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,6 +54,18 @@ func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check
 		return nil, nil, err
 	}
 	return s, func() { _ = held.Release() }, nil
+}
+
+// lockWrites takes state/write.lock, which every writer of data/ and tmp/
+// holds, waiting up to timeout.
+func lockWrites(roots config.Roots, deps *Deps, timeout time.Duration) (*lock.Lock, error) {
+	if err := os.MkdirAll(roots.State, 0o755); err != nil {
+		return nil, err
+	}
+	writeLock := filepath.Join(roots.State, "write.lock")
+	return lock.Wait(writeLock, timeout, deps.Clock, func(holder string) {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
+	})
 }
 
 func initAndSweep(fsys store.FS, root string) (*store.Store, error) {

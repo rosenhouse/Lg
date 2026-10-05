@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
+	"github.com/rosenhouse/lg/internal/status"
 )
 
 type syncCmd struct{}
@@ -29,11 +33,31 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps, writeLockWait, nil)
+	held, err := lockWrites(roots, deps, writeLockWait)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
-	defer release()
+	defer func() { _ = held.Release() }()
+	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	started := deps.Clock.Now()
+	report, err := runCycle(ctx, roots, cfg, api, deps)
+	return errors.Join(err, writeStatus(roots, cfg, status.Cycle{
+		Started:       started,
+		Finished:      deps.Clock.Now(),
+		Err:           err,
+		Completed:     err == nil || mirror.RunScoped(err),
+		DefaultBranch: report.DefaultBranch,
+	}))
+}
+
+// runCycle opens the store and runs one cycle. Callers hold state/write.lock.
+func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *url.URL, deps *Deps) (mirror.Report, error) {
+	s, err := initAndSweep(deps.StoreFS, roots.Store)
+	if err != nil {
+		return mirror.Report{}, failure.FromErrno(err)
+	}
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
@@ -49,9 +73,17 @@ func (syncCmd) Run(deps *Deps) error {
 		Retention:        time.Duration(cfg.Retention),
 		DiskCap:          int64(cfg.DiskCap),
 	}
-	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
-	_, err = m.Run(ctx)
-	return err
+	return m.Run(ctx)
+}
+
+// writeStatus completes c from cfg and the disk, and writes it over
+// state/status.json. Callers hold state/write.lock.
+func writeStatus(roots config.Roots, cfg config.Config, c status.Cycle) error {
+	path := filepath.Join(roots.State, "status.json")
+	prev, err := status.Read(path)
+	c.Repo = cfg.Host + "/" + cfg.Repo
+	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
+	var measureErr error
+	c.Disk, measureErr = status.Measure(roots.Data, roots.State, c.Repo)
+	return failure.FromErrno(errors.Join(err, measureErr, status.Write(path, status.Next(prev, c))))
 }
