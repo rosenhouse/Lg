@@ -25,7 +25,7 @@ func fetchJSON(createdAt time.Time) string {
 }
 
 var _ = Describe("Measure", Label("status"), func() {
-	It("measures the repo's runs on disk, matching its name in any case, with the newest completed run and the horizon", func() {
+	It("measures the repo's runs on disk, matching its name in any case, with the newest completed run and the horizon", MustPassRepeatedly(20), func() {
 		root := GinkgoT().TempDir()
 		data, state := filepath.Join(root, "data"), filepath.Join(root, "state")
 		completed := time.Date(2026, 10, 3, 14, 22, 54, 0, time.UTC)
