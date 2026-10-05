@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // inserter inserts rows through statements prepared once per transaction.
+// Each insert passes its values in the order its statement names the columns.
 type inserter struct {
 	runs, attempts, jobs, steps, artifacts, tombstones, units *sql.Stmt
 }
@@ -17,24 +20,24 @@ type inserter struct {
 func newInserter(ctx context.Context, tx *sql.Tx) (*inserter, error) {
 	in := &inserter{}
 	statements := []struct {
-		stmt  **sql.Stmt
-		table string
-		n     int
+		stmt    **sql.Stmt
+		table   string
+		columns []string
 	}{
-		{&in.runs, "runs", 14},
-		{&in.attempts, "attempts", 7},
-		{&in.jobs, "jobs", 15},
-		{&in.steps, "steps", 7},
-		{&in.artifacts, "artifacts", 11},
-		{&in.tombstones, "tombstones", 4},
-		{&in.units, "units", 1},
+		{&in.runs, "runs", []string{"host", "repo", "run_id", "created_at", "date_dir", "path", "workflow_id",
+			"workflow_name", "head_branch", "head_sha", "event", "pr_numbers", "display_title", "latest_attempt"}},
+		{&in.attempts, "attempts", []string{"run_id", "attempt", "path", "status", "conclusion", "run_started_at", "completed_at"}},
+		{&in.jobs, "jobs", []string{"job_id", "run_id", "attempt", "name", "slug", "kind", "original_job_id", "conclusion",
+			"started_at", "completed_at", "runner_name", "labels", "has_log", "log_bytes", "path"}},
+		{&in.steps, "steps", []string{"job_id", "number", "name", "conclusion", "started_at", "completed_at", "path"}},
+		{&in.artifacts, "artifacts", []string{"artifact_id", "run_id", "attributed_attempt", "attribution", "name", "size",
+			"created_at", "expired", "has_zip", "extracted", "path"}},
+		{&in.tombstones, "tombstones", []string{"path", "reason", "http_status", "tombstoned_at"}},
+		{&in.units, "units", []string{"path"}},
 	}
 	for _, s := range statements {
-		placeholders := "?"
-		for range s.n - 1 {
-			placeholders += ",?"
-		}
-		stmt, err := tx.PrepareContext(ctx, "INSERT INTO "+s.table+" VALUES ("+placeholders+")")
+		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (?%s)", s.table, strings.Join(s.columns, ", "), strings.Repeat(", ?", len(s.columns)-1))
+		stmt, err := tx.PrepareContext(ctx, query)
 		if err != nil {
 			return nil, errors.Join(err, in.close())
 		}
