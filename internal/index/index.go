@@ -12,10 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/layout"
 )
 
@@ -27,13 +29,15 @@ type Index struct {
 	data string
 }
 
+const busyTimeout = 10 * time.Second
+
 // Open opens the index at path over the data dir data. A transaction takes
-// the write lock at its start, and waits up to 10s for another process to
-// release it.
+// the write lock at its start, and waits up to busyTimeout for another
+// process to release it.
 func Open(path, data string) (*Index, error) {
 	// SQLite decodes a file: URI's path, so no character of path starts the query.
 	uri := "file:" + (&url.URL{Path: path}).EscapedPath()
-	db, err := sql.Open("sqlite", uri+"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_txlock=immediate")
+	db, err := sql.Open("sqlite", fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_txlock=immediate", uri, busyTimeout.Milliseconds()))
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +51,7 @@ func Open(path, data string) (*Index, error) {
 // migrate empties a db whose meta.format is not Format. It takes the write
 // lock only to do so.
 func (ix *Index) migrate(ctx context.Context) error {
-	if err := ix.db.PingContext(ctx); err != nil {
+	if err := ix.connect(ctx); err != nil {
 		return err
 	}
 	if isCurrent(ctx, ix.db) {
@@ -59,6 +63,26 @@ func (ix *Index) migrate(ctx context.Context) error {
 		}
 		return create(ctx, tx)
 	})
+}
+
+// connect retries while SQLITE_BUSY, which SQLite gives at once, without
+// waiting, when another connection reads a fresh db as it turns it to WAL.
+func (ix *Index) connect(ctx context.Context) error {
+	clk := clock.Real{}
+	deadline := clk.Now().Add(busyTimeout)
+	for {
+		err := ix.db.PingContext(ctx)
+		if !hasCode(err, sqlite3.SQLITE_BUSY) || clk.Now().After(deadline) {
+			return err
+		}
+		<-clk.After(10 * time.Millisecond)
+	}
+}
+
+// hasCode reports whether err is an SQLite error with one of the primary codes.
+func hasCode(err error, codes ...int) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && slices.Contains(codes, sqliteErr.Code()&0xff)
 }
 
 type querier interface {
@@ -128,8 +152,7 @@ func (ix *Index) Reconcile(ctx context.Context) error {
 // removes a file there that SQLite finds is not a db or is corrupt.
 func Rebuild(ctx context.Context, path, data string) error {
 	err := rebuild(ctx, path, data)
-	var sqliteErr *sqlite.Error
-	if !errors.As(err, &sqliteErr) || sqliteErr.Code()&0xff != sqlite3.SQLITE_NOTADB && sqliteErr.Code()&0xff != sqlite3.SQLITE_CORRUPT {
+	if !hasCode(err, sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT) {
 		return err
 	}
 	for _, suffix := range []string{"", "-wal", "-shm"} {
