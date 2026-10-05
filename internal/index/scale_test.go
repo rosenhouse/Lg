@@ -62,7 +62,7 @@ var _ = Describe("a store of 9,000 runs and 100,000 files", Label("index", "scal
 		data := filepath.Join(GinkgoT().TempDir(), "data")
 		Expect(writeScaleStore(data, 9_000)).To(Equal(100_000))
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
-		ix, err := index.Open(path, data)
+		ix, err := index.Open(ctx, path, data)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 

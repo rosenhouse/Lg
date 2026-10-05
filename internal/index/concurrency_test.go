@@ -34,7 +34,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 
 		opened := make(chan error, 1)
 		go func() {
-			ix, err := index.Open(dbPath(env), env.Data())
+			ix, err := index.Open(ctx, dbPath(env), env.Data())
 			if err == nil {
 				err = ix.Close()
 			}
@@ -53,7 +53,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		DeferCleanup(func() { _ = tx.Rollback() })
 		opened := make(chan error, 1)
 		go func() {
-			ix, err := index.Open(path, env.Data())
+			ix, err := index.Open(ctx, path, env.Data())
 			if err == nil {
 				err = ix.Close()
 			}
@@ -61,7 +61,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		}()
 		Consistently(opened, "200ms").ShouldNot(Receive())
 
-		Expect(index.Create(ctx, tx)).To(Succeed())
+		Expect(index.Reset(ctx, tx)).To(Succeed())
 		_, err = tx.ExecContext(ctx, "INSERT INTO runs (run_id) VALUES (1)")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tx.Commit()).To(Succeed())
@@ -70,7 +70,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	})
 
 	It("let another writer commit while Reconcile reads data/", func(ctx SpecContext) {
-		ix, err := index.Open(dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "attempt.json"))
@@ -91,7 +91,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		for range 8 {
 			wg.Go(func() {
 				defer GinkgoRecover()
-				ix, err := index.Open(dbPath(env), env.Data())
+				ix, err := index.Open(ctx, dbPath(env), env.Data())
 				Expect(err).NotTo(HaveOccurred())
 				errs <- ix.Reconcile(ctx)
 				Expect(ix.Close()).To(Succeed())
@@ -106,7 +106,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	}, syncTimeout)
 
 	It("drop a run that retention evicts while Reconcile reads data/", func(ctx SpecContext) {
-		ix, err := index.Open(dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		Expect(ix.Reconcile(ctx)).To(Succeed())

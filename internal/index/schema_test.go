@@ -12,9 +12,9 @@ import (
 )
 
 var _ = Describe("the schema", Label("index"), func() {
-	It("sets WAL, busy_timeout and meta.format 1", func() {
+	It("sets WAL, busy_timeout and meta.format 1", func(ctx SpecContext) {
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
-		ix, err := index.Open(path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -28,11 +28,11 @@ var _ = Describe("the schema", Label("index"), func() {
 })
 
 var _ = Describe("index.Open", Label("index"), func() {
-	It("keeps lg.db at path when path holds '?', '#' or '%'", func() {
+	It("keeps lg.db at path when path holds '?', '#' or '%'", func(ctx SpecContext) {
 		dir := filepath.Join(GinkgoT().TempDir(), "a?b#c%3Fd")
 		Expect(os.Mkdir(dir, 0o755)).To(Succeed())
 		path := filepath.Join(dir, "lg.db")
-		ix, err := index.Open(path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -42,14 +42,14 @@ var _ = Describe("index.Open", Label("index"), func() {
 		Expect(timeout).To(BeNumerically(">=", 5000))
 	})
 
-	It("succeeds when several open a fresh lg.db at once", func() {
+	It("succeeds when several open a fresh lg.db at once", func(ctx SpecContext) {
 		for range 20 {
 			path := filepath.Join(GinkgoT().TempDir(), "lg.db")
 			var wg sync.WaitGroup
 			for range 8 {
 				wg.Go(func() {
 					defer GinkgoRecover()
-					ix, err := index.Open(path, GinkgoT().TempDir())
+					ix, err := index.Open(ctx, path, GinkgoT().TempDir())
 					Expect(err).NotTo(HaveOccurred())
 					Expect(ix.Close()).To(Succeed())
 				})

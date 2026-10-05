@@ -42,7 +42,7 @@ func dbPath(env *harness.InProcessEnv) string { return filepath.Join(env.State()
 // reconcile opens the index at path over data, reconciles it and closes it.
 func reconcile(ctx context.Context, path string, data string) {
 	GinkgoHelper()
-	ix, err := index.Open(path, data)
+	ix, err := index.Open(ctx, path, data)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(ix.Reconcile(ctx)).To(Succeed())
 	Expect(ix.Close()).To(Succeed())

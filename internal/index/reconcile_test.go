@@ -22,7 +22,7 @@ var _ = Describe("index.Reconcile when a run's file does not parse", Label("inde
 		content, err := os.ReadFile(attemptJSON)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(attemptJSON, []byte("<"), 0o644)).To(Succeed())
-		ix, err := index.Open(dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 

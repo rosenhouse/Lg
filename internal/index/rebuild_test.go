@@ -21,7 +21,7 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 
 	It("starts from empty over a file that is not an SQLite db", func(ctx SpecContext) {
 		Expect(os.WriteFile(dbPath(env), []byte("not a db, but long enough for SQLite to read its header"), 0o644)).To(Succeed())
-		Expect(index.Open(dbPath(env), env.Data())).Error().To(MatchError(ContainSubstring(dbPath(env))))
+		Expect(index.Open(ctx, dbPath(env), env.Data())).Error().To(MatchError(ContainSubstring(dbPath(env))))
 
 		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM jobs")).To(Equal(12))
@@ -42,7 +42,7 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 
 var _ = Describe("an index transaction", Label("index"), func() {
 	It("fails with only the cause when SQLite has already rolled it back", func(ctx SpecContext) {
-		ix, err := index.Open(dbPath(harness.InProcess()), GinkgoT().TempDir())
+		ix, err := index.Open(ctx, dbPath(harness.InProcess()), GinkgoT().TempDir())
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		full := errors.New("database or disk is full")

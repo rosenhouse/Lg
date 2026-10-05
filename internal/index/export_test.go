@@ -13,4 +13,4 @@ func (ix *Index) InTx(ctx context.Context, f func(Tx) error) error {
 	return ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error { return f(tx) })
 }
 
-var Create = create
+var Reset = reset

@@ -34,7 +34,7 @@ type Index struct {
 // Open opens the index at path over the data dir data. A transaction takes
 // the write lock at its start, and waits up to busyTimeout for another
 // process to release it.
-func Open(path, data string) (*Index, error) {
+func Open(ctx context.Context, path, data string) (*Index, error) {
 	// SQLite decodes a file: URI's path, so no character of path starts the query.
 	uri := "file:" + (&url.URL{Path: path}).EscapedPath()
 	db, err := sql.Open("sqlite", fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_txlock=immediate", uri, busyTimeout.Milliseconds()))
@@ -42,15 +42,15 @@ func Open(path, data string) (*Index, error) {
 		return nil, err
 	}
 	ix := &Index{db: db, data: data}
-	if err := ix.migrate(context.Background()); err != nil {
+	if err := ix.resetUnlessCurrent(ctx); err != nil {
 		return nil, errors.Join(fmt.Errorf("%s: %w", path, err), db.Close())
 	}
 	return ix, nil
 }
 
-// migrate empties a db whose meta.format is not Format. It takes the write
-// lock only to do so.
-func (ix *Index) migrate(ctx context.Context) error {
+// resetUnlessCurrent empties a db whose meta.format is not Format. It takes
+// the write lock only to do so.
+func (ix *Index) resetUnlessCurrent(ctx context.Context) error {
 	if err := ix.connect(ctx); err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (ix *Index) migrate(ctx context.Context) error {
 		if isCurrent(ctx, tx) {
 			return nil
 		}
-		return create(ctx, tx)
+		return reset(ctx, tx)
 	})
 }
 
@@ -97,8 +97,8 @@ func isCurrent(ctx context.Context, q querier) bool {
 	return err == nil && format == Format
 }
 
-// create drops every table, then creates the schema.
-func create(ctx context.Context, tx *sql.Tx) error {
+// reset drops every table, then creates the schema.
+func reset(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (ix *Index) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return ix.index(ctx, indexed, func(context.Context, *sql.Tx) error { return nil })
+	return ix.index(ctx, indexed, false)
 }
 
 // Rebuild indexes every run on disk into an empty lg.db at path. It first
@@ -166,20 +166,20 @@ func Rebuild(ctx context.Context, path, data string) error {
 }
 
 func rebuild(ctx context.Context, path, data string) error {
-	ix, err := Open(path, data)
+	ix, err := Open(ctx, path, data)
 	if err != nil {
 		return err
 	}
-	return errors.Join(ix.index(ctx, nil, create), ix.Close())
+	return errors.Join(ix.index(ctx, nil, true), ix.Close())
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
 
 // index reads the rows of each run on disk whose unit dirs differ from
-// indexed. Then, holding the write lock, it runs prepare and writes them. It
-// returns the errors of the runs whose files it could not read, after
-// indexing the others.
-func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare func(context.Context, *sql.Tx) error) error {
+// indexed. Then, holding the write lock, it writes them, into an emptied db
+// when fresh. It returns the errors of the runs whose files it could not
+// read, after indexing the others.
+func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh bool) error {
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
 		return err
@@ -206,8 +206,10 @@ func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare
 		read[runDir] = rows
 	}
 	err = ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if err := prepare(ctx, tx); err != nil {
-			return err
+		if fresh {
+			if err := reset(ctx, tx); err != nil {
+				return err
+			}
 		}
 		return write(ctx, tx, onDisk, read)
 	})
