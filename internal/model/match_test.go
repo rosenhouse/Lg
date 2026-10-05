@@ -35,9 +35,11 @@ var _ = Describe("MatchOriginal", Label("index"), func() {
 		Fail("no such job")
 		return model.Job{}
 	}
-	originalID := func(j model.Job, earlier []model.AttemptJobs) (int64, bool) {
+	originalID := func(j model.Job, earlier []model.AttemptJobs) int64 {
+		GinkgoHelper()
 		original, ok := model.MatchOriginal(j, earlier)
-		return original.ID, ok
+		Expect(ok).To(BeTrue())
+		return original.ID
 	}
 
 	DescribeTable("tells the two 'same name' jobs apart by started_at, completed_at and runner_name",

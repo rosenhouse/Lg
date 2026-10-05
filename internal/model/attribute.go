@@ -62,4 +62,25 @@ type AttemptJobs struct {
 	Jobs         []Job
 }
 
-func MatchOriginal(job Job, earlier []AttemptJobs) (Job, bool) { return Job{}, false }
+// MatchOriginal finds the job that ran which a carried-forward job copies: the
+// latest job of the earlier attempts with its name, started_at, completed_at
+// and runner_name that is not itself carried forward.
+func MatchOriginal(job Job, earlier []AttemptJobs) (Job, bool) {
+	for _, attempt := range slices.Backward(earlier) {
+		for _, candidate := range attempt.Jobs {
+			if sameRun(candidate, job) && Classify(candidate, attempt.RunStartedAt) != CarriedForward {
+				return candidate, true
+			}
+		}
+	}
+	return Job{}, false
+}
+
+func sameRun(a, b Job) bool {
+	return a.Name == b.Name && sameTime(a.StartedAt, b.StartedAt) && sameTime(a.CompletedAt, b.CompletedAt) &&
+		(a.RunnerName == nil) == (b.RunnerName == nil) && (a.RunnerName == nil || *a.RunnerName == *b.RunnerName)
+}
+
+func sameTime(a, b *time.Time) bool {
+	return (a == nil) == (b == nil) && (a == nil || a.Equal(*b))
+}
