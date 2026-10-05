@@ -48,6 +48,7 @@ func (syncCmd) Run(deps *Deps) error {
 		Finished:      deps.Clock.Now(),
 		Err:           err,
 		Completed:     report.Completed,
+		Pending:       report.Pending,
 		DefaultBranch: report.DefaultBranch,
 	}))
 }

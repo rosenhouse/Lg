@@ -81,10 +81,12 @@ var _ = Describe("Next", Label("status"), func() {
 
 	It("gives pending units with their last error, one line each", func() {
 		c := good(started)
-		c.Err = errors.Join(
+		c.Err = errors.New("pending units and a discarded hint file")
+		c.Pending = []error{
 			errors.New("run 1 attempt 2: 502 Bad Gateway"),
-			errors.Join(errors.New("artifact 7: digest mismatch"), fmt.Errorf("run 3 attempt 1: %w", errors.Join(errors.New("a"), errors.New("b")))),
-		)
+			errors.New("artifact 7: digest mismatch"),
+			fmt.Errorf("run 3 attempt 1: %w", errors.Join(errors.New("a"), errors.New("b"))),
+		}
 
 		r := status.Next(nil, c).Repos[repo]
 		Expect(r.Pending).To(Equal([]string{"run 1 attempt 2: 502 Bad Gateway", "artifact 7: digest mismatch", "run 3 attempt 1: a b"}))

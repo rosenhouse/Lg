@@ -79,13 +79,16 @@ type Repo struct {
 type Cycle struct {
 	Started, Finished time.Time
 	Err               error
-	Completed         bool
-	Repo              string
-	DefaultBranch     string
-	SyncInterval      time.Duration
-	Retention         time.Duration
-	DiskCap           int64
-	Disk              Disk
+	// Completed is whether the cycle ran to its end.
+	Completed bool
+	// Pending are the units the cycle left for the next one, one error each.
+	Pending       []error
+	Repo          string
+	DefaultBranch string
+	SyncInterval  time.Duration
+	Retention     time.Duration
+	DiskCap       int64
+	Disk          Disk
 }
 
 type Disk struct {
@@ -130,7 +133,7 @@ func Next(prev *Status, c Cycle) Status {
 	}
 	if c.Completed {
 		st.LastSyncOKAt = &finished
-		repo.Pending = lines(c.Err)
+		repo.Pending = lines(c.Pending)
 	} else {
 		repo.Pending = append([]string{}, last.Pending...)
 		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
@@ -162,14 +165,10 @@ func timeOrNil(t time.Time) *time.Time {
 	return &t
 }
 
-// lines gives the message of each error that err joins, each on one line.
-func lines(err error) []string {
+// lines gives the message of each error on one line.
+func lines(errs []error) []string {
 	found := []string{}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, part := range joined.Unwrap() {
-			found = append(found, lines(part)...)
-		}
-	} else if err != nil {
+	for _, err := range errs {
 		found = append(found, strings.Join(strings.Fields(err.Error()), " "))
 	}
 	return found

@@ -44,6 +44,9 @@ type Report struct {
 	DefaultBranch string
 	// Completed is whether the cycle and its retention ran to their end.
 	Completed bool
+	// Pending are the runs, attempts and artifacts that a run-scoped error
+	// left for the next cycle, one error each.
+	Pending []error
 }
 
 // Cycle runs one cycle. It publishes each listed artifact and completed
@@ -133,7 +136,8 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 		return report, err
 	}
 	report.Completed = true
-	return report, errors.Join(slices.Concat([]error{discardedPending, discardedWatch, d.failed}, artifactsFailed, attemptsFailed)...)
+	report.Pending = slices.Concat(d.watchFailed, artifactsFailed, attemptsFailed)
+	return report, errors.Join(append([]error{discardedPending, discardedWatch, d.failed}, report.Pending...)...)
 }
 
 // saveWatch watches the runs the cycle left incomplete on disk, except those

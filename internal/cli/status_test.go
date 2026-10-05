@@ -195,6 +195,38 @@ var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 	})
 })
 
+var _ = DescribeTable("lg sync that discards a corrupt hint file", Label("status"),
+	func(name string) {
+		s := newSyncEnv()
+		Expect(s.main("sync")).To(Equal(0))
+		Expect(os.WriteFile(filepath.Join(s.home, "state", name), []byte("{"), 0o644)).To(Succeed())
+
+		Expect(s.main("sync")).To(Equal(1))
+		Expect(s.stderr.String()).To(ContainSubstring(name + ".corrupt"))
+
+		repo := s.status()["repos"].(map[string]any)["github.com/rosenhouse/lg"]
+		Expect(repo).To(HaveKeyWithValue("pending_units", 0.0))
+		Expect(repo).To(HaveKeyWithValue("pending", BeEmpty()))
+	},
+	Entry("watch.json", "watch.json"),
+	Entry("pending-artifacts.json", "pending-artifacts.json"),
+	Entry("rescan.json", "rescan.json"),
+)
+
+var _ = Describe("lg sync with a watched run GitHub fails to serve", Label("status"), func() {
+	It("records the run as pending", func() {
+		s := newSyncEnv()
+		Expect(s.main("sync")).To(Equal(0))
+		Expect(os.WriteFile(filepath.Join(s.home, "state", "watch.json"), []byte(`{"github.com": {"42": {"created_at": "2026-10-03T17:00:00Z"}}}`), 0o644)).To(Succeed())
+		s.fake.Fail("api", "/actions/runs/42", fakegithub.Fault{Status: http.StatusBadGateway})
+
+		Expect(s.main("sync")).To(Equal(1))
+
+		repo := s.status()["repos"].(map[string]any)["github.com/rosenhouse/lg"]
+		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(HavePrefix("run 42: "), ContainSubstring("502 Bad Gateway")))))
+	})
+})
+
 var _ = Describe("cli.Main with a status.json it cannot parse", Label("status"), func() {
 	It("warns naming the file and runs the command", func() {
 		s := newSyncEnv()

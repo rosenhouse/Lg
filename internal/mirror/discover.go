@@ -110,8 +110,10 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
-	// failed joins the errors that runScoped accepts.
+	// failed joins the errors that runScoped accepts, but for watchFailed.
 	failed error
+	// watchFailed are the watched runs that GitHub failed to serve.
+	watchFailed []error
 }
 
 // discover lists the runs the cycle syncs: those created in the backfill
@@ -164,7 +166,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		return discovery{}, err
 	}
 	listed = append(listed, watched...)
-	d.failed = errors.Join(d.failed, failed)
+	d.watchFailed = failed
 	if i := slices.IndexFunc(listed, func(run github.Run) bool { return !ofRepo(run, repo) }); i >= 0 {
 		return discovery{}, fmt.Errorf("run %d belongs to %q, not %q", listed[i].ID, listed[i].Repository.FullName, repo.FullName)
 	}
@@ -248,9 +250,9 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 
 // fetchWatched gets each watched run that no listing named, since a run
 // created before the backfill window appears in no listing once it
-// completes. A run GitHub no longer has leaves the watch list. It joins
+// completes. A run GitHub no longer has leaves the watch list. It returns
 // the errors that runScoped accepts, leaving their runs watched.
-func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed, err error) {
+func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed []error, err error) {
 	for _, id := range slices.Sorted(maps.Keys(w.runs)) {
 		if slices.ContainsFunc(listed, func(run github.Run) bool { return run.ID == id }) {
 			delete(w.runs, id)
@@ -261,7 +263,7 @@ func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, l
 		case errors.Is(err, github.ErrNotFound):
 			delete(w.runs, id)
 		case runScoped(err):
-			failed = errors.Join(failed, fmt.Errorf("run %d: %w", id, err))
+			failed = append(failed, fmt.Errorf("run %d: %w", id, err))
 		case err != nil:
 			return nil, nil, err
 		default:
