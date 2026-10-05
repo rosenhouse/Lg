@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,7 +29,9 @@ type Index struct {
 // takes the write lock at its start, and waits up to 10s for another
 // process to release it.
 func Open(path, data string) (*Index, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_txlock=immediate")
+	// SQLite decodes a file: URI's path, so no character of path starts the query.
+	uri := "file:" + (&url.URL{Path: path}).EscapedPath()
+	db, err := sql.Open("sqlite", uri+"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
