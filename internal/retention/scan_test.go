@@ -109,6 +109,25 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		Entry("a file", "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1/log.txt"),
 	)
 
+	DescribeTable("returns an error naming a symlink where a host, owner, repo, runs or date dir goes, since the walk does not follow it",
+		func(rel string) {
+			root := GinkgoT().TempDir()
+			data := filepath.Join(root, "data")
+			writeSized(root, "elsewhere/2026-10-01/1_ci_main/attempt-1/log.txt", 1)
+			link := filepath.Join(data, rel)
+			Expect(os.MkdirAll(filepath.Dir(link), 0o755)).To(Succeed())
+			Expect(os.Symlink(filepath.Join(root, "elsewhere"), link)).To(Succeed())
+
+			_, err := retention.Scan(data)
+			Expect(err).To(MatchError(ContainSubstring(link)))
+		},
+		Entry("host", "github.com"),
+		Entry("owner", "github.com/o"),
+		Entry("repo", "github.com/o/r"),
+		Entry("runs", "github.com/o/r/runs"),
+		Entry("date", "github.com/o/r/runs/2026-10-01"),
+	)
+
 	It("finds nothing in a missing data/", func() {
 		runs, err := retention.Scan(filepath.Join(GinkgoT().TempDir(), "data"))
 		Expect(err).NotTo(HaveOccurred())

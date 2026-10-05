@@ -349,6 +349,9 @@ func (s *Store) Publish(u *Unit, target string) error {
 		}
 	}
 	parent := filepath.Dir(target)
+	if err := s.refuseLinks(parent); err != nil {
+		return err
+	}
 	if err := mkdirAll(s.fs, parent); err != nil {
 		return err
 	}
@@ -360,6 +363,26 @@ func (s *Store) Publish(u *Unit, target string) error {
 	}
 	return s.fs.SyncDir(parent)
 }
+
+// refuseLinks refuses a symlink at dir or at a parent of it below data/,
+// since retention does not follow one.
+func (s *Store) refuseLinks(dir string) error {
+	for ; within(dir, s.data); dir = filepath.Dir(dir) {
+		info, err := s.fs.Lstat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink, which lg does not follow below %s", dir, s.data)
+		}
+	}
+	return nil
+}
+
+func within(path, dir string) bool { return strings.HasPrefix(path, dir+string(filepath.Separator)) }
 
 func mkdirAll(fsys FS, dir string) error {
 	_, err := mkdirBelow(fsys, "", dir, true)

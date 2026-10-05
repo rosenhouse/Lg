@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -166,6 +167,9 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 			return err
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
+		if d.Type()&fs.ModeSymlink != 0 && len(parts) <= dateDepth {
+			return fmt.Errorf("%s is a symlink, which lg does not follow below %s", path, data)
+		}
 		// WalkDir visits all of a dir before its next sibling, so a path
 		// within any run is within the last run found.
 		run := last(runs)
@@ -198,6 +202,9 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 	}
 	return runs, err
 }
+
+// dateDepth is the depth below data/ of <host>/<owner>/<repo>/runs/<date>.
+const dateDepth = 5
 
 // runAt gives the run at path, when parts, its path below data/, are
 // <host>/<owner>/<repo>/runs/<date>/<run>.
@@ -293,21 +300,46 @@ func runCreatedAt(dir string) time.Time {
 }
 
 func removeEmptyDates(s *store.Store) error {
-	dates, err := filepath.Glob(filepath.Join(s.Data(), "*", "*", "*", "runs", "*"))
+	dates, err := dateDirs(s.Data())
 	if err != nil {
 		return err
 	}
 	for _, date := range dates {
-		info, err := os.Lstat(date)
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			continue
-		}
 		if err := s.RemoveEmpty(date); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// dateDirs gives each dir at data/<host>/<owner>/<repo>/runs/<date>,
+// following no symlink.
+func dateDirs(data string) ([]string, error) {
+	isAny := func(string) bool { return true }
+	isDate := func(name string) bool {
+		_, err := time.Parse(time.DateOnly, name)
+		return err == nil
+	}
+	dirs := []string{data}
+	for _, match := range []func(string) bool{isAny, isAny, isAny, isRuns, isDate} {
+		var next []string
+		for _, dir := range dirs {
+			entries, err := os.ReadDir(dir)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			for _, e := range entries {
+				if e.IsDir() && match(e.Name()) {
+					next = append(next, filepath.Join(dir, e.Name()))
+				}
+			}
+		}
+		dirs = next
+	}
+	return dirs, nil
+}
+
+func isRuns(name string) bool { return name == "runs" }

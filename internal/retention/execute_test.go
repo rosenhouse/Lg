@@ -90,6 +90,24 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(filepath.Join(runs, "2026-06-01")).NotTo(BeAnExistingFile())
 	})
 
+	It("leaves an empty dir under runs/ whose name is not a date", func() {
+		notes := filepath.Join(runs, "notes")
+		Expect(os.MkdirAll(notes, 0o755)).To(Succeed())
+
+		Expect(retention.Execute(context.Background(), s, retention.Victims{}, record)).To(Succeed())
+		Expect(notes).To(BeADirectory())
+	})
+
+	It("removes no empty date dir through a symlink", func() {
+		outside := filepath.Join(GinkgoT().TempDir(), "outside")
+		empty := filepath.Join(outside, "owner", "repo", "runs", "2026-01-01")
+		Expect(os.MkdirAll(empty, 0o755)).To(Succeed())
+		Expect(os.Symlink(outside, filepath.Join(s.Data(), "linkedhost"))).To(Succeed())
+
+		Expect(retention.Execute(context.Background(), s, retention.Victims{}, record)).To(Succeed())
+		Expect(empty).To(BeADirectory())
+	})
+
 	It("leaves a file among the date dirs alone", func() {
 		writeSized(runs, "notes.txt", 1)
 

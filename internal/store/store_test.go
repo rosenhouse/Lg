@@ -287,6 +287,23 @@ var _ = Describe("Publish", Label("store"), func() {
 		Expect(filepath.Join(root, attemptPath)).NotTo(BeAnExistingFile())
 	})
 
+	DescribeTable("refuses to publish through a symlink below data/, which retention would not follow",
+		func(rel string) {
+			root := newStore()
+			outside := filepath.Join(GinkgoT().TempDir(), "outside")
+			Expect(os.Mkdir(outside, 0o755)).To(Succeed())
+			link := filepath.Join(root, "data", rel)
+			Expect(os.MkdirAll(filepath.Dir(link), 0o755)).To(Succeed())
+			Expect(os.Symlink(outside, link)).To(Succeed())
+
+			Expect(publishAttempt(open(root), "{}")).To(MatchError(ContainSubstring(link)))
+			Expect(os.ReadDir(outside)).To(BeEmpty())
+		},
+		Entry("host", "github.com"),
+		Entry("repo", "github.com/o/r"),
+		Entry("date", "github.com/o/r/runs/2026-10-03"),
+	)
+
 	It("maps EEXIST from renaming onto a non-empty dir to ErrExists", func() {
 		root := newStore()
 		Expect(publishAttempt(open(root), "{}")).To(Succeed())

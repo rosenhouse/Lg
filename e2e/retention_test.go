@@ -162,6 +162,27 @@ var _ = Describe("lg gc", Label("retention"), func() {
 	})
 })
 
+var _ = Describe("lg gc with a symlinked repo dir", Label("retention"), func() {
+	It("fails naming the link and removes nothing outside the store", func() {
+		env := harness.New(lgPath)
+		env.WriteConfig("http://127.0.0.1:1")
+		expired := handMadeRun(env, "github.com/rosenhouse/Lg/runs/2026-06-01/1_ci_main")
+		outside := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(outside, "runs", "2026-01-01"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(outside, "runs", "2026-01-02", "5_ci_main"), 0o755)).To(Succeed())
+		link := filepath.Join(env.Data(), "github.com", "other", "repo")
+		Expect(os.MkdirAll(filepath.Dir(link), 0o755)).To(Succeed())
+		Expect(os.Symlink(outside, link)).To(Succeed())
+		before := treesnap.Snapshot(outside)
+
+		session := gc(env)
+		Expect(session).To(gexec.Exit(1))
+		Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta(link)))
+		Expect(treesnap.Snapshot(outside)).To(Equal(before))
+		Expect(expired).To(BeADirectory())
+	})
+})
+
 var _ = Describe("lg gc into a pipe whose reader has closed", Label("retention"), func() {
 	It("evicts every victim and exits 1, not by SIGPIPE", func() {
 		env := harness.New(lgPath)
