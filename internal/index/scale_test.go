@@ -57,7 +57,7 @@ func writeScaleStore(data string, runs int) (files int) {
 	return files
 }
 
-var _ = Describe("a store of 9,000 runs and 100,000 files", Label("index", "scale"), func() {
+var _ = Describe("a store of 9,000 runs and 100,000 files", Label("scale"), func() {
 	It("reconciles a no-op in under 1s and rebuilds in under 60s", func(ctx SpecContext) {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
 		Expect(writeScaleStore(data, 9_000)).To(Equal(100_000))
