@@ -1,6 +1,7 @@
 package index_test
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -165,6 +166,38 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
 	}, syncTimeout)
 
+	It("all succeed when several already open reconcile an unindexed store at once, with no busy timeout", func(ctx SpecContext) {
+		DeferCleanup(index.SetBusyTimeout, index.SetBusyTimeout(0))
+		indexes := openIndexes(ctx, env, 8)
+		var wg sync.WaitGroup
+		errs := make(chan error, len(indexes))
+		for _, ix := range indexes {
+			wg.Go(func() { errs <- ix.Reconcile(ctx) })
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
+	}, syncTimeout)
+
+	It("rewrite no run that another indexed while they waited to write", func(ctx SpecContext) {
+		indexes := openIndexes(ctx, env, 2)
+		held, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		reconciled := make(chan error, 2)
+		for _, ix := range indexes {
+			go func() { reconciled <- ix.Reconcile(ctx) }()
+		}
+		Consistently(reconciled, "200ms").ShouldNot(Receive())
+
+		Expect(held.Release()).To(Succeed())
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
+		Expect(count(openDB(dbPath(env)), "SELECT max(rowid) FROM runs")).To(Equal(2))
+	}, syncTimeout)
+
 	It("drop a run that retention evicts while Reconcile reads data/", func(ctx SpecContext) {
 		ix, err := index.Open(ctx, dbPath(env), env.Data())
 		Expect(err).NotTo(HaveOccurred())
@@ -226,6 +259,18 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 			To(Equal([]int64{1, 2}))
 	}, syncTimeout)
 })
+
+func openIndexes(ctx context.Context, env *harness.InProcessEnv, n int) []*index.Index {
+	GinkgoHelper()
+	var indexes []*index.Index
+	for range n {
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		indexes = append(indexes, ix)
+	}
+	return indexes
+}
 
 // impatientWriter opens path for writes that fail at once while another holds the write lock.
 func impatientWriter(path string) *sql.DB {

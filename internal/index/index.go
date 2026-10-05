@@ -26,7 +26,11 @@ import (
 // Format is meta.format. Open empties a db of any other format.
 const Format = 1
 
-const busyTimeout = 10 * time.Second
+// busyTimeout is how long a transaction waits for another's write lock.
+var busyTimeout = 10 * time.Second
+
+// lockTimeout is how long an index user waits for lg.db.lock.
+const lockTimeout = 10 * time.Second
 
 type Index struct {
 	db         *sql.DB
@@ -51,7 +55,7 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 // lockFile takes path.lock. Every opener holds it, so none opens a file
 // while another replaces it.
 func lockFile(path string) (*lock.Lock, error) {
-	return lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
+	return lock.Wait(path+".lock", lockTimeout, clock.Real{}, func(string) {})
 }
 
 // openReadable opens path, first removing a file SQLite cannot read.
