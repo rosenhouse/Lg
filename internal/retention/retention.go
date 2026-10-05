@@ -4,7 +4,12 @@ package retention
 
 import (
 	"cmp"
+	"errors"
+	"io/fs"
+	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -89,5 +94,77 @@ func Plan(u Usage, cutoff string, diskCap int64) Victims {
 	return v
 }
 
-// Scan reads the runs under data/<host>/<owner>/<repo>/runs/<date>/.
-func Scan(data string) (Usage, error) { return Usage{}, nil }
+// Scan finds the run dirs under every data/<host>/<owner>/<repo>/runs/<date>/,
+// and sums the apparent bytes of the regular files under data/.
+func Scan(data string) (Usage, error) {
+	var u Usage
+	err := filepath.WalkDir(data, func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) && path == data {
+			return fs.SkipAll
+		}
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(data, path)
+		if err != nil {
+			return err
+		}
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		// WalkDir visits all of a dir before its next sibling, so a path
+		// within any run is within the last run found.
+		run := last(u.Runs)
+		if d.IsDir() {
+			if r, ok := runAt(path, parts); ok {
+				u.Runs = append(u.Runs, r)
+			} else if isExtracted(parts) && run != nil && within(path, run.Dir) {
+				run.Extracted = append(run.Extracted, Tree{Dir: path})
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		u.Bytes += info.Size()
+		if run != nil && within(path, run.Dir) {
+			run.Bytes += info.Size()
+			if tree := last(run.Extracted); tree != nil && within(path, tree.Dir) {
+				tree.Bytes += info.Size()
+			}
+		}
+		return nil
+	})
+	return u, err
+}
+
+// runAt gives the run at path, when parts, its path below data/, are
+// <host>/<owner>/<repo>/runs/<date>/<run>.
+func runAt(path string, parts []string) (Run, bool) {
+	if len(parts) != 6 || parts[3] != "runs" {
+		return Run{}, false
+	}
+	date := parts[4]
+	if _, err := time.Parse(time.DateOnly, date); err != nil {
+		return Run{}, false
+	}
+	idPart, _, _ := strings.Cut(parts[5], "_")
+	id, _ := strconv.ParseInt(idPart, 10, 64)
+	return Run{Dir: path, Date: date, ID: id}, true
+}
+
+// isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
+func isExtracted(parts []string) bool {
+	return len(parts) == 9 && parts[6] == "artifacts" && parts[8] == "extracted"
+}
+
+func within(path, dir string) bool { return strings.HasPrefix(path, dir+string(filepath.Separator)) }
+
+func last[T any](s []T) *T {
+	if len(s) == 0 {
+		return nil
+	}
+	return &s[len(s)-1]
+}
