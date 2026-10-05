@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -153,6 +154,19 @@ var _ = Describe("Held", Label("status"), func() {
 		Expect(lock.Held(path)).To(BeTrue())
 		Expect(held.Release()).To(Succeed())
 		Expect(lock.Held(path)).To(BeFalse())
+	})
+
+	It("delays a Wait with no timeout that overlaps it, without failing the Wait", func() {
+		Expect(os.WriteFile(path, nil, 0o644)).To(Succeed())
+		shared, err := os.Open(path)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = shared.Close() })
+		Expect(syscall.Flock(int(shared.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)).To(Succeed(), "as Held does")
+
+		held, err := lock.Wait(path, 0, clock.Real{}, func(string) { Expect(shared.Close()).To(Succeed()) })
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(held.Release()).To(Succeed())
 	})
 
 	It("leaves the lock free for Wait", func() {
