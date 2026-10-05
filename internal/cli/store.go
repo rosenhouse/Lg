@@ -25,6 +25,12 @@ func loadConfig(env map[string]string) (config.Roots, config.Config, error) {
 	return roots, cfg, err
 }
 
+// noStore is the error for a command that needs a store at a root without one,
+// which is likely a mistyped LG_HOME.
+func noStore(roots config.Roots) error {
+	return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
+}
+
 // writeLockWait bounds how long a writer waits for another to finish.
 const writeLockWait = 5 * time.Minute
 
