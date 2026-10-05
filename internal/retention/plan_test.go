@@ -14,14 +14,6 @@ func run(date string, id int64, bytes int64, extracted ...retention.Tree) retent
 	return retention.Run{Dir: fmt.Sprintf("%s/%d", date, id), Date: date, ID: id, Bytes: bytes, Extracted: extracted}
 }
 
-func dirs(runs []retention.Run) []string {
-	out := []string{}
-	for _, r := range runs {
-		out = append(out, r.Dir)
-	}
-	return out
-}
-
 var _ = Describe("retention.Cutoff", Label("retention"), func() {
 	It("is the UTC date retention before now", func() {
 		Expect(retention.Cutoff(time.Date(2027, 1, 1, 18, 0, 0, 0, time.UTC), 90*24*time.Hour)).To(Equal("2026-10-03"))
@@ -86,7 +78,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 
 		v := retention.Plan(runs, retention.Horizon{}, cutoff, 27)
 		Expect(v.Extracted).To(Equal([]string{"x"}))
-		Expect(dirs(v.Evicted)).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
+		Expect(v.Evicted).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
 	})
 
 	It("also evicts each kept run created at or before an evicted run, so the horizon passes no kept run", func() {
@@ -95,7 +87,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		runs[0].CreatedAt, runs[1].CreatedAt, runs[2].CreatedAt, runs[3].CreatedAt = at(12), at(6), at(12), at(13)
 
 		v := retention.Plan(runs, retention.Horizon{}, cutoff, 40)
-		Expect(dirs(v.Evicted)).To(Equal([]string{runs[0].Dir, runs[1].Dir, runs[2].Dir}))
+		Expect(v.Evicted).To(Equal([]string{runs[0].Dir, runs[1].Dir, runs[2].Dir}))
 	})
 
 	It("evicts each kept run created at or before the stored horizon, under disk_cap too, and keeps that horizon", func() {
@@ -104,7 +96,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		runs[0].CreatedAt, runs[1].CreatedAt = stored.At, stored.At.Add(time.Second)
 
 		v := retention.Plan(runs, stored, cutoff, 100)
-		Expect(dirs(v.Evicted)).To(Equal([]string{runs[0].Dir}))
+		Expect(v.Evicted).To(Equal([]string{runs[0].Dir}))
 		Expect(v.Horizon).To(BeZero())
 	})
 
@@ -114,7 +106,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		runs[0].CreatedAt, runs[1].CreatedAt = time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
 
 		v := retention.Plan(runs, stored, cutoff, 10)
-		Expect(dirs(v.Evicted)).To(Equal([]string{runs[0].Dir, runs[1].Dir}))
+		Expect(v.Evicted).To(Equal([]string{runs[0].Dir, runs[1].Dir}))
 		Expect(v.Horizon.At).To(BeTemporally("==", runs[0].CreatedAt))
 	})
 
@@ -136,7 +128,7 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 	})
 
 	It("lists every dir it removes, in order", func() {
-		v := retention.Victims{Expired: []string{"a"}, Extracted: []string{"b"}, Evicted: []retention.Run{{Dir: "c"}}}
+		v := retention.Victims{Expired: []string{"a"}, Extracted: []string{"b"}, Evicted: []string{"c"}}
 		Expect(v.Dirs()).To(Equal([]string{"a", "b", "c"}))
 	})
 })

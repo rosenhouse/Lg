@@ -46,19 +46,13 @@ type Victims struct {
 	// Extracted and then Evicted are removed while the runs are over disk_cap.
 	// Evicted also holds the kept runs that Horizon passes.
 	Extracted []string
-	Evicted   []Run
+	Evicted   []string
 	// Horizon is what Execute raises state/horizon.json to, and zero when it
 	// stays.
 	Horizon Horizon
 }
 
-func (v Victims) Dirs() []string {
-	dirs := slices.Concat(v.Expired, v.Extracted)
-	for _, r := range v.Evicted {
-		dirs = append(dirs, r.Dir)
-	}
-	return dirs
-}
+func (v Victims) Dirs() []string { return slices.Concat(v.Expired, v.Extracted, v.Evicted) }
 
 // Cutoff is the UTC date retention before now. Date dirs before it expire.
 func Cutoff(now time.Time, retention time.Duration) string {
@@ -104,19 +98,17 @@ func Plan(runs []Run, h Horizon, cutoff string, diskCap int64) Victims {
 			kept[i].Bytes -= tree.Bytes
 		}
 	}
-	for _, r := range kept {
-		if total <= diskCap {
-			break
-		}
-		v.Evicted = append(v.Evicted, r)
-		total -= r.Bytes
+	n := 0
+	for ; n < len(kept) && total > diskCap; n++ {
+		v.Evicted = append(v.Evicted, kept[n].Dir)
+		total -= kept[n].Bytes
 	}
-	if newest := newestCreatedAt(v.Evicted); newest.After(h.At) {
+	if newest := newestCreatedAt(kept[:n]); newest.After(h.At) {
 		h.At, v.Horizon = newest, Horizon{At: newest}
 	}
-	for _, r := range kept[len(v.Evicted):] {
+	for _, r := range kept[n:] {
 		if !r.CreatedAt.IsZero() && h.Skips(r.CreatedAt) {
-			v.Evicted = append(v.Evicted, r)
+			v.Evicted = append(v.Evicted, r.Dir)
 		}
 	}
 	return v
@@ -264,7 +256,7 @@ func Execute(ctx context.Context, s *store.Store, v Victims, removed io.Writer) 
 		// On a full disk, a run must go first to make room for the horizon.
 		// A crash before the horizon is written costs one re-download of it.
 		for isFull(err) && len(runs) > 0 {
-			if err := evict(runs[0].Dir); err != nil {
+			if err := evict(runs[0]); err != nil {
 				return err
 			}
 			runs = runs[1:]
@@ -274,8 +266,8 @@ func Execute(ctx context.Context, s *store.Store, v Victims, removed io.Writer) 
 			return err
 		}
 	}
-	for _, r := range runs {
-		if err := evict(r.Dir); err != nil {
+	for _, dir := range runs {
+		if err := evict(dir); err != nil {
 			return err
 		}
 	}
