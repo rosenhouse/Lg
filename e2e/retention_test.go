@@ -223,6 +223,7 @@ var _ = Describe("lg gc while a cycle is publishing", Label("retention"), func()
 		release := fake.Hold("jobs/111221289888/logs")
 		sync := env.Lg("sync")
 		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix("jobs/111221289888/logs"))))
+		env.Setenv("LG_TEST_NOW", harness.DefaultNow().Add(91*scenario.Day).Format(time.RFC3339))
 
 		session := env.Lg("gc")
 		Eventually(session.Err, harness.ExitTimeout).Should(gbytes.Say("lg: waiting for "))
@@ -231,8 +232,9 @@ var _ = Describe("lg gc while a cycle is publishing", Label("retention"), func()
 		release()
 		Eventually(sync, harness.ExitTimeout).Should(gexec.Exit(0))
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(filepath.Join(env.Data(), fixtureRunDir, "attempt-1")).To(BeADirectory())
-		Expect(old).NotTo(BeADirectory())
+		fixture := filepath.Join(env.Data(), fixtureRunDir)
+		Expect(string(session.Out.Contents())).To(Equal(fixture + "\n"))
+		Expect(fixture).NotTo(BeADirectory())
 	})
 })
 
@@ -321,8 +323,8 @@ var _ = Describe("lg sync", Label("retention"), func() {
 })
 
 var _ = Describe("lg sync", Label("retention"), func() {
-	It("runs gc after the cycle, also when the cycle is blocked", func() {
-		for exit, blocked := range map[int]bool{0: false, 3: true} {
+	DescribeTable("runs gc after the cycle, also when the cycle is blocked",
+		func(blocked bool, exit int) {
 			env := harness.New(lgPath)
 			fake := fakegithub.New()
 			DeferCleanup(fake.Close)
@@ -333,8 +335,10 @@ var _ = Describe("lg sync", Label("retention"), func() {
 			}
 
 			session := env.Lg("sync")
-			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(exit), "blocked %t", blocked)
-			Expect(old).NotTo(BeADirectory(), "blocked %t", blocked)
-		}
-	})
+			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(exit))
+			Expect(old).NotTo(BeADirectory())
+		},
+		Entry("unblocked", false, 0),
+		Entry("blocked", true, 3),
+	)
 })
