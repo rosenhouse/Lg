@@ -2,6 +2,7 @@ package retention_test
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,40 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 			HaveField("CreatedAt", BeZero()),
 		))
 	})
+
+	It("charges no run with an extracted/ tree outside a date dir", func() {
+		data := filepath.Join(GinkgoT().TempDir(), "data")
+		writeSized(data, "github.com/o/r/runs/2026-10-01/5_ci_main/attempt-1/log.txt", 1)
+		writeSized(data, "github.com/o/r/runs/notes/1_x/artifacts/a/extracted/b.txt", 1)
+
+		u, err := retention.Scan(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(u.Runs).To(ConsistOf(HaveField("Extracted", BeEmpty())))
+	})
+
+	DescribeTable("skips what an eviction removes during the walk, since gc --dry-run takes no lock",
+		func(rel string) {
+			data := filepath.Join(GinkgoT().TempDir(), "data")
+			writeSized(data, "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1/log.txt", 1)
+			writeSized(data, "github.com/o/r/runs/2026-10-02/2_ci_main/attempt-1/log.txt", 1)
+			gone := filepath.Join(data, rel)
+			DeferCleanup(func(walkDir func(string, fs.WalkDirFunc) error) { *retention.WalkDir = walkDir }, *retention.WalkDir)
+			*retention.WalkDir = func(root string, fn fs.WalkDirFunc) error {
+				return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+					if path == gone && err == nil {
+						Expect(os.RemoveAll(gone)).To(Succeed())
+					}
+					return fn(path, d, err)
+				})
+			}
+
+			u, err := retention.Scan(data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(u.Runs).To(ContainElement(HaveField("ID", int64(2))))
+		},
+		Entry("a run dir", "github.com/o/r/runs/2026-10-01/1_ci_main"),
+		Entry("a file", "github.com/o/r/runs/2026-10-01/1_ci_main/attempt-1/log.txt"),
+	)
 
 	It("finds nothing in a missing data/", func() {
 		u, err := retention.Scan(filepath.Join(GinkgoT().TempDir(), "data"))

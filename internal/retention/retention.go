@@ -137,9 +137,10 @@ func Find(data string, now time.Time, retention time.Duration, diskCap int64) (V
 // and sums the apparent bytes of the regular files under data/.
 func Scan(data string) (Usage, error) {
 	var u Usage
-	err := filepath.WalkDir(data, func(path string, d fs.DirEntry, err error) error {
-		if errors.Is(err, fs.ErrNotExist) && path == data {
-			return fs.SkipAll
+	err := walkDir(data, func(path string, d fs.DirEntry, err error) error {
+		// Only eviction removes what is under data/.
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
 		}
 		if err != nil {
 			return err
@@ -164,6 +165,9 @@ func Scan(data string) (Usage, error) {
 			return nil
 		}
 		info, err := d.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -181,6 +185,8 @@ func Scan(data string) (Usage, error) {
 	}
 	return u, err
 }
+
+var walkDir = filepath.WalkDir
 
 // runAt gives the run at path, when parts, its path below data/, are
 // <host>/<owner>/<repo>/runs/<date>/<run>.
