@@ -1,6 +1,7 @@
 package status_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -119,6 +120,14 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(second.Blocked).To(Equal(&status.Blocked{Since: started.UTC(), Kind: failure.Unreachable, Detail: "dial"}))
 		Expect(third.Blocked).To(BeNil())
 		Expect(third.LastSyncOKAt).To(Equal(ptr(finished.Add(2 * time.Hour))))
+	})
+
+	It("keeps blocked, and its since, after a cycle that stopped without blocking", func() {
+		prev := status.Next(nil, blockedCycle(started, failure.Blocked{Kind: failure.Auth, Detail: "keyring"}))
+		c := good(started.Add(time.Hour))
+		c.Completed, c.Err = false, context.Canceled
+
+		Expect(status.Next(&prev, c).Blocked).To(Equal(prev.Blocked))
 	})
 
 	It("records a cycle that stopped without blocking as neither good nor blocked", func() {

@@ -144,15 +144,20 @@ func Next(prev *Status, c Cycle) Status {
 }
 
 // nextBlocked is what err blocks, since prev's blocked.since when prev was
-// blocked too, else since started.
+// blocked too, else since started. An err that blocks nothing keeps prev's
+// blocked.
 func nextBlocked(prev *Status, err error, started time.Time) *Blocked {
+	var last *Blocked
+	if prev != nil {
+		last = prev.Blocked
+	}
 	var b failure.Blocked
 	if !errors.As(err, &b) {
-		return nil
+		return last
 	}
 	since := started
-	if prev != nil && prev.Blocked != nil {
-		since = prev.Blocked.Since
+	if last != nil {
+		since = last.Since
 	}
 	return &Blocked{Since: since, Kind: b.Kind, Detail: b.Detail, RetryAt: timeOrNil(b.RetryAt)}
 }
