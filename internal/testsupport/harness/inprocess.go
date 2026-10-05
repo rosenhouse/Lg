@@ -27,8 +27,8 @@ import (
 // DefaultNow is the LG_TEST_NOW of each spec and the time fakegithub's clock starts at.
 func DefaultNow() time.Time { return recordings.DefaultNow() }
 
-// shortTimeouts let fault specs give up on a stalled fake within seconds.
-func shortTimeouts() github.Timeouts {
+// ShortTimeouts let fault specs give up on a stalled fake within seconds.
+func ShortTimeouts() github.Timeouts {
 	return github.Timeouts{Dial: time.Second, TLSHandshake: time.Second, ResponseHeader: time.Second, BodyIdle: time.Second}
 }
 
@@ -57,7 +57,7 @@ func InProcess() *InProcessEnv {
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	clk := clock.NewFake(DefaultNow())
 	fake.SetClock(clk)
-	transport := github.NewTransport(shortTimeouts())
+	transport := github.NewTransport(ShortTimeouts())
 	return &InProcessEnv{
 		FS:    fsys,
 		Fake:  fake,
