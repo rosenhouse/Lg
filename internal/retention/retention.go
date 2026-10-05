@@ -234,44 +234,36 @@ func Execute(s *store.Store, v Victims, removed io.Writer) error {
 			return err
 		}
 	}
-	runs := v.Evicted
-	err := raiseHorizon(s, v.Evicted)
-	// On a full disk, a run must go first to make room for the horizon. A
-	// crash before the horizon is written costs one re-download of it.
-	for errors.Is(err, syscall.ENOSPC) && len(runs) > 0 {
-		if err := evict(runs[0].Dir); err != nil {
-			return err
-		}
-		runs = runs[1:]
-		err = raiseHorizon(s, v.Evicted)
-	}
+	h, discarded, err := ReadHorizon(s)
 	if err != nil {
 		return err
+	}
+	raised := h
+	if newest := newestCreatedAt(v.Evicted); newest.After(raised.At) {
+		raised.At = newest
+	}
+	runs := v.Evicted
+	if raised != h {
+		err := raised.Write(s)
+		// On a full disk, a run must go first to make room for the horizon.
+		// A crash before the horizon is written costs one re-download of it.
+		for errors.Is(err, syscall.ENOSPC) && len(runs) > 0 {
+			if err := evict(runs[0].Dir); err != nil {
+				return err
+			}
+			runs = runs[1:]
+			err = raised.Write(s)
+		}
+		if err != nil {
+			return err
+		}
 	}
 	for _, r := range runs {
 		if err := evict(r.Dir); err != nil {
 			return err
 		}
 	}
-	return removeEmptyDates(s)
-}
-
-func raiseHorizon(s *store.Store, evicted []Run) error {
-	if len(evicted) == 0 {
-		return nil
-	}
-	h, err := ReadHorizon(s)
-	if err != nil {
-		return err
-	}
-	raised := h
-	if newest := newestCreatedAt(evicted); newest.After(raised.At) {
-		raised.At = newest
-	}
-	if raised == h {
-		return nil
-	}
-	return raised.Write(s)
+	return errors.Join(removeEmptyDates(s), discarded)
 }
 
 // runCreatedAt is the run_created_at in a fetch.json of the run, and zero

@@ -122,7 +122,7 @@ type discovery struct {
 // created_at as malformed.
 func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Repo, p *pending, w *watch) (discovery, error) {
 	now := m.Clock.Now()
-	horizon, err := retention.ReadHorizon(m.Store)
+	horizon, discarded, err := retention.ReadHorizon(m.Store)
 	if err != nil {
 		return discovery{}, err
 	}
@@ -133,7 +133,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	if err != nil {
 		return discovery{}, err
 	}
-	d := discovery{failed: capped}
+	d := discovery{failed: errors.Join(discarded, capped)}
 	for _, status := range nonTerminal {
 		runs, capped, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {

@@ -92,7 +92,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 
 		v := retention.Victims{Expired: []string{expired.Dir}, Extracted: []string{extracted}, Evicted: []retention.Run{newer, older}}
 		Expect(retention.Execute(s, v, &out)).To(Succeed())
-		h, err := retention.ReadHorizon(s)
+		h, _, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h.At).To(BeTemporally("==", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)))
 		horizon := renamed(filepath.Join(s.State(), "horizon.json.tmp"))
@@ -121,7 +121,7 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 
 		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
-		h, err := retention.ReadHorizon(s)
+		h, _, err := retention.ReadHorizon(s)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h.At).To(BeTemporally("==", newer))
 	})
@@ -132,6 +132,22 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(retention.Execute(s, retention.Victims{Evicted: []retention.Run{evicted}}, &out)).To(Succeed())
 		Expect(evicted.Dir).NotTo(BeADirectory())
 		Expect(filepath.Join(s.State(), "horizon.json")).NotTo(BeAnExistingFile())
+	})
+
+	It("moves a corrupt horizon aside, writes the raised one, evicts everything, and then reports it", func() {
+		path := filepath.Join(s.State(), "horizon.json")
+		Expect(os.WriteFile(path, []byte("{"), 0o644)).To(Succeed())
+		expired := runWithLog("2026-06-01/1_ci_main", time.Date(2026, 6, 1, 1, 0, 0, 0, time.UTC))
+		evicted := runWithLog("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+
+		err := retention.Execute(s, retention.Victims{Expired: []string{expired.Dir}, Evicted: []retention.Run{evicted}}, &out)
+		Expect(err).To(MatchError(ContainSubstring(path)))
+		Expect(expired.Dir).NotTo(BeADirectory())
+		Expect(evicted.Dir).NotTo(BeADirectory())
+		Expect(os.ReadFile(path + ".corrupt")).To(Equal([]byte("{")))
+		h, _, err := retention.ReadHorizon(s)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(h.At).To(BeTemporally("==", evicted.CreatedAt))
 	})
 
 	It("writes no horizon when it evicts nothing for disk_cap", func() {

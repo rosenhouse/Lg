@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
 
+	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
@@ -60,5 +61,22 @@ var _ = Describe("discovery with an eviction horizon", Label("retention"), func(
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(4)))
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(pendingRun)))
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle when state/horizon.json does not parse", Label("retention"), func() {
+	It("moves it aside, reports it, and syncs as if it were missing", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
+		horizon := filepath.Join(env.State(), "horizon.json")
+		Expect(os.WriteFile(horizon, []byte("{"), 0o644)).To(Succeed())
+
+		err := env.Sync(ctx)
+		Expect(err).To(MatchError(ContainSubstring(horizon)))
+		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+		Expect(os.ReadFile(horizon + ".corrupt")).To(Equal([]byte("{")))
+
+		Expect(env.Sync(ctx)).To(Succeed())
 	}, cycleTimeout)
 })

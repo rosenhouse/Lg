@@ -20,21 +20,37 @@ type Horizon struct {
 
 func horizonFile(s *store.Store) string { return filepath.Join(s.State(), "horizon.json") }
 
-// ReadHorizon gives the zero Horizon, which skips nothing, when the file is missing.
-func ReadHorizon(s *store.Store) (Horizon, error) {
-	var h Horizon
-	raw, err := os.ReadFile(horizonFile(s))
+// ReadHorizon gives the zero Horizon, which skips nothing, when the file is
+// missing. One that does not parse is moved aside, and ReadHorizon gives the
+// zero Horizon and the parse error as discarded.
+func ReadHorizon(s *store.Store) (h Horizon, discarded, err error) {
+	path := horizonFile(s)
+	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return h, nil
+		return Horizon{}, nil, nil
 	}
 	if err != nil {
-		return h, err
+		return Horizon{}, nil, err
 	}
 	if err := json.Unmarshal(raw, &h); err != nil {
-		return h, fmt.Errorf("%s: %w", horizonFile(s), err)
+		aside := path + ".corrupt"
+		if err := s.Rename(path, aside); err != nil {
+			return Horizon{}, nil, err
+		}
+		return Horizon{}, &CorruptError{Path: path, Err: fmt.Errorf("moved to %s: %w", aside, err)}, nil
 	}
-	return h, nil
+	return h, nil, nil
 }
+
+// CorruptError is a state/horizon.json that did not parse.
+type CorruptError struct {
+	Path string
+	Err  error
+}
+
+func (e *CorruptError) Error() string { return e.Path + ": " + e.Err.Error() }
+
+func (e *CorruptError) Unwrap() error { return e.Err }
 
 func (h Horizon) Write(s *store.Store) error {
 	raw, err := json.Marshal(h)
