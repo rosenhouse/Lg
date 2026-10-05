@@ -26,9 +26,12 @@ func (c gcCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	// gc only removes, so a root without a store is a mistyped LG_HOME.
-	if _, err := os.Lstat(filepath.Join(roots.Store, "FORMAT")); errors.Is(err, fs.ErrNotExist) {
-		return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
+	// gc only removes, so a root without a store is a mistyped LG_HOME, unless
+	// a writer holding state/write.lock is making the store.
+	noStore := config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
+	format := filepath.Join(roots.Store, "FORMAT")
+	if !exists(format) && !exists(filepath.Join(roots.State, "write.lock")) {
+		return noStore
 	}
 	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
@@ -44,10 +47,20 @@ func (c gcCmd) Run(deps *Deps) error {
 		}
 		return err
 	}
-	s, release, err := openForWriting(roots, deps, c.Timeout)
+	s, release, err := openForWriting(roots, deps, c.Timeout, func() error {
+		if !exists(format) {
+			return noStore
+		}
+		return nil
+	})
 	if err != nil {
 		return failure.FromErrno(err)
 	}
 	defer release()
 	return failure.FromErrno(retention.Retain(context.Background(), s, now, keep, diskCap, deps.Stdout))
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return !errors.Is(err, fs.ErrNotExist)
 }

@@ -29,7 +29,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps, writeLockWait)
+	s, release, err := openForWriting(roots, deps, writeLockWait, nil)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

@@ -29,9 +29,9 @@ func loadConfig(env map[string]string) (config.Roots, config.Config, error) {
 const writeLockWait = 5 * time.Minute
 
 // openForWriting takes state/write.lock, which every writer of data/ and tmp/
-// holds, waiting up to timeout, then initializes the store and sweeps what
-// dead writers left in tmp/.
-func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration) (*store.Store, func(), error) {
+// holds, waiting up to timeout. Then it runs check, unless it is nil,
+// initializes the store and sweeps what dead writers left in tmp/.
+func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check func() error) (*store.Store, func(), error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, nil, err
 	}
@@ -42,7 +42,13 @@ func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration) (*sto
 	if err != nil {
 		return nil, nil, err
 	}
-	s, err := initAndSweep(deps.StoreFS, roots.Store)
+	if check != nil {
+		err = check()
+	}
+	var s *store.Store
+	if err == nil {
+		s, err = initAndSweep(deps.StoreFS, roots.Store)
+	}
 	if err != nil {
 		_ = held.Release()
 		return nil, nil, err
