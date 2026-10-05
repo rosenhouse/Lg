@@ -62,16 +62,16 @@ func syncStages(ctx context.Context, env *harness.InProcessEnv, stages ...string
 func count(db *sql.DB, query string, args ...any) int {
 	GinkgoHelper()
 	var n int
-	Expect(db.QueryRow(query, args...).Scan(&n)).To(Succeed())
+	Expect(db.QueryRowContext(context.Background(), query, args...).Scan(&n)).To(Succeed())
 	return n
 }
 
 // column gives the first column of each row.
 func column[T any](db *sql.DB, query string, args ...any) []T {
 	GinkgoHelper()
-	rows, err := db.Query(query, args...)
+	rows, err := db.QueryContext(context.Background(), query, args...)
 	Expect(err).NotTo(HaveOccurred())
-	defer rows.Close()
+	DeferCleanup(rows.Close)
 	var values []T
 	for rows.Next() {
 		var v T
@@ -92,9 +92,9 @@ func row(db *sql.DB, query string, args ...any) map[string]any {
 
 func dump(db *sql.DB, query string, args ...any) []map[string]any {
 	GinkgoHelper()
-	rows, err := db.Query(query, args...)
+	rows, err := db.QueryContext(context.Background(), query, args...)
 	Expect(err).NotTo(HaveOccurred())
-	defer rows.Close()
+	DeferCleanup(rows.Close)
 	names, err := rows.Columns()
 	Expect(err).NotTo(HaveOccurred())
 	var all []map[string]any

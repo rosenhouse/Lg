@@ -41,12 +41,12 @@ func Open(path, data string) (*Index, error) {
 }
 
 // migrate drops every table, then creates the schema, unless meta.format is Format.
-func migrate(tx *sql.Tx) error {
+func migrate(ctx context.Context, tx *sql.Tx) error {
 	var format int
-	if err := tx.QueryRow("SELECT format FROM meta").Scan(&format); err == nil && format == Format {
+	if err := tx.QueryRowContext(ctx, "SELECT format FROM meta").Scan(&format); err == nil && format == Format {
 		return nil
 	}
-	rows, err := tx.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		return err
 	}
@@ -62,23 +62,23 @@ func migrate(tx *sql.Tx) error {
 		return err
 	}
 	for _, name := range names {
-		if _, err := tx.Exec(fmt.Sprintf("DROP TABLE %q", name)); err != nil {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("DROP TABLE %q", name)); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.Exec(schema); err != nil {
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	_, err = tx.Exec("INSERT INTO meta (format) VALUES (?)", Format)
+	_, err = tx.ExecContext(ctx, "INSERT INTO meta (format) VALUES (?)", Format)
 	return err
 }
 
-func (ix *Index) inTx(ctx context.Context, f func(*sql.Tx) error) error {
+func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) error) error {
 	tx, err := ix.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if err := f(tx); err != nil {
+	if err := f(ctx, tx); err != nil {
 		return errors.Join(err, tx.Rollback())
 	}
 	return tx.Commit()
@@ -89,7 +89,7 @@ func (ix *Index) inTx(ctx context.Context, f func(*sql.Tx) error) error {
 // the runs whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
 	var unreadable error
-	err := ix.inTx(ctx, func(tx *sql.Tx) (err error) {
+	err := ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) (err error) {
 		unreadable, err = ix.reconcile(ctx, tx)
 		return err
 	})
@@ -99,9 +99,9 @@ func (ix *Index) Reconcile(ctx context.Context) error {
 // Rebuild indexes every run on disk anew, as Reconcile does.
 func (ix *Index) Rebuild(ctx context.Context) error {
 	var unreadable error
-	err := ix.inTx(ctx, func(tx *sql.Tx) (err error) {
+	err := ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) (err error) {
 		for _, table := range tables {
-			if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 				return err
 			}
 		}
@@ -119,22 +119,22 @@ func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) (unreadable, err err
 	if err != nil {
 		return nil, err
 	}
-	indexed, err := indexedUnits(tx)
+	indexed, err := indexedUnits(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
 	for runDir := range indexed {
 		if _, ok := onDisk[runDir]; !ok {
-			if err := deleteRun(tx, runDir); err != nil {
+			if err := deleteRun(ctx, tx, runDir); err != nil {
 				return nil, err
 			}
 		}
 	}
-	in, err := newInserter(tx)
+	in, err := newInserter(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	defer in.close()
+	defer func() { err = errors.Join(err, in.close()) }()
 	var failed []error
 	for runDir, units := range onDisk {
 		if err := ctx.Err(); err != nil {
@@ -148,10 +148,10 @@ func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) (unreadable, err err
 			failed = append(failed, err)
 			continue
 		}
-		if err := deleteRun(tx, runDir); err != nil {
+		if err := deleteRun(ctx, tx, runDir); err != nil {
 			return nil, err
 		}
-		if err := in.insert(runDir, rows); err != nil {
+		if err := in.insert(ctx, runDir, rows); err != nil {
 			return nil, err
 		}
 	}
@@ -229,22 +229,21 @@ func runUnits(runDir string) ([]string, error) {
 }
 
 // indexedUnits gives the sorted indexed unit dirs of each run dir.
-func indexedUnits(tx *sql.Tx) (map[string][]string, error) {
-	rows, err := tx.Query("SELECT path FROM units ORDER BY path")
+func indexedUnits(ctx context.Context, tx *sql.Tx) (map[string][]string, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT path FROM units ORDER BY path")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	runs := map[string][]string{}
 	for rows.Next() {
 		var unit string
 		if err := rows.Scan(&unit); err != nil {
-			return nil, err
+			return nil, errors.Join(err, rows.Close())
 		}
 		runDir := runOf(unit)
 		runs[runDir] = append(runs[runDir], unit)
 	}
-	return runs, rows.Err()
+	return runs, errors.Join(rows.Err(), rows.Close())
 }
 
 // runOf gives the run dir of an attempt, artifact or extracted unit.
@@ -259,10 +258,10 @@ func runOf(unit string) string {
 }
 
 // deleteRun deletes every row whose path is runDir or below it.
-func deleteRun(tx *sql.Tx, runDir string) error {
+func deleteRun(ctx context.Context, tx *sql.Tx, runDir string) error {
 	for _, table := range tables {
 		// '0' follows '/', so the range holds exactly the paths below runDir.
-		_, err := tx.Exec("DELETE FROM "+table+" WHERE path = ? OR (path > ? AND path < ?)", runDir, runDir+"/", runDir+"0")
+		_, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE path = ? OR (path > ? AND path < ?)", runDir, runDir+"/", runDir+"0")
 		if err != nil {
 			return err
 		}
