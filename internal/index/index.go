@@ -29,8 +29,9 @@ const Format = 1
 // busyTimeout is how long a transaction waits for another's write lock.
 var busyTimeout = 10 * time.Second
 
-// lockTimeout is how long an index user waits for lg.db.lock.
-const lockTimeout = 10 * time.Second
+// lockTimeout is how long an index user waits for lg.db.lock, which a
+// writer holds while it indexes.
+const lockTimeout = 5 * time.Minute
 
 type Index struct {
 	db         *sql.DB
@@ -52,8 +53,8 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 	return openReadable(ctx, path, data)
 }
 
-// lockFile takes path.lock. Every opener holds it, so none opens a file
-// while another replaces it.
+// lockFile takes path.lock. Every opener and every writer holds it, so none
+// opens a file while another replaces it, and writers take turns.
 func lockFile(path string) (*lock.Lock, error) {
 	return lock.Wait(path+".lock", lockTimeout, clock.Real{}, func(string) {})
 }
@@ -170,12 +171,25 @@ func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) erro
 // the runs whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
 	return ix.orStartOver(ctx, func() error {
-		indexed, err := indexedUnits(ctx, ix.db)
-		if err != nil {
-			return ix.dbError(err)
+		changed, err := ix.changed(ctx)
+		if err != nil || !changed {
+			return err
 		}
-		return ix.index(ctx, indexed, false)
+		return ix.index(ctx, false)
 	})
+}
+
+// changed reports whether the units on disk differ from those indexed.
+func (ix *Index) changed(ctx context.Context) (bool, error) {
+	indexed, err := indexedUnits(ctx, ix.db)
+	if err != nil {
+		return false, ix.dbError(err)
+	}
+	onDisk, err := unitsOnDisk(ix.data)
+	if err != nil {
+		return false, err
+	}
+	return !maps.EqualFunc(onDisk, indexed, slices.Equal[[]string]), nil
 }
 
 // Rebuild indexes every run on disk into an empty lg.db at path.
@@ -184,7 +198,7 @@ func Rebuild(ctx context.Context, path, data string) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(ix.orStartOver(ctx, func() error { return ix.index(ctx, nil, true) }), ix.Close())
+	return errors.Join(ix.orStartOver(ctx, func() error { return ix.index(ctx, true) }), ix.Close())
 }
 
 // orStartOver runs f. If SQLite cannot read lg.db, it then indexes every run
@@ -197,7 +211,7 @@ func (ix *Index) orStartOver(ctx context.Context, f func() error) error {
 	if err := ix.startOver(ctx); err != nil {
 		return err
 	}
-	return ix.index(ctx, nil, true)
+	return ix.index(ctx, true)
 }
 
 // startOver replaces lg.db, which SQLite cannot read, with an empty db,
@@ -226,11 +240,23 @@ func (ix *Index) startOver(ctx context.Context) error {
 
 func (ix *Index) Close() error { return ix.db.Close() }
 
-// index reads the rows of each run on disk whose unit dirs differ from
-// indexed. Then, holding the write lock, it writes them, into an emptied db
-// when fresh. It takes the lock only when the db changes. It returns the
-// errors of the runs whose files it could not read, after indexing the others.
-func (ix *Index) index(ctx context.Context, indexed map[string][]string, fresh bool) error {
+// index holds lg.db.lock while it reads the rows of each run on disk whose
+// unit dirs differ from those indexed, or of every run when fresh. Then,
+// holding the write lock, it writes them, into an emptied db when fresh. It
+// takes the write lock only when the db changes. It returns the errors of the
+// runs whose files it could not read, after indexing the others.
+func (ix *Index) index(ctx context.Context, fresh bool) error {
+	l, err := lockFile(ix.path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = l.Release() }()
+	var indexed map[string][]string
+	if !fresh {
+		if indexed, err = indexedUnits(ctx, ix.db); err != nil {
+			return ix.dbError(err)
+		}
+	}
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
 		return err
