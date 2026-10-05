@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/retention"
 )
@@ -19,6 +24,10 @@ func (c gcCmd) Run(deps *Deps) error {
 	roots, cfg, err := loadConfig(deps.Env)
 	if err != nil {
 		return err
+	}
+	// gc only removes, so a root without a store is a mistyped LG_HOME.
+	if _, err := os.Lstat(filepath.Join(roots.Store, "FORMAT")); errors.Is(err, fs.ErrNotExist) {
+		return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
 	}
 	find := func() (retention.Victims, error) {
 		return retention.Find(roots.Data, deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap))
