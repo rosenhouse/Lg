@@ -132,7 +132,7 @@ var _ = Describe("lg status", Label("status"), func() {
   "last_sync_ok_at": "2026-10-03T17:50:00Z",
   "next_sync_at": "2026-10-03T18:01:00Z",
   "sync_interval_seconds": 600,
-  "blocked": {"since": "2026-10-03T17:55:00Z", "kind": "rate_limit", "detail": "429 Too Many Requests", "retry_at": "2026-10-03T18:01:00Z"},
+  "blocked": {"since": "2026-10-03T17:55:00Z", "kind": "rate_limit", "detail": "429 Too Many\n\u001b[1mRequests", "retry_at": "2026-10-03T18:01:00Z"},
   "daemon_pid": 4242,
   "daemon_version": "test",
   "repos": {
@@ -164,21 +164,20 @@ var _ = Describe("lg status", Label("status"), func() {
 		DeferCleanup(held.Release)
 		session := env.Lg("status")
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		out := string(session.Out.Contents())
-		for _, want := range []string{
-			"last sync: 2026-10-03T17:59:00Z",
-			"last ok sync: 2026-10-03T17:50:00Z",
-			"next sync: 2026-10-03T18:01:00Z",
-			"blocked: rate_limit since 2026-10-03T17:55:00Z, retry_at 2026-10-03T18:01:00Z: 429 Too Many Requests",
-			"daemon: running",
-			"github.com/rosenhouse/lg",
-			"lag: 3h37m6s",
-			"pending units: 1",
-			"run 37129390741 attempt 2: 502 Bad Gateway",
-			"horizon: 2026-09-01T00:00:00Z",
-		} {
-			Expect(out).To(ContainSubstring(want))
-		}
+		Expect(string(session.Out.Contents())).To(Equal(`last sync: 2026-10-03T17:59:00Z, finished 2026-10-03T17:59:30Z (cycle 7)
+last ok sync: 2026-10-03T17:50:00Z
+next sync: 2026-10-03T18:01:00Z
+blocked: rate_limit since 2026-10-03T17:55:00Z, retry_at 2026-10-03T18:01:00Z: 429 Too Many [1mRequests
+daemon: running
+github.com/rosenhouse/lg:
+  default branch: main
+  newest completed run: 2026-10-03T14:22:54Z, lag: 3h37m6s
+  runs: 3, attempts: 4, bytes: 123456
+  pending units: 1
+    run 37129390741 attempt 2: 502 Bad Gateway
+  horizon: 2026-09-01T00:00:00Z
+  retention: 90 days, disk_cap: 50000000000 bytes
+`))
 
 		jsonOut := env.Lg("status", "--json")
 		Eventually(jsonOut, harness.ExitTimeout).Should(gexec.Exit(0))

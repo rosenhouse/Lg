@@ -46,61 +46,45 @@ func (c statusCmd) Run(deps *Deps) error {
 	return printStatus(deps.Stdout, st, daemon)
 }
 
-func printStatus(w io.Writer, st *status.Status, daemon bool) error {
-	p := &printer{w: w}
+func printStatus(stdout io.Writer, st *status.Status, daemon bool) error {
+	w := &errWriter{w: stdout}
 	if st == nil {
-		p.line("last sync: never")
+		fmt.Fprintln(w, "last sync: never")
 	} else {
-		p.line("last sync: %s, finished %s (cycle %d)", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle)
-		p.line("last ok sync: %s", orNone(st.LastSyncOKAt, "never"))
-		p.line("next sync: %s", orNone(st.NextSyncAt, "none scheduled"))
+		fmt.Fprintf(w, "last sync: %s, finished %s (cycle %d)\n", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle)
+		fmt.Fprintf(w, "last ok sync: %s\n", orNone(st.LastSyncOKAt, "never"))
+		fmt.Fprintf(w, "next sync: %s\n", orNone(st.NextSyncAt, "none scheduled"))
 		blocked := "no"
-		if b := st.Blocked; b != nil {
-			blocked = fmt.Sprintf("%s since %s", b.Kind, b.Since.Format(time.RFC3339))
-			if b.RetryAt != nil {
-				blocked += ", retry_at " + b.RetryAt.Format(time.RFC3339)
-			}
-			blocked += ": " + b.Detail
+		if st.Blocked != nil {
+			blocked = st.Blocked.String()
 		}
-		p.line("blocked: %s", blocked)
+		fmt.Fprintf(w, "blocked: %s\n", blocked)
 	}
 	if daemon {
-		p.line("daemon: running")
+		fmt.Fprintln(w, "daemon: running")
 	} else {
-		p.line("daemon: not running")
+		fmt.Fprintln(w, "daemon: not running")
 	}
 	if st == nil {
-		return p.err
+		return w.err
 	}
 	for name, r := range st.Repos {
-		p.line("%s:", name)
-		p.line("  default branch: %s", r.DefaultBranch)
+		fmt.Fprintf(w, "%s:\n", name)
+		fmt.Fprintf(w, "  default branch: %s\n", r.DefaultBranch)
 		lag := "none"
 		if r.LagSeconds != nil {
 			lag = (time.Duration(*r.LagSeconds) * time.Second).String()
 		}
-		p.line("  newest completed run: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag)
-		p.line("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData)
-		p.line("  pending units: %d", r.PendingUnits)
+		fmt.Fprintf(w, "  newest completed run: %s, lag: %s\n", orNone(r.NewestCompletedRunCreatedAt, "none"), lag)
+		fmt.Fprintf(w, "  runs: %d, attempts: %d, bytes: %d\n", r.Runs, r.Attempts, r.BytesData)
+		fmt.Fprintf(w, "  pending units: %d\n", r.PendingUnits)
 		for _, pending := range r.Pending {
-			p.line("    %s", pending)
+			fmt.Fprintf(w, "    %s\n", pending)
 		}
-		p.line("  horizon: %s", orNone(r.Horizon, "none"))
-		p.line("  retention: %d days, disk_cap: %d bytes", r.RetentionDays, r.DiskCapBytes)
+		fmt.Fprintf(w, "  horizon: %s\n", orNone(r.Horizon, "none"))
+		fmt.Fprintf(w, "  retention: %d days, disk_cap: %d bytes\n", r.RetentionDays, r.DiskCapBytes)
 	}
-	return p.err
-}
-
-// printer writes lines until its first error.
-type printer struct {
-	w   io.Writer
-	err error
-}
-
-func (p *printer) line(format string, args ...any) {
-	if p.err == nil {
-		_, p.err = fmt.Fprintf(p.w, format+"\n", args...)
-	}
+	return w.err
 }
 
 func orNone(t *time.Time, none string) string {

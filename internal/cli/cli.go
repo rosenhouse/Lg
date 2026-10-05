@@ -105,7 +105,7 @@ func Main(args []string, deps Deps) (code int) {
 		err = config.Error(err.Error())
 	}
 	if err == nil {
-		warn(&deps)
+		warn(&deps, ctx.Command())
 		err = checkStore(ctx.Command(), deps.Env)
 	}
 	if err == nil {
@@ -129,13 +129,16 @@ func Main(args []string, deps Deps) (code int) {
 }
 
 // warn prints the line status.Warning gives for the store's status.json, if any.
-func warn(deps *Deps) {
+func warn(deps *Deps, command string) {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return
 	}
 	st, err := status.Read(filepath.Join(roots.State, "status.json"))
 	warning := status.Warning(deps.Clock.Now(), st)
+	if st == nil && command != "sync" {
+		warning += "; run `lg sync`"
+	}
 	if err != nil {
 		warning = err.Error()
 	}

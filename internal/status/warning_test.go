@@ -30,20 +30,22 @@ var _ = DescribeTable("Warning", Label("status"),
 	func(st *status.Status, warning string) {
 		Expect(status.Warning(now, st)).To(Equal(warning))
 	},
-	Entry("never synced", nil, "never synced; run `lg sync`"),
+	Entry("never synced", nil, "never synced"),
 	Entry("blocked as auth", blocked(failure.Auth, "401 Unauthorized", nil),
-		"sync blocked (auth) since 2026-10-03T17:00:00Z: 401 Unauthorized"),
+		"sync blocked: auth since 2026-10-03T17:00:00Z: 401 Unauthorized"),
 	Entry("blocked as rate_limit", blocked(failure.RateLimit, "429 Too Many Requests", &retryAt),
-		"sync blocked (rate_limit, retry_at 2026-10-03T18:05:00Z) since 2026-10-03T17:00:00Z: 429 Too Many Requests"),
+		"sync blocked: rate_limit since 2026-10-03T17:00:00Z, retry_at 2026-10-03T18:05:00Z: 429 Too Many Requests"),
 	Entry("blocked as unreachable", blocked(failure.Unreachable, "dial tcp: connection refused", nil),
-		"sync blocked (unreachable) since 2026-10-03T17:00:00Z: dial tcp: connection refused"),
+		"sync blocked: unreachable since 2026-10-03T17:00:00Z: dial tcp: connection refused"),
 	Entry("blocked as local_io, on one line", blocked(failure.LocalIO, "write data/x:\n  no space left on device\n", nil),
-		"sync blocked (local_io) since 2026-10-03T17:00:00Z: write data/x: no space left on device"),
+		"sync blocked: local_io since 2026-10-03T17:00:00Z: write data/x: no space left on device"),
+	Entry("blocked as auth, without terminal controls", blocked(failure.Auth, "not logged in\n\x1b[31mhint\x1b[0m:\x7fx\u009b", nil),
+		"sync blocked: auth since 2026-10-03T17:00:00Z: not logged in [31mhint [0m: x"),
 	Entry("blocked and stale, as blocked", func() *status.Status {
 		st := blocked(failure.Auth, "401 Unauthorized", nil)
 		st.LastSyncOKAt = nil
 		return st
-	}(), "sync blocked (auth) since 2026-10-03T17:00:00Z: 401 Unauthorized"),
+	}(), "sync blocked: auth since 2026-10-03T17:00:00Z: 401 Unauthorized"),
 	Entry("with no good sync yet", &status.Status{SyncIntervalSeconds: 600}, "no sync has succeeded yet"),
 	Entry("stale beyond twice sync_interval", synced(20*time.Minute+time.Second),
 		"last successful sync was 20m1s ago, at 2026-10-03T17:39:59Z, over twice sync_interval 10m0s"),

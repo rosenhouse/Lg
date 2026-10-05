@@ -180,6 +180,67 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 	})
 })
 
+var _ = Describe("lg status after a good sync", Label("status"), func() {
+	It("prints no blocked state, next sync, horizon or daemon", func() {
+		s := newSyncEnv()
+		Expect(s.main("sync")).To(Equal(0))
+		Expect(os.WriteFile(s.statusFile(), []byte(`{
+  "lg_format": 1,
+  "cycle": 2,
+  "last_sync_started_at": "2026-10-03T17:59:00Z",
+  "last_sync_finished_at": "2026-10-03T17:59:30Z",
+  "last_sync_ok_at": "2026-10-03T17:59:30Z",
+  "next_sync_at": null,
+  "sync_interval_seconds": 600,
+  "blocked": null,
+  "daemon_pid": null,
+  "daemon_version": null,
+  "repos": {
+    "github.com/rosenhouse/lg": {
+      "default_branch": "main",
+      "newest_completed_run_created_at": null,
+      "lag_seconds": null,
+      "runs": 0,
+      "attempts": 0,
+      "bytes_data": 0,
+      "pending_units": 0,
+      "pending": [],
+      "retention_days": 30,
+      "disk_cap_bytes": 1000000,
+      "horizon": null
+    }
+  }
+}
+`), 0o644)).To(Succeed())
+
+		Expect(s.main("status")).To(Equal(0))
+		Expect(s.stdout.String()).To(Equal(`last sync: 2026-10-03T17:59:00Z, finished 2026-10-03T17:59:30Z (cycle 2)
+last ok sync: 2026-10-03T17:59:30Z
+next sync: none scheduled
+blocked: no
+daemon: not running
+github.com/rosenhouse/lg:
+  default branch: main
+  newest completed run: none, lag: none
+  runs: 0, attempts: 0, bytes: 0
+  pending units: 0
+  horizon: none
+  retention: 30 days, disk_cap: 1000000 bytes
+`))
+	})
+})
+
+var _ = DescribeTable("cli.Main on a store that never synced", Label("status"),
+	func(command, warning string) {
+		s := newSyncEnv()
+
+		Expect(s.main(command)).To(Equal(0))
+		Expect(s.stderr.String()).To(Equal(warning))
+	},
+	Entry("tells to run lg sync", "paths", "lg: warning: never synced; run `lg sync`\n"),
+	Entry("does not tell lg sync to run itself", "sync", "lg: warning: never synced\n"),
+)
+
 var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 	It("records the unit with its error in status.json, and the sync as ok", func() {
 		s := newSyncEnv()

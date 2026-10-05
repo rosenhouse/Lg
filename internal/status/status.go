@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/retention"
@@ -42,9 +43,9 @@ type Blocked struct {
 func Warning(now time.Time, st *Status) string {
 	switch {
 	case st == nil:
-		return "never synced; run `lg sync`"
+		return "never synced"
 	case st.Blocked != nil:
-		return st.Blocked.String()
+		return "sync blocked: " + st.Blocked.String()
 	case st.LastSyncOKAt == nil:
 		return "no sync has succeeded yet"
 	}
@@ -55,12 +56,20 @@ func Warning(now time.Time, st *Status) string {
 	return ""
 }
 
+// String gives b on one line, without the terminal controls that gh's
+// stderr can put in its detail.
 func (b Blocked) String() string {
-	kind := string(b.Kind)
+	s := fmt.Sprintf("%s since %s", b.Kind, b.Since.Format(time.RFC3339))
 	if b.RetryAt != nil {
-		kind += ", retry_at " + b.RetryAt.Format(time.RFC3339)
+		s += ", retry_at " + b.RetryAt.Format(time.RFC3339)
 	}
-	return fmt.Sprintf("sync blocked (%s) since %s: %s", kind, b.Since.Format(time.RFC3339), strings.Join(strings.Fields(b.Detail), " "))
+	detail := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, b.Detail)
+	return s + ": " + strings.Join(strings.Fields(detail), " ")
 }
 
 type Repo struct {
