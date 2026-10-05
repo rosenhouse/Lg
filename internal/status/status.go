@@ -8,14 +8,52 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/rosenhouse/lg/internal/failure"
 )
 
 type Status struct {
-	LgFormat     int             `json:"lg_format"`
-	Cycle        int64           `json:"cycle"`
-	LastSyncOKAt *time.Time      `json:"last_sync_ok_at"`
-	Repos        map[string]Repo `json:"repos"`
+	LgFormat            int             `json:"lg_format"`
+	Cycle               int64           `json:"cycle"`
+	LastSyncOKAt        *time.Time      `json:"last_sync_ok_at"`
+	SyncIntervalSeconds int64           `json:"sync_interval_seconds"`
+	Blocked             *Blocked        `json:"blocked"`
+	Repos               map[string]Repo `json:"repos"`
+}
+
+type Blocked struct {
+	Since   time.Time    `json:"since"`
+	Kind    failure.Kind `json:"kind"`
+	Detail  string       `json:"detail"`
+	RetryAt *time.Time   `json:"retry_at"`
+}
+
+// Warning is the one line every command prints while st, the status at
+// now, is blocked or stale, and "" otherwise (D24).
+func Warning(now time.Time, st *Status) string {
+	switch {
+	case st == nil:
+		return "never synced; run `lg sync`"
+	case st.Blocked != nil:
+		return st.Blocked.String()
+	case st.LastSyncOKAt == nil:
+		return "no sync has succeeded yet"
+	}
+	interval := time.Duration(st.SyncIntervalSeconds) * time.Second
+	if age := now.Sub(*st.LastSyncOKAt); age > 2*interval {
+		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
+	}
+	return ""
+}
+
+func (b Blocked) String() string {
+	kind := string(b.Kind)
+	if b.RetryAt != nil {
+		kind += ", retry_at " + b.RetryAt.Format(time.RFC3339)
+	}
+	return fmt.Sprintf("sync blocked (%s) since %s: %s", kind, b.Since.Format(time.RFC3339), strings.Join(strings.Fields(b.Detail), " "))
 }
 
 type Repo struct {
