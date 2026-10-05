@@ -49,7 +49,7 @@ type Victims struct {
 	// Expired are runs in date dirs before the cutoff.
 	Expired []string
 	// Extracted and then Evicted are removed while the runs are over disk_cap.
-	// Evicted also holds the kept runs that Horizon passes.
+	// Evicted also holds the kept runs that Horizons pass.
 	Extracted []string
 	Evicted   []string
 	// Horizons is what Execute writes to state/horizon.json, and nil when it
@@ -219,36 +219,40 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 	return runs, err
 }
 
-// dateDepth is the depth below data/ of <host>/<owner>/<repo>/runs/<date>.
-const dateDepth = 5
+// dateDepth is the depth below data/ of <host>/<owner>/<repo>/runs/<date>,
+// and runDepth of the run dirs in it.
+const (
+	dateDepth = 5
+	runDepth  = dateDepth + 1
+)
 
 // runAt gives the run at path, when parts, its path below data/, are
 // <host>/<owner>/<repo>/runs/<date>/<run>.
 func runAt(path string, parts []string) (Run, bool) {
-	if len(parts) != 6 || parts[3] != "runs" {
+	if len(parts) != runDepth || parts[3] != "runs" {
 		return Run{}, false
 	}
-	date := parts[4]
+	date := parts[dateDepth-1]
 	if _, err := time.Parse(time.DateOnly, date); err != nil {
 		return Run{}, false
 	}
-	idPart, _, _ := strings.Cut(parts[5], "_")
+	idPart, _, _ := strings.Cut(parts[runDepth-1], "_")
 	id, _ := strconv.ParseInt(idPart, 10, 64)
 	return Run{Dir: path, Repo: strings.Join(parts[:3], "/"), Date: date, ID: id}, true
 }
 
 // isAttempt reports whether parts, a path below data/, are <run>/attempt-N.
 func isAttempt(parts []string) bool {
-	if len(parts) != 7 {
+	if len(parts) != runDepth+1 {
 		return false
 	}
-	_, ok := layout.AttemptNumber(parts[6])
+	_, ok := layout.AttemptNumber(parts[runDepth])
 	return ok
 }
 
 // isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
 func isExtracted(parts []string) bool {
-	return len(parts) == 9 && parts[6] == "artifacts" && parts[8] == "extracted"
+	return len(parts) == runDepth+3 && parts[runDepth] == "artifacts" && parts[runDepth+2] == "extracted"
 }
 
 func within(path, dir string) bool { return strings.HasPrefix(path, dir+string(filepath.Separator)) }
