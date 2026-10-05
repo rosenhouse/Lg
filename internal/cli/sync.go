@@ -90,7 +90,7 @@ func pending(units []mirror.UnitError) []status.Pending {
 // state/status.json. Callers hold state/write.lock.
 func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
 	path := filepath.Join(roots.State, "status.json")
-	// Main's warning named a status.json that Read fails on, and Write replaces it.
+	// Main already warned about an unparsable status.json; Next starts over without it.
 	prev, _ := status.Read(path)
 	c.Repo = cfg.Host + "/" + cfg.Repo
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)

@@ -44,36 +44,28 @@ func (c statusCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	return printStatus(deps.Stdout, st, daemon)
-}
-
-func printStatus(w io.Writer, st *status.Status, daemon bool) error {
-	_, err := io.WriteString(w, strings.Join(statusLines(st, daemon), "\n")+"\n")
+	_, err = io.WriteString(deps.Stdout, strings.Join(statusLines(st, daemon), "\n")+"\n")
 	return err
 }
 
 func statusLines(st *status.Status, daemon bool) []string {
-	var lines []string
-	if st == nil {
-		lines = append(lines, "last sync: never")
-	} else {
-		blocked := "no"
-		if st.Blocked != nil {
-			blocked = st.Blocked.String()
-		}
-		lines = append(lines,
-			fmt.Sprintf("last sync: %s, finished %s (cycle %d)", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle),
-			"last ok sync: "+orNone(st.LastSyncOKAt, "never"),
-			"next sync: "+orNone(st.NextSyncAt, "none scheduled"),
-			"blocked: "+blocked)
-	}
+	daemonLine := "daemon: not running"
 	if daemon {
-		lines = append(lines, "daemon: running")
-	} else {
-		lines = append(lines, "daemon: not running")
+		daemonLine = "daemon: running"
 	}
 	if st == nil {
-		return lines
+		return []string{"last sync: never", daemonLine}
+	}
+	blocked := "no"
+	if st.Blocked != nil {
+		blocked = st.Blocked.String()
+	}
+	lines := []string{
+		fmt.Sprintf("last sync: %s, finished %s (cycle %d)", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle),
+		"last ok sync: " + orNone(st.LastSyncOKAt, "never"),
+		"next sync: " + orNone(st.NextSyncAt, "none scheduled"),
+		"blocked: " + blocked,
+		daemonLine,
 	}
 	for name, r := range st.Repos {
 		lag := "none"

@@ -110,9 +110,9 @@ func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 // ceilSecond rounds t up to a whole second, so a retry at it is never early.
 func ceilSecond(t time.Time) time.Time { return t.Add(time.Second - 1).Truncate(time.Second) }
 
-// FromErrno blocks on a local error that no retry fixes: a full, read-only or
-// unwritable or immutable store, or a tmp/ that cannot be renamed into data/. It returns
-// any other err as it is.
+// FromErrno blocks on a local error that no retry fixes: a full, read-only,
+// unwritable or immutable store, or a tmp/ that cannot be renamed into data/.
+// It returns any other err as it is.
 func FromErrno(err error) error {
 	for _, errno := range []syscall.Errno{syscall.ENOSPC, syscall.EDQUOT, syscall.EROFS, syscall.EACCES, syscall.EXDEV, syscall.EPERM} {
 		if errors.Is(err, errno) {

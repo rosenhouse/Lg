@@ -110,7 +110,7 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
-	// failed joins the errors that runScoped accepts, but for watchFailed.
+	// failed joins the errors that runScoped accepts, except watchFailed's.
 	failed error
 	// watchFailed are the watched runs that GitHub failed to serve.
 	watchFailed []UnitError
