@@ -40,14 +40,19 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 		return "", ctx.Err()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist), errors.Is(err, fs.ErrPermission):
 		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; install gh or set LG_GH to its path", err)}
-	case errors.Is(err, errHung):
-		// gh hangs on an OS keyring that lg cannot reach, as under launchd.
+	case errors.Is(err, errHung), errors.As(err, new(keyringError)):
+		// gh hangs on, or fails to reach, an OS keyring, as under launchd or systemd.
 		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s --insecure-storage`", err, host)}
 	}
 	return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
 }
 
 var errHung = errors.New("did not exit")
+
+// keyringError is a gh failure whose stderr mentions the keyring.
+type keyringError struct{ error }
+
+func (k keyringError) Unwrap() error { return k.error }
 
 func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	gh := cmp.Or(g.Env["LG_GH"], "gh")
@@ -63,6 +68,9 @@ func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	if err != nil {
 		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
 			err = fmt.Errorf("%w: %s", err, msg)
+			if bytes.Contains(bytes.ToLower(msg), []byte("keyring")) {
+				err = keyringError{err}
+			}
 		}
 		return "", fmt.Errorf("%s: %w", command, err)
 	}

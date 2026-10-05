@@ -64,6 +64,14 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		Entry("without stderr", " \n", "gh auth token --hostname ghe.corp.example: exit status 1"),
 	)
 
+	It("blocks as auth suggesting `--insecure-storage` when gh's stderr mentions the keyring", Label("status"), func() {
+		runner := &fakeRunner{stderr: "failed to get token from the Keyring: dbus: no session bus\n", err: errors.New("exit status 1")}
+
+		_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+
+		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "gh auth token --hostname github.com: exit status 1: failed to get token from the Keyring: dbus: no session bus; run `gh auth login --hostname github.com --insecure-storage`"}))
+	})
+
 	DescribeTable("blocks as auth, saying to install gh or set LG_GH, when gh cannot be started", Label("blocked"),
 		func(startErr error) {
 			runner := &fakeRunner{err: startErr}
