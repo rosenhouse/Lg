@@ -54,4 +54,15 @@ var _ = Describe("mirror.Cycle after its context is cancelled", Label("retention
 		Expect(env.Sync(cancelled)).To(MatchError(context.Canceled))
 		Expect(old).To(BeADirectory())
 	}, cycleTimeout)
+
+	It("leaves an empty date dir", func(ctx SpecContext) {
+		env := harness.InProcess()
+		empty := filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-06-01")
+		Expect(os.MkdirAll(empty, 0o755)).To(Succeed())
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		Expect(env.Sync(cancelled)).To(MatchError(context.Canceled))
+		Expect(empty).To(BeADirectory())
+	}, cycleTimeout)
 })
