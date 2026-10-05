@@ -34,7 +34,7 @@ var _ = DescribeTable("lg sync blocks as local_io when opening the store fails",
 		})
 
 		Expect(code).To(Equal(3))
-		Expect(stderr.String()).To(HavePrefix("lg: blocked (local_io): "))
+		Expect(stderr.String()).To(ContainSubstring("\nlg: blocked (local_io): "))
 		Expect(stderr.String()).To(ContainSubstring(detail))
 	},
 	Entry("EROFS making data/",
