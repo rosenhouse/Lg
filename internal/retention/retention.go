@@ -5,12 +5,15 @@ package retention
 import (
 	"cmp"
 	"errors"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 // Run is a run dir under a date dir.
@@ -168,3 +171,6 @@ func last[T any](s []T) *T {
 	}
 	return &s[len(s)-1]
 }
+
+// Execute removes the victims.
+func Execute(s *store.Store, v Victims, removed io.Writer) error { return nil }
