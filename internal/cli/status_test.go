@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -176,5 +177,32 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 		Expect(s.main("status", "--json")).To(Equal(1))
 		Expect(s.stdout.String()).To(BeEmpty())
 		Expect(s.stderr.String()).To(HaveSuffix("lg: " + s.statusFile() + " does not exist; run `lg sync`\n"))
+	})
+})
+
+var _ = Describe("lg sync with a pending unit", Label("status"), func() {
+	It("records the unit with its error in status.json, and the sync as ok", func() {
+		s := newSyncEnv()
+		s.fake.Fail("api", "jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusBadGateway})
+
+		Expect(s.main("sync")).To(Equal(1))
+
+		st := s.status()
+		Expect(st).To(HaveKeyWithValue("last_sync_ok_at", near(harness.DefaultNow())))
+		repo := st["repos"].(map[string]any)["github.com/rosenhouse/lg"]
+		Expect(repo).To(HaveKeyWithValue("pending_units", 1.0))
+		Expect(repo).To(HaveKeyWithValue("pending", ConsistOf(And(ContainSubstring("run 37129390741 attempt 1"), ContainSubstring("502 Bad Gateway")))))
+	})
+})
+
+var _ = Describe("cli.Main with a status.json it cannot parse", Label("status"), func() {
+	It("warns naming the file and runs the command", func() {
+		s := newSyncEnv()
+		Expect(s.main("sync")).To(Equal(0))
+		Expect(os.WriteFile(s.statusFile(), []byte("{"), 0o644)).To(Succeed())
+
+		Expect(s.main("version")).To(Equal(0))
+		Expect(s.stdout.String()).To(Equal(version.Version + "\n"))
+		Expect(s.stderr.String()).To(MatchRegexp(`^lg: warning: ` + regexp.QuoteMeta(s.statusFile()) + `: [^\n]+\n$`))
 	})
 })
