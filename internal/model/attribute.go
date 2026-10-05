@@ -55,3 +55,11 @@ func Attribute(id int64, createdAt time.Time, latest int, snapshots []Snapshot) 
 }
 
 func listedOwn(s Snapshot) bool { return s.ListedAt == s.Attempt }
+
+// AttemptJobs is an attempt's jobs with its run_started_at, which Classify needs.
+type AttemptJobs struct {
+	RunStartedAt time.Time
+	Jobs         []Job
+}
+
+func MatchOriginal(job Job, earlier []AttemptJobs) (Job, bool) { return Job{}, false }
