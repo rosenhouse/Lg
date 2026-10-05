@@ -56,7 +56,7 @@ func (w *watch) add(run model.Run) {
 	w.runs[run.ID] = watchedRun{CreatedAt: run.CreatedAt}
 }
 
-// prune drops the runs created when evicted reports.
+// prune drops each run that evicted reports for its created_at.
 func (w *watch) prune(evicted func(createdAt time.Time) bool) {
 	maps.DeleteFunc(w.runs, func(_ int64, run watchedRun) bool { return evicted(run.CreatedAt) })
 }
