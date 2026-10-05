@@ -26,6 +26,9 @@ const (
 
 var syncTimeout = NodeTimeout(30 * time.Second)
 
+// waitTimeout outlasts the busy timeout an index user may spend waiting for the write lock.
+const waitTimeout = 15 * time.Second
+
 var tables = []string{"runs", "attempts", "jobs", "steps", "artifacts", "tombstones", "units"}
 
 // openDB opens lg.db as any SQLite client would.

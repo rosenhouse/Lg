@@ -40,7 +40,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 			}
 			opened <- err
 		}()
-		Eventually(opened).Should(Receive(Succeed()))
+		Eventually(opened, waitTimeout).Should(Receive(Succeed()))
 	}, syncTimeout)
 
 	It("keep what another wrote while Open waited to make a fresh lg.db current", func(ctx SpecContext) {
@@ -65,7 +65,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		_, err = tx.ExecContext(ctx, "INSERT INTO runs (run_id) VALUES (1)")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tx.Commit()).To(Succeed())
-		Eventually(opened).Should(Receive(Succeed()))
+		Eventually(opened, waitTimeout).Should(Receive(Succeed()))
 		Expect(count(openDB(path), "SELECT count(*) FROM runs")).To(Equal(1))
 	})
 
@@ -76,12 +76,12 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "attempt.json"))
 		reconciled := make(chan error, 1)
 		go func() { reconciled <- ix.Reconcile(ctx) }()
-		Eventually(waiting).Should(BeTrue())
+		Eventually(waiting, waitTimeout).Should(BeTrue())
 
 		_, err = impatientWriter(dbPath(env)).ExecContext(ctx, "UPDATE meta SET format = format")
 		release()
 		Expect(err).NotTo(HaveOccurred())
-		Eventually(reconciled).Should(Receive(Succeed()))
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
 	}, syncTimeout)
 
@@ -116,11 +116,11 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "attempt.json"))
 		reconciled := make(chan error, 1)
 		go func() { reconciled <- ix.Reconcile(ctx) }()
-		Eventually(waiting).Should(BeTrue())
+		Eventually(waiting, waitTimeout).Should(BeTrue())
 
 		Expect(os.Rename(runDir(env.Data(), deletedRun), filepath.Join(env.Tmp(), "evicted"))).To(Succeed())
 		release()
-		Eventually(reconciled).Should(Receive(Succeed()))
+		Eventually(reconciled, waitTimeout).Should(Receive(Succeed()))
 		Expect(column[int64](openDB(dbPath(env)), "SELECT DISTINCT run_id FROM jobs")).To(Equal([]int64{runID}))
 	}, syncTimeout)
 })
