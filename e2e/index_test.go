@@ -33,7 +33,7 @@ var _ = Describe("lg index rebuild", Label("index"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		reader, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(reader.Rollback)
+		DeferCleanup(func() { _ = reader.Rollback() })
 		var held int
 		Expect(reader.QueryRow("SELECT count(*) FROM runs").Scan(&held)).To(Succeed())
 
