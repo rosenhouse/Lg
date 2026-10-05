@@ -73,6 +73,13 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(filepath.Join(kept.Dir, "attempt-1", "log.txt")).To(BeARegularFile())
 	})
 
+	It("leaves a file among the date dirs alone", func() {
+		writeSized(runs, "notes.txt", 1)
+
+		Expect(retention.Execute(s, retention.Victims{}, &print)).To(Succeed())
+		Expect(filepath.Join(runs, "notes.txt")).To(BeARegularFile())
+	})
+
 	It("writes the horizon at the newest run_created_at of the evicted runs, before evicting any", func() {
 		older := runWithFetch("2026-10-01/9_ci_main", time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
 		newer := runWithFetch("2026-10-01/10_ci_main", time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC))

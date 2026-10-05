@@ -4,9 +4,12 @@ package retention
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -172,5 +175,80 @@ func last[T any](s []T) *T {
 	return &s[len(s)-1]
 }
 
-// Execute removes the victims.
-func Execute(s *store.Store, v Victims, removed io.Writer) error { return nil }
+// Execute raises the horizon past the runs it evicts, evicts the victims in
+// order, printing each to removed, and then removes empty date dirs. Callers
+// hold state/write.lock.
+func Execute(s *store.Store, v Victims, removed io.Writer) error {
+	if err := raiseHorizon(s, v.Evicted); err != nil {
+		return err
+	}
+	for _, dir := range v.Dirs() {
+		if err := s.Evict(dir); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(removed, dir); err != nil {
+			return err
+		}
+	}
+	return removeEmptyDates(s)
+}
+
+// raiseHorizon writes the horizon before the runs go, so that a crash part
+// way leaves no evicted run for discovery to fetch again.
+func raiseHorizon(s *store.Store, evicted []Run) error {
+	if len(evicted) == 0 {
+		return nil
+	}
+	h, err := ReadHorizon(s)
+	if err != nil {
+		return err
+	}
+	raised := h
+	for _, r := range evicted {
+		if createdAt := runCreatedAt(r); createdAt.After(raised.At) {
+			raised.At = createdAt
+		}
+	}
+	if raised == h {
+		return nil
+	}
+	return raised.Write(s)
+}
+
+// runCreatedAt is the run_created_at in a fetch.json of the run, or else the
+// last second of its date dir.
+func runCreatedAt(r Run) time.Time {
+	attempts, _ := filepath.Glob(filepath.Join(r.Dir, "attempt-*", "fetch.json"))
+	artifacts, _ := filepath.Glob(filepath.Join(r.Dir, "artifacts", "*", "fetch.json"))
+	for _, path := range append(attempts, artifacts...) {
+		var f struct {
+			RunCreatedAt time.Time `json:"run_created_at"`
+		}
+		raw, err := os.ReadFile(path)
+		if err == nil && json.Unmarshal(raw, &f) == nil && !f.RunCreatedAt.IsZero() {
+			return f.RunCreatedAt
+		}
+	}
+	date, _ := time.Parse(time.DateOnly, r.Date)
+	return date.Add(24*time.Hour - time.Second)
+}
+
+func removeEmptyDates(s *store.Store) error {
+	dates, err := filepath.Glob(filepath.Join(s.Data(), "*", "*", "*", "runs", "*"))
+	if err != nil {
+		return err
+	}
+	for _, date := range dates {
+		info, err := os.Lstat(date)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			continue
+		}
+		if err := s.RemoveEmpty(date); err != nil {
+			return err
+		}
+	}
+	return nil
+}

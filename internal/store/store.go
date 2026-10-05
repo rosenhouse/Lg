@@ -539,6 +539,15 @@ func (s *Store) Rename(oldpath, newpath string) error {
 	return s.fs.SyncDir(filepath.Dir(newpath))
 }
 
+// RemoveEmpty removes dir when it is an empty dir. Callers hold state/write.lock.
+func (s *Store) RemoveEmpty(dir string) error {
+	entries, err := s.fs.ReadDir(dir)
+	if err != nil || len(entries) > 0 {
+		return err
+	}
+	return s.fs.RemoveAll(dir)
+}
+
 // Evict moves dir into tmp/trash/ with one rename, so a reader sees all of
 // it or none, and then deletes it. Callers hold state/write.lock.
 func (s *Store) Evict(dir string) error {
