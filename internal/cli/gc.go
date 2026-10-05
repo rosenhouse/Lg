@@ -15,7 +15,7 @@ import (
 
 type gcCmd struct {
 	DryRun  bool          `help:"Print the dirs gc would remove, and remove nothing."`
-	Timeout time.Duration `default:"5m" help:"How long to wait for another lg writing the store."`
+	Timeout time.Duration `default:"${write_lock_wait}" help:"How long to wait for another lg writing the store."`
 }
 
 // Run prints each dir it removes. A dry run takes no lock, so it reads the
