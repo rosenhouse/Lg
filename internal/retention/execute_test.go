@@ -87,6 +87,13 @@ var _ = Describe("retention.Execute", Label("retention"), func() {
 		Expect(second.Dir).To(BeADirectory())
 	})
 
+	It("removes a date dir that holds only Finder's .DS_Store", func() {
+		writeSized(runs, "2026-06-01/.DS_Store", 1)
+
+		Expect(retention.Execute(context.Background(), s, retention.Victims{}, &out)).To(Succeed())
+		Expect(filepath.Join(runs, "2026-06-01")).NotTo(BeAnExistingFile())
+	})
+
 	It("leaves a file among the date dirs alone", func() {
 		writeSized(runs, "notes.txt", 1)
 

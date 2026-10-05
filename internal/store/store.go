@@ -557,10 +557,11 @@ func (s *Store) Rename(oldpath, newpath string) error {
 	return s.fs.SyncDir(filepath.Dir(newpath))
 }
 
-// RemoveEmpty removes dir when it is an empty dir. Callers hold state/write.lock.
+// RemoveEmpty removes dir when it holds nothing but Finder's .DS_Store.
+// Callers hold state/write.lock.
 func (s *Store) RemoveEmpty(dir string) error {
 	entries, err := s.fs.ReadDir(dir)
-	if err != nil || len(entries) > 0 {
+	if err != nil || slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return e.Name() != ".DS_Store" }) {
 		return err
 	}
 	return s.fs.RemoveAll(dir)
