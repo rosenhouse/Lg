@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 
@@ -27,9 +26,5 @@ func (indexRebuildCmd) Run(deps *Deps) error {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return err
 	}
-	ix, err := index.Open(filepath.Join(roots.State, "lg.db"), roots.Data)
-	if err != nil {
-		return err
-	}
-	return errors.Join(ix.Rebuild(context.Background()), ix.Close())
+	return index.Rebuild(context.Background(), filepath.Join(roots.State, "lg.db"), roots.Data)
 }

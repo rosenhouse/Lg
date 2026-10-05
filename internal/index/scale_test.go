@@ -63,7 +63,7 @@ var _ = Describe("a store of 9,000 runs and 100,000 files", Label("index", "scal
 		DeferCleanup(ix.Close)
 
 		start := clock.Real{}.Now()
-		Expect(ix.Rebuild(ctx)).To(Succeed())
+		Expect(index.Rebuild(ctx, path, data)).To(Succeed())
 		rebuilt := clock.Real{}.Now()
 		Expect(ix.Reconcile(ctx)).To(Succeed())
 		reconciled := clock.Real{}.Now()

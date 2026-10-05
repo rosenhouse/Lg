@@ -7,14 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 
-	"github.com/rosenhouse/lg/internal/layout"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
-	_ "modernc.org/sqlite"
+	"github.com/rosenhouse/lg/internal/layout"
 )
 
 // Format is meta.format. Open empties a db of any other format.
@@ -25,9 +27,9 @@ type Index struct {
 	data string
 }
 
-// Open opens the index at path of the store's data dir. Every transaction
-// takes the write lock at its start, and waits up to 10s for another
-// process to release it.
+// Open opens the index at path over the data dir data. A transaction takes
+// the write lock at its start, and waits up to 10s for another process to
+// release it.
 func Open(path, data string) (*Index, error) {
 	// SQLite decodes a file: URI's path, so no character of path starts the query.
 	uri := "file:" + (&url.URL{Path: path}).EscapedPath()
@@ -35,20 +37,42 @@ func Open(path, data string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
 	ix := &Index{db: db, data: data}
-	if err := ix.inTx(context.Background(), migrate); err != nil {
-		return nil, errors.Join(err, db.Close())
+	if err := ix.migrate(context.Background()); err != nil {
+		return nil, errors.Join(fmt.Errorf("%s: %w", path, err), db.Close())
 	}
 	return ix, nil
 }
 
-// migrate drops every table, then creates the schema, unless meta.format is Format.
-func migrate(ctx context.Context, tx *sql.Tx) error {
-	var format int
-	if err := tx.QueryRowContext(ctx, "SELECT format FROM meta").Scan(&format); err == nil && format == Format {
+// migrate empties a db whose meta.format is not Format. It takes the write
+// lock only to do so.
+func (ix *Index) migrate(ctx context.Context) error {
+	if err := ix.db.PingContext(ctx); err != nil {
+		return err
+	}
+	if isCurrent(ctx, ix.db) {
 		return nil
 	}
+	return ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if isCurrent(ctx, tx) {
+			return nil
+		}
+		return create(ctx, tx)
+	})
+}
+
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func isCurrent(ctx context.Context, q querier) bool {
+	var format int
+	err := q.QueryRowContext(ctx, "SELECT format FROM meta").Scan(&format)
+	return err == nil && format == Format
+}
+
+// create drops every table, then creates the schema.
+func create(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
 	if err != nil {
 		return err
@@ -76,13 +100,15 @@ func migrate(ctx context.Context, tx *sql.Tx) error {
 	return err
 }
 
+// inTx returns f's error alone, since SQLite may have rolled back already.
 func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) error) error {
 	tx, err := ix.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	if err := f(ctx, tx); err != nil {
-		return errors.Join(err, tx.Rollback())
+		_ = tx.Rollback()
+		return err
 	}
 	return tx.Commit()
 }
@@ -91,74 +117,104 @@ func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) erro
 // and drops the rows of runs no longer on disk. It returns the errors of
 // the runs whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
-	var unreadable error
-	err := ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) (err error) {
-		unreadable, err = ix.reconcile(ctx, tx)
+	indexed, err := indexedUnits(ctx, ix.db)
+	if err != nil {
 		return err
-	})
-	return errors.Join(err, unreadable)
+	}
+	return ix.index(ctx, indexed, func(context.Context, *sql.Tx) error { return nil })
 }
 
-// Rebuild indexes every run on disk anew, as Reconcile does.
-func (ix *Index) Rebuild(ctx context.Context) error {
-	var unreadable error
-	err := ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) (err error) {
-		for _, table := range tables {
-			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
-				return err
-			}
-		}
-		unreadable, err = ix.reconcile(ctx, tx)
+// Rebuild indexes every run on disk into an empty lg.db at path. It first
+// removes a file there that SQLite finds is not a db or is corrupt.
+func Rebuild(ctx context.Context, path, data string) error {
+	err := rebuild(ctx, path, data)
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) || sqliteErr.Code()&0xff != sqlite3.SQLITE_NOTADB && sqliteErr.Code()&0xff != sqlite3.SQLITE_CORRUPT {
 		return err
-	})
-	return errors.Join(err, unreadable)
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Remove(path + suffix); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return rebuild(ctx, path, data)
+}
+
+func rebuild(ctx context.Context, path, data string) error {
+	ix, err := Open(path, data)
+	if err != nil {
+		return err
+	}
+	return errors.Join(ix.index(ctx, nil, create), ix.Close())
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
 
-// reconcile gives the errors of IndexRun apart from those that stop it.
-func (ix *Index) reconcile(ctx context.Context, tx *sql.Tx) (unreadable, err error) {
+// index reads the rows of each run on disk whose unit dirs differ from
+// indexed. Then, holding the write lock, it runs prepare and writes them. It
+// returns the errors of the runs
+// whose files it could not read, after indexing the others.
+func (ix *Index) index(ctx context.Context, indexed map[string][]string, prepare func(context.Context, *sql.Tx) error) error {
 	onDisk, err := unitsOnDisk(ix.data)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	read := map[string]Rows{}
+	var unreadable []error
+	for _, runDir := range slices.Sorted(maps.Keys(onDisk)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if slices.Equal(onDisk[runDir], indexed[runDir]) {
+			continue
+		}
+		rows, err := IndexRun(runDir)
+		if _, statErr := os.Lstat(runDir); err != nil && errors.Is(statErr, fs.ErrNotExist) {
+			delete(onDisk, runDir)
+			continue
+		}
+		if err != nil {
+			unreadable = append(unreadable, err)
+			continue
+		}
+		read[runDir] = rows
+	}
+	err = ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := prepare(ctx, tx); err != nil {
+			return err
+		}
+		return write(ctx, tx, onDisk, read)
+	})
+	return errors.Join(append([]error{err}, unreadable...)...)
+}
+
+// write drops the rows of runs not on disk, and replaces those of each read run.
+func write(ctx context.Context, tx *sql.Tx, onDisk map[string][]string, read map[string]Rows) (err error) {
 	indexed, err := indexedUnits(ctx, tx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for runDir := range indexed {
 		if _, ok := onDisk[runDir]; !ok {
 			if err := deleteRun(ctx, tx, runDir); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 	in, err := newInserter(ctx, tx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { err = errors.Join(err, in.close()) }()
-	var failed []error
-	for runDir, units := range onDisk {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if slices.Equal(units, indexed[runDir]) {
-			continue
-		}
-		rows, err := IndexRun(runDir)
-		if err != nil {
-			failed = append(failed, err)
-			continue
-		}
+	for runDir, rows := range read {
 		if err := deleteRun(ctx, tx, runDir); err != nil {
-			return nil, err
+			return err
 		}
 		if err := in.insert(ctx, runDir, rows); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return errors.Join(failed...), nil
+	return nil
 }
 
 // unitsOnDisk gives the sorted unit dirs of each run dir under data.
@@ -232,8 +288,10 @@ func runUnits(runDir string) ([]string, error) {
 }
 
 // indexedUnits gives the sorted indexed unit dirs of each run dir.
-func indexedUnits(ctx context.Context, tx *sql.Tx) (map[string][]string, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT path FROM units ORDER BY path")
+func indexedUnits(ctx context.Context, q interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}) (map[string][]string, error) {
+	rows, err := q.QueryContext(ctx, "SELECT path FROM units ORDER BY path")
 	if err != nil {
 		return nil, err
 	}
