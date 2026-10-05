@@ -66,6 +66,12 @@ func Cutoff(now time.Time, retention time.Duration) string {
 	return now.UTC().Add(-retention).Format(time.DateOnly)
 }
 
+// Expired reports whether retention removes a run created at createdAt,
+// since its date dir is before the cutoff.
+func Expired(createdAt, now time.Time, retention time.Duration) bool {
+	return createdAt.UTC().Format(time.DateOnly) < Cutoff(now, retention)
+}
+
 // Plan expires the runs in date dirs before cutoff. Then, while data/ is
 // over diskCap, it removes extracted/ trees and then whole runs, oldest
 // first: by date dir, then run id. It also evicts each kept run created at

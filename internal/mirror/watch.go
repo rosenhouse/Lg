@@ -61,11 +61,6 @@ func (w *watch) prune(evicted func(createdAt time.Time) bool) {
 	maps.DeleteFunc(w.runs, func(_ int64, run watchedRun) bool { return evicted(run.CreatedAt) })
 }
 
-// pastRetention reports whether retention evicts a run created at createdAt.
-func pastRetention(createdAt, now time.Time, retention time.Duration) bool {
-	return createdAt.Before(now.Add(-retention))
-}
-
 // save writes the file when the host's run ids changed.
 func (w *watch) save() error {
 	if slices.Equal(slices.Sorted(maps.Keys(w.runs)), w.loaded) {

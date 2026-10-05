@@ -33,6 +33,20 @@ var _ = Describe("retention.Cutoff", Label("retention"), func() {
 	})
 })
 
+var _ = Describe("retention.Expired", Label("retention"), func() {
+	now := time.Date(2027, 1, 1, 18, 0, 0, 0, time.UTC)
+
+	It("expires a run created before the cutoff date, and keeps one created on it before now−retention", func() {
+		Expect(retention.Expired(time.Date(2026, 10, 2, 23, 59, 59, 0, time.UTC), now, 90*24*time.Hour)).To(BeTrue())
+		Expect(retention.Expired(time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), now, 90*24*time.Hour)).To(BeFalse())
+	})
+
+	It("takes the date of created_at in UTC", func() {
+		east := time.FixedZone("UTC+5", 5*60*60)
+		Expect(retention.Expired(time.Date(2026, 10, 3, 1, 0, 0, 0, east), now, 90*24*time.Hour)).To(BeTrue())
+	})
+})
+
 var _ = Describe("retention.Plan", Label("retention"), func() {
 	const cutoff = "2026-10-03"
 

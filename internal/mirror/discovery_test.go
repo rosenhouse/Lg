@@ -447,3 +447,13 @@ var _ = Describe("an in_progress run created before retention", Label("discovery
 		Expect(readWatch(env)["github.com"]).NotTo(ContainElement("1"))
 	}, cycleTimeout)
 })
+
+var _ = Describe("an in_progress run created on the cutoff date, before now−retention", Label("discovery", "retention"), func() {
+	It("is watched, since retention keeps its date dir", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.InProgress(scenario.CloneAt(1, "after-attempt-2", harness.DefaultNow().Add(-90*scenario.Day-time.Hour)), 2))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(readWatch(env)["github.com"]).To(ContainElement("1"))
+	}, cycleTimeout)
+})

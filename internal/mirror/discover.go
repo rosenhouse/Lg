@@ -127,7 +127,7 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 		return discovery{}, err
 	}
 	evicted := func(createdAt time.Time) bool {
-		return pastRetention(createdAt, now, m.Retention) || horizon.Skips(createdAt)
+		return retention.Expired(createdAt, now, m.Retention) || horizon.Skips(createdAt)
 	}
 	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
 	if err != nil {
