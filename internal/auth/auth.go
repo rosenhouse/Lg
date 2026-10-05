@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -43,16 +44,26 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 	case errors.Is(err, errHung), errors.As(err, new(keyringError)):
 		// gh hangs on, or fails to reach, an OS keyring, as under launchd or systemd.
 		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s --insecure-storage`", err, host)}
+	case errors.As(err, new(noTokenError)):
+		// gh says this too when its keyring is out of reach.
+		return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`, adding `--insecure-storage` if `gh auth token` works in your shell, since then gh's token is in a keyring that lg cannot reach", err, host)}
 	}
 	return "", failure.Blocked{Kind: failure.Auth, Detail: fmt.Sprintf("%s; run `gh auth login --hostname %s`", err, host)}
 }
 
 var errHung = errors.New("did not exit")
 
-// keyringError is a gh failure whose stderr mentions the keyring.
+// keyringError is a gh failure whose stderr names a keyring service.
 type keyringError struct{ error }
 
 func (k keyringError) Unwrap() error { return k.error }
+
+var keyringWords = []string{"keyring", "keychain", "dbus", "secret service", "org.freedesktop.secrets"}
+
+// noTokenError is a gh failure that found no token for the host.
+type noTokenError struct{ error }
+
+func (n noTokenError) Unwrap() error { return n.error }
 
 func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	gh := cmp.Or(g.Env["LG_GH"], "gh")
@@ -68,8 +79,12 @@ func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	if err != nil {
 		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
 			err = fmt.Errorf("%w: %s", err, msg)
-			if bytes.Contains(bytes.ToLower(msg), []byte("keyring")) {
+			lower := strings.ToLower(string(msg))
+			switch {
+			case slices.ContainsFunc(keyringWords, func(word string) bool { return strings.Contains(lower, word) }):
 				err = keyringError{err}
+			case strings.Contains(lower, "no oauth token found"):
+				err = noTokenError{err}
 			}
 		}
 		return "", fmt.Errorf("%s: %w", command, err)
