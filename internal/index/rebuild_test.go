@@ -59,10 +59,13 @@ var _ = DescribeTable("starting from empty over a file SQLite cannot read", Labe
 		damage(dbPath(env))
 
 		indexAgain(ctx, dbPath(env), env.Data())
-		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM jobs")).To(Equal(12))
+		db := openDB(dbPath(env))
+		Expect(count(db, "SELECT count(*) FROM jobs")).To(Equal(12))
+		Expect(column[string](db, "SELECT workflow_name FROM runs")).To(Equal([]string{"lg-fixture"}))
 	},
 	Entry("index.Open, over a file that is not a db", syncTimeout, notADB, reconcile),
 	Entry("index.Open, over a db with corrupt pages", syncTimeout, corruptPages, reconcile),
+	Entry("index.Open, over a file that is not a db beside a stale WAL", syncTimeout, notADBBesideAStaleWAL, reconcile),
 	Entry("index.Rebuild, over a file that is not a db", syncTimeout, notADB, rebuild),
 	Entry("index.Rebuild, over a db with corrupt pages", syncTimeout, corruptPages, rebuild),
 )
@@ -70,6 +73,19 @@ var _ = DescribeTable("starting from empty over a file SQLite cannot read", Labe
 func notADB(path string) {
 	GinkgoHelper()
 	Expect(os.WriteFile(path, []byte("not a db, but long enough for SQLite to read its header"), 0o644)).To(Succeed())
+}
+
+// notADBBesideAStaleWAL leaves the WAL of a db that renamed the workflow.
+func notADBBesideAStaleWAL(path string) {
+	GinkgoHelper()
+	db := openDB(path)
+	_, err := db.ExecContext(context.Background(), "UPDATE runs SET workflow_name = 'stale'")
+	Expect(err).NotTo(HaveOccurred())
+	wal, err := os.ReadFile(path + "-wal")
+	Expect(err).NotTo(HaveOccurred())
+	Expect(db.Close()).To(Succeed())
+	notADB(path)
+	Expect(os.WriteFile(path+"-wal", wal, 0o644)).To(Succeed())
 }
 
 // corruptPages overwrites every page after the first, which holds the schema.

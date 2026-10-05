@@ -83,8 +83,8 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(count(openDB(path), "SELECT count(*) FROM runs")).To(Equal(1))
 	})
 
-	It("keep the db another made while waiting to recover from a file that is not a db", func(ctx SpecContext) {
-		recovering, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
+	It("keep the db another made while waiting to open a file that is not a db", func(ctx SpecContext) {
+		opening, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
 		notADB(dbPath(env))
 		rebuilt := make(chan error, 1)
@@ -98,7 +98,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		// An open connection keeps the made db's inode from reuse.
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
-		Expect(recovering.Release()).To(Succeed())
+		Expect(opening.Release()).To(Succeed())
 
 		Eventually(rebuilt, waitTimeout).Should(Receive(Succeed()))
 		Expect(os.Stat(dbPath(env))).To(WithTransform(func(now os.FileInfo) bool { return os.SameFile(kept, now) }, BeTrue()))

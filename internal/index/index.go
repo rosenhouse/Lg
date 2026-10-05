@@ -38,12 +38,21 @@ type Index struct {
 // write lock at its start, and waits up to busyTimeout for another process
 // to release it.
 func Open(ctx context.Context, path, data string) (*Index, error) {
-	var ix *Index
-	err := recovering(path, func() (err error) {
-		ix, err = open(ctx, path, data)
-		return err
-	})
-	return ix, err
+	// Every opener holds path.lock, so none opens a file while another replaces it.
+	l, err := lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = l.Release() }()
+	ix, err := open(ctx, path, data)
+	if !hasCode(err, sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT) {
+		return ix, err
+	}
+	// SQLite deletes a WAL beside an empty db.
+	if err := os.Remove(path); err != nil {
+		return nil, err
+	}
+	return open(ctx, path, data)
 }
 
 func open(ctx context.Context, path, data string) (*Index, error) {
@@ -58,29 +67,6 @@ func open(ctx context.Context, path, data string) (*Index, error) {
 		return nil, errors.Join(ix.dbError(err), db.Close())
 	}
 	return ix, nil
-}
-
-// recovering runs f, and if SQLite finds the file at path is not a db or is
-// corrupt, removes the file and runs f again. SQLite then deletes any WAL
-// beside it. Holding path.lock, it keeps a db that another recovery made
-// while it waited.
-func recovering(path string, f func() error) (err error) {
-	damaged, _ := os.Stat(path)
-	err = f()
-	if !hasCode(err, sqlite3.SQLITE_NOTADB, sqlite3.SQLITE_CORRUPT) {
-		return err
-	}
-	l, err := lock.Wait(path+".lock", busyTimeout, clock.Real{}, func(string) {})
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, l.Release()) }()
-	if now, err := os.Stat(path); err == nil && os.SameFile(damaged, now) {
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-	}
-	return f()
 }
 
 // resetUnlessCurrent empties a db whose meta.format is not Format. It takes
@@ -189,16 +175,13 @@ func (ix *Index) Reconcile(ctx context.Context) error {
 	return ix.index(ctx, indexed, false)
 }
 
-// Rebuild indexes every run on disk into an empty lg.db at path. Like Open,
-// it starts from empty over a file SQLite finds is not a db or is corrupt.
+// Rebuild indexes every run on disk into an empty lg.db at path.
 func Rebuild(ctx context.Context, path, data string) error {
-	return recovering(path, func() error {
-		ix, err := open(ctx, path, data)
-		if err != nil {
-			return err
-		}
-		return errors.Join(ix.index(ctx, nil, true), ix.Close())
-	})
+	ix, err := Open(ctx, path, data)
+	if err != nil {
+		return err
+	}
+	return errors.Join(ix.index(ctx, nil, true), ix.Close())
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
