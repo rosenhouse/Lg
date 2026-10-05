@@ -60,6 +60,31 @@ var _ = Describe("the index after syncing through after-attempt-1, -2 and -3", L
 		}
 	})
 
+	It("holds the recorded values of attempt 1, its failed job flaky, and that job's failed step and the step before", func() {
+		attempt := layout.AttemptDir(runDir(env.Data(), runID), 1)
+		Expect(row(db, "SELECT * FROM attempts WHERE attempt = 1")).To(Equal(map[string]any{
+			"run_id": int64(runID), "attempt": int64(1), "path": attempt, "status": "completed", "conclusion": "failure",
+			"run_started_at": "2026-10-03T14:22:54Z", "completed_at": "2026-10-03T14:24:12Z",
+		}))
+		job := layout.JobDir(attempt, 111221289888, "flaky")
+		log, err := os.Stat(filepath.Join(job, "log.txt"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(row(db, "SELECT * FROM jobs WHERE job_id = 111221289888")).To(Equal(map[string]any{
+			"job_id": int64(111221289888), "run_id": int64(runID), "attempt": int64(1), "name": "flaky", "slug": "flaky",
+			"kind": "ran", "original_job_id": nil, "conclusion": "failure",
+			"started_at": "2026-10-03T14:22:57Z", "completed_at": "2026-10-03T14:23:03Z",
+			"runner_name": "GitHub Actions 1000002382", "labels": `["ubuntu-latest"]`,
+			"has_log": int64(1), "log_bytes": log.Size(), "path": job,
+		}))
+		Expect(dump(db, "SELECT * FROM steps WHERE job_id = 111221289888 AND number IN (4, 7) ORDER BY number")).To(Equal([]map[string]any{{
+			"job_id": int64(111221289888), "number": int64(4), "name": "Upload same-named artifact with overwrite", "conclusion": "success",
+			"started_at": "2026-10-03T14:22:59Z", "completed_at": "2026-10-03T14:23:01Z", "path": job,
+		}, {
+			"job_id": int64(111221289888), "number": int64(7), "name": "Fail on first attempt only", "conclusion": "failure",
+			"started_at": "2026-10-03T14:23:01Z", "completed_at": "2026-10-03T14:23:01Z", "path": job,
+		}}))
+	})
+
 	It("attributes 11276267449, 11276052917 and 11275918123 to attempt 2 by listing-diff, and the 4 artifacts first seen with attempt 1 to attempt 1", func() {
 		attributed := func(id int64) []string {
 			return column[string](db, "SELECT attributed_attempt || ' ' || attribution FROM artifacts WHERE artifact_id = ?", id)
