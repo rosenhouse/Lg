@@ -14,11 +14,13 @@ type Run struct {
 	Name       string    `json:"name"`
 	Path       string    `json:"path"`
 	HeadBranch string    `json:"head_branch"`
+	HeadSHA    string    `json:"head_sha"`
 	CreatedAt  time.Time `json:"created_at"`
 	// RunStartedAt is when the latest attempt, or the one fetched, started.
 	RunStartedAt time.Time     `json:"run_started_at"`
 	UpdatedAt    time.Time     `json:"updated_at"`
 	Status       string        `json:"status"`
+	Conclusion   string        `json:"conclusion"`
 	RunAttempt   int           `json:"run_attempt"`
 	Repository   Repository    `json:"repository"`
 	WorkflowID   int64         `json:"workflow_id"`
@@ -39,14 +41,20 @@ type Job struct {
 	ID          int64      `json:"id"`
 	Name        string     `json:"name"`
 	Status      string     `json:"status"`
+	Conclusion  string     `json:"conclusion"`
 	StartedAt   *time.Time `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
 	RunnerName  *string    `json:"runner_name"`
+	Labels      []string   `json:"labels"`
 	Steps       []Step     `json:"steps"`
 }
 
 type Step struct {
-	Name string `json:"name"`
+	Number      int        `json:"number"`
+	Name        string     `json:"name"`
+	Conclusion  string     `json:"conclusion"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
 }
 
 // JobKind says whether a job produced a log.
@@ -81,6 +89,10 @@ type Artifact struct {
 	CreatedAt   time.Time `json:"created_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	Digest      string    `json:"digest"`
+	WorkflowRun struct {
+		HeadBranch string `json:"head_branch"`
+		HeadSHA    string `json:"head_sha"`
+	} `json:"workflow_run"`
 }
 
 // ArtifactAction is what lg does with a listed artifact.

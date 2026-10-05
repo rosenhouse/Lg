@@ -36,7 +36,7 @@ var _ = Describe("IndexRun", Label("index"), func() {
 		Expect(want.Units).To(ConsistOf(
 			"attempt-1", "attempt-2",
 			"artifacts/11276401837_flaky-report", "artifacts/11276272069_pass-artifact",
-			"artifacts/11276182467_flaky-report-overwrite", "artifacts/11275917910_expires-in-1-day",
+			"artifacts/11275917910_expires-in-1-day",
 			"artifacts/11276267449_flaky-report", "artifacts/11276052917_rerun-only-attempt-2",
 			"artifacts/11275918123_flaky-report-overwrite",
 		))
