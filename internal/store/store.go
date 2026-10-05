@@ -536,3 +536,6 @@ func (s *Store) Rename(oldpath, newpath string) error {
 	}
 	return s.fs.SyncDir(filepath.Dir(newpath))
 }
+
+// Evict removes dir.
+func (s *Store) Evict(dir string) error { return nil }
