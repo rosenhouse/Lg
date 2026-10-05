@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"modernc.org/sqlite"
@@ -115,7 +116,7 @@ func reset(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	for _, name := range names {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("DROP TABLE %q", name)); err != nil {
+		if _, err := tx.ExecContext(ctx, "DROP TABLE "+quoteIdentifier(name)); err != nil {
 			return err
 		}
 	}
@@ -124,6 +125,10 @@ func reset(ctx context.Context, tx *sql.Tx) error {
 	}
 	_, err = tx.ExecContext(ctx, "INSERT INTO meta (format) VALUES (?)", Format)
 	return err
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // inTx returns f's error alone, since SQLite may have rolled back already.
