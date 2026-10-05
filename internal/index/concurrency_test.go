@@ -10,8 +10,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
@@ -80,6 +82,27 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Eventually(opened, waitTimeout).Should(Receive(Succeed()))
 		Expect(count(openDB(path), "SELECT count(*) FROM runs")).To(Equal(1))
 	})
+
+	It("keep the db another made while waiting to recover from a file that is not a db", func(ctx SpecContext) {
+		recovering, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		notADB(dbPath(env))
+		rebuilt := make(chan error, 1)
+		go func() { rebuilt <- index.Rebuild(ctx, dbPath(env), env.Data()) }()
+		Consistently(rebuilt, "200ms").ShouldNot(Receive())
+
+		made := filepath.Join(GinkgoT().TempDir(), "lg.db")
+		reconcile(ctx, made, env.Data())
+		Expect(os.Rename(made, dbPath(env))).To(Succeed())
+		kept, err := os.Stat(dbPath(env))
+		Expect(err).NotTo(HaveOccurred())
+		// An open connection keeps the made db's inode from reuse.
+		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(2))
+		Expect(recovering.Release()).To(Succeed())
+
+		Eventually(rebuilt, waitTimeout).Should(Receive(Succeed()))
+		Expect(os.Stat(dbPath(env))).To(WithTransform(func(now os.FileInfo) bool { return os.SameFile(kept, now) }, BeTrue()))
+	}, syncTimeout)
 
 	It("let another writer commit while Reconcile reads data/", func(ctx SpecContext) {
 		ix, err := index.Open(ctx, dbPath(env), env.Data())

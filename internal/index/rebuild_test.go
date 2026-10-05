@@ -1,6 +1,8 @@
 package index_test
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"os"
 
@@ -18,14 +20,6 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		env = harness.InProcess()
 		syncStages(ctx, env, "after-attempt-1")
 	}, syncTimeout)
-
-	It("starts from empty over a file that is not an SQLite db", func(ctx SpecContext) {
-		Expect(os.WriteFile(dbPath(env), []byte("not a db, but long enough for SQLite to read its header"), 0o644)).To(Succeed())
-		Expect(index.Open(ctx, dbPath(env), env.Data())).Error().To(MatchError(ContainSubstring(dbPath(env))))
-
-		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
-		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM jobs")).To(Equal(12))
-	})
 
 	It("starts from empty over a schema that lost a table or gained a column", func(ctx SpecContext) {
 		reconcile(ctx, dbPath(env), env.Data())
@@ -56,6 +50,45 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(0))
 	})
 })
+
+var _ = DescribeTable("starting from empty over a file SQLite cannot read", Label("index"),
+	func(ctx SpecContext, damage func(path string), indexAgain func(ctx context.Context, path, data string)) {
+		env := harness.InProcess()
+		syncStages(ctx, env, "after-attempt-1")
+		reconcile(ctx, dbPath(env), env.Data())
+		damage(dbPath(env))
+
+		indexAgain(ctx, dbPath(env), env.Data())
+		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM jobs")).To(Equal(12))
+	},
+	Entry("index.Open, over a file that is not a db", syncTimeout, notADB, reconcile),
+	Entry("index.Open, over a db with corrupt pages", syncTimeout, corruptPages, reconcile),
+	Entry("index.Rebuild, over a file that is not a db", syncTimeout, notADB, rebuild),
+	Entry("index.Rebuild, over a db with corrupt pages", syncTimeout, corruptPages, rebuild),
+)
+
+func notADB(path string) {
+	GinkgoHelper()
+	Expect(os.WriteFile(path, []byte("not a db, but long enough for SQLite to read its header"), 0o644)).To(Succeed())
+}
+
+// corruptPages overwrites every page after the first, which holds the schema.
+func corruptPages(path string) {
+	GinkgoHelper()
+	info, err := os.Stat(path)
+	Expect(err).NotTo(HaveOccurred())
+	const pageSize = 4096
+	garbage := bytes.Repeat([]byte{0x5a}, int(info.Size())-pageSize)
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(f.WriteAt(garbage, pageSize)).To(Equal(len(garbage)))
+	Expect(f.Close()).To(Succeed())
+}
+
+func rebuild(ctx context.Context, path, data string) {
+	GinkgoHelper()
+	Expect(index.Rebuild(ctx, path, data)).To(Succeed())
+}
 
 var _ = Describe("an index transaction", Label("index"), func() {
 	It("fails with only the cause when SQLite has already rolled it back", func(ctx SpecContext) {
