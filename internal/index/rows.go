@@ -121,29 +121,43 @@ type artifactFiles struct {
 	fetch    fetch
 }
 
-// IndexRun derives a run's rows from the files in runDir alone.
+// IndexRun derives a run's rows from the files in runDir alone. It reads only
+// the units it lists first, so a unit published later stays unindexed until
+// the next Reconcile lists it.
 func IndexRun(runDir string) (Rows, error) {
-	attempts, err := readAttempts(runDir)
-	if err != nil {
-		return Rows{}, err
-	}
-	artifacts, err := readArtifacts(runDir)
-	if err != nil {
-		return Rows{}, err
-	}
 	units, err := runUnits(runDir)
 	if err != nil {
 		return Rows{}, err
 	}
-	r := &runFiles{dir: runDir}
 	var rows Rows
+	var attempts []attemptFiles
+	var artifacts []artifactFiles
 	for _, unit := range units {
 		rel, err := filepath.Rel(runDir, unit)
 		if err != nil {
 			return Rows{}, err
 		}
 		rows.Units = append(rows.Units, rel)
+		if n, ok := layout.AttemptNumber(rel); ok {
+			a, err := readAttempt(unit, n)
+			if err != nil {
+				return Rows{}, err
+			}
+			attempts = append(attempts, a)
+		} else if filepath.Base(rel) != "extracted" {
+			a, err := readArtifact(runDir, rel)
+			if err != nil {
+				return Rows{}, err
+			}
+			artifacts = append(artifacts, a)
+		}
 	}
+	// Once retention evicts the run, its files read as absent.
+	if _, err := os.Lstat(runDir); err != nil {
+		return Rows{}, err
+	}
+	slices.SortFunc(attempts, func(a, b attemptFiles) int { return cmp.Compare(a.n, b.n) })
+	r := &runFiles{dir: runDir}
 	rows.Run = runRow(attempts, artifacts)
 	for i, a := range attempts {
 		if err := r.addAttempt(&rows, a, attempts[:i]); err != nil {
@@ -158,57 +172,21 @@ func IndexRun(runDir string) (Rows, error) {
 	return rows, nil
 }
 
-func readAttempts(runDir string) ([]attemptFiles, error) {
-	entries, err := os.ReadDir(runDir)
-	if err != nil {
-		return nil, err
-	}
-	var attempts []attemptFiles
-	for _, e := range entries {
-		n, ok := layout.AttemptNumber(e.Name())
-		if !ok || !e.IsDir() {
-			continue
-		}
-		dir := layout.AttemptDir(runDir, n)
-		a := attemptFiles{n: n}
-		err := errors.Join(
-			readJSON(filepath.Join(dir, "attempt.json"), &a.run),
-			readJSON(filepath.Join(dir, "jobs.json"), &a.jobs),
-			readJSON(filepath.Join(dir, "artifacts.json"), &a.listed),
-			readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
-		if err != nil {
-			return nil, err
-		}
-		attempts = append(attempts, a)
-	}
-	slices.SortFunc(attempts, func(a, b attemptFiles) int { return cmp.Compare(a.n, b.n) })
-	return attempts, nil
+func readAttempt(dir string, n int) (attemptFiles, error) {
+	a := attemptFiles{n: n}
+	return a, errors.Join(
+		readJSON(filepath.Join(dir, "attempt.json"), &a.run),
+		readJSON(filepath.Join(dir, "jobs.json"), &a.jobs),
+		readJSON(filepath.Join(dir, "artifacts.json"), &a.listed),
+		readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
 }
 
-func readArtifacts(runDir string) ([]artifactFiles, error) {
-	entries, err := os.ReadDir(filepath.Join(runDir, "artifacts"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var artifacts []artifactFiles
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		a := artifactFiles{dir: filepath.Join("artifacts", e.Name())}
-		dir := filepath.Join(runDir, a.dir)
-		err := errors.Join(
-			readJSON(filepath.Join(dir, "artifact.json"), &a.artifact),
-			readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
-		if err != nil {
-			return nil, err
-		}
-		artifacts = append(artifacts, a)
-	}
-	return artifacts, nil
+func readArtifact(runDir, rel string) (artifactFiles, error) {
+	a := artifactFiles{dir: rel}
+	dir := filepath.Join(runDir, rel)
+	return a, errors.Join(
+		readJSON(filepath.Join(dir, "artifact.json"), &a.artifact),
+		readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
 }
 
 // runRow takes the run's facts from its highest attempt, else from the
@@ -314,12 +292,7 @@ func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFi
 		return err
 	}
 	row.HasZip, row.Expired = hasZip, lost == tombstone.Expired
-	extracted := filepath.Join(a.dir, "extracted")
-	if _, err := os.Lstat(filepath.Join(r.dir, extracted)); err == nil {
-		row.Extracted = true
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
+	_, row.Extracted = slices.BinarySearch(rows.Units, filepath.Join(a.dir, "extracted"))
 	rows.Artifacts = append(rows.Artifacts, row)
 	return nil
 }
