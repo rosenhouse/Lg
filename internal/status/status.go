@@ -91,7 +91,7 @@ type Repo struct {
 type Cycle struct {
 	Started, Finished time.Time
 	Err               error
-	// Completed is whether the cycle ran to its end.
+	// Completed is whether the cycle and its retention ran to their end.
 	Completed bool
 	// Pending are the units the cycle left for the next one, one error each.
 	Pending       []error

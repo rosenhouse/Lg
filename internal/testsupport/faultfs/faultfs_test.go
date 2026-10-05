@@ -41,6 +41,20 @@ var _ = Describe("FS", Label("store"), func() {
 		return file.Close()
 	}
 
+	It("runs a Before hook ahead of each op it names under its dir", func() {
+		var existed []bool
+		f.Before("create", filepath.Join(dir, "d"), func() {
+			_, err := os.Lstat(filepath.Join(dir, "d", "a"))
+			existed = append(existed, err == nil)
+		})
+
+		Expect(writeFile()).To(Succeed())
+		file, err := f.Create(filepath.Join(dir, "b"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(file.Close()).To(Succeed())
+		Expect(existed).To(Equal([]bool{false}))
+	})
+
 	It("passes ops through to the inner FS and journals the mutating ones", func() {
 		Expect(writeFile()).To(Succeed())
 		Expect(f.SyncDir(filepath.Join(dir, "d"))).To(Succeed())

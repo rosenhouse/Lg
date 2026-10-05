@@ -67,6 +67,7 @@ func (m *Mirror) Cycle(ctx context.Context) (Report, error) {
 	report, err := m.cycle(ctx)
 	err = m.classify(err)
 	if ctx.Err() != nil {
+		report.Completed = false
 		if err == nil {
 			return report, ctx.Err()
 		}

@@ -73,3 +73,17 @@ var _ = Describe("mirror.Cycle after its context is cancelled", Label("retention
 		Expect(empty).To(BeADirectory())
 	}, cycleTimeout)
 })
+
+var _ = Describe("mirror.Cycle whose ctx ends after its last request", Label("status"), func() {
+	It("reports the cycle as not completed, since retention did not run", func(ctx SpecContext) {
+		env := harness.InProcess()
+		cancelled, cancel := context.WithCancel(ctx)
+		DeferCleanup(cancel)
+		env.FS.Before("rename", filepath.Join(env.State(), "rescan.json"), cancel)
+
+		report, err := env.Mirror.Cycle(cancelled)
+
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(report.Completed).To(BeFalse())
+	}, cycleTimeout)
+})
