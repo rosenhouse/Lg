@@ -25,6 +25,9 @@ type Run struct {
 	Date  string
 	ID    int64
 	Bytes int64
+	// CreatedAt is the run_created_at in a fetch.json of the run, and zero
+	// when it has none.
+	CreatedAt time.Time
 	// Extracted are its artifacts' extracted/ trees.
 	Extracted []Tree
 }
@@ -64,7 +67,8 @@ func Cutoff(now time.Time, retention time.Duration) string {
 
 // Plan expires the runs in date dirs before cutoff. Then, while data/ is
 // over diskCap, it removes extracted/ trees and then whole runs, oldest
-// first: by date dir, then run id.
+// first: by date dir, then run id. It also evicts each kept run created at
+// or before an evicted run.
 func Plan(u Usage, cutoff string, diskCap int64) Victims {
 	runs := slices.SortedFunc(slices.Values(u.Runs), func(a, b Run) int {
 		return cmp.Or(cmp.Compare(a.Date, b.Date), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Dir, b.Dir))
@@ -97,7 +101,26 @@ func Plan(u Usage, cutoff string, diskCap int64) Victims {
 		v.Evicted = append(v.Evicted, r)
 		total -= r.Bytes
 	}
+	// Discovery skips runs created at or before the horizon, so the kept
+	// runs that the horizon would pass go too.
+	horizon := newestCreatedAt(v.Evicted)
+	for _, r := range kept[len(v.Evicted):] {
+		if !r.CreatedAt.IsZero() && !r.CreatedAt.After(horizon) {
+			v.Evicted = append(v.Evicted, r)
+		}
+	}
 	return v
+}
+
+// newestCreatedAt is the newest CreatedAt of runs, and zero when none has one.
+func newestCreatedAt(runs []Run) time.Time {
+	var newest time.Time
+	for _, r := range runs {
+		if r.CreatedAt.After(newest) {
+			newest = r.CreatedAt
+		}
+	}
+	return newest
 }
 
 // Find gives what retention removes from data/ at now.
@@ -152,6 +175,9 @@ func Scan(data string) (Usage, error) {
 		}
 		return nil
 	})
+	for i := range u.Runs {
+		u.Runs[i].CreatedAt = runCreatedAt(u.Runs[i].Dir)
+	}
 	return u, err
 }
 
@@ -213,10 +239,8 @@ func raiseHorizon(s *store.Store, evicted []Run) error {
 		return err
 	}
 	raised := h
-	for _, r := range evicted {
-		if createdAt := runCreatedAt(r); createdAt.After(raised.At) {
-			raised.At = createdAt
-		}
+	if newest := newestCreatedAt(evicted); newest.After(raised.At) {
+		raised.At = newest
 	}
 	if raised == h {
 		return nil
@@ -224,11 +248,11 @@ func raiseHorizon(s *store.Store, evicted []Run) error {
 	return raised.Write(s)
 }
 
-// runCreatedAt is the run_created_at in a fetch.json of the run, or else the
-// last second of its date dir.
-func runCreatedAt(r Run) time.Time {
-	attempts, _ := filepath.Glob(filepath.Join(r.Dir, "attempt-*", "fetch.json"))
-	artifacts, _ := filepath.Glob(filepath.Join(r.Dir, "artifacts", "*", "fetch.json"))
+// runCreatedAt is the run_created_at in a fetch.json of the run, and zero
+// when it has none.
+func runCreatedAt(dir string) time.Time {
+	attempts, _ := filepath.Glob(filepath.Join(dir, "attempt-*", "fetch.json"))
+	artifacts, _ := filepath.Glob(filepath.Join(dir, "artifacts", "*", "fetch.json"))
 	for _, path := range append(attempts, artifacts...) {
 		var f struct {
 			RunCreatedAt time.Time `json:"run_created_at"`
@@ -238,8 +262,7 @@ func runCreatedAt(r Run) time.Time {
 			return f.RunCreatedAt
 		}
 	}
-	date, _ := time.Parse(time.DateOnly, r.Date)
-	return date.Add(24*time.Hour - time.Second)
+	return time.Time{}
 }
 
 func removeEmptyDates(s *store.Store) error {

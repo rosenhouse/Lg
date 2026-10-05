@@ -207,7 +207,7 @@ var _ = Describe("lg gc over disk_cap", Label("retention"), func() {
 		Expect(gc(env)).To(gexec.Exit(0))
 		Expect(run11).NotTo(BeADirectory())
 		Expect(run9).NotTo(BeADirectory())
-		Expect(run10).To(BeADirectory())
+		Expect(run10).NotTo(BeADirectory(), "the horizon at run 9 passes run 10, so it goes too")
 		Expect(run12).To(BeADirectory())
 		Expect(extracted12).NotTo(BeADirectory())
 		Expect(apparentBytes(env.Data())).To(BeNumerically("<=", diskCap))

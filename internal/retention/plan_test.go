@@ -75,6 +75,15 @@ var _ = Describe("retention.Plan", Label("retention"), func() {
 		Expect(dirs(v.Evicted)).To(Equal([]string{runs[3].Dir, runs[2].Dir}))
 	})
 
+	It("also evicts each kept run created at or before an evicted run, so the horizon passes no kept run", func() {
+		at := func(hour int) time.Time { return time.Date(2026, 10, 4, hour, 0, 0, 0, time.UTC) }
+		runs := []retention.Run{run("2026-10-04", 9, 10), run("2026-10-04", 10, 10), run("2026-10-04", 11, 10), run("2026-10-04", 12, 10), run("2026-10-04", 13, 10)}
+		runs[0].CreatedAt, runs[1].CreatedAt, runs[2].CreatedAt, runs[3].CreatedAt = at(12), at(6), at(12), at(13)
+
+		v := retention.Plan(retention.Usage{Runs: runs, Bytes: 50}, cutoff, 40)
+		Expect(dirs(v.Evicted)).To(Equal([]string{runs[0].Dir, runs[1].Dir, runs[2].Dir}))
+	})
+
 	It("counts expired runs as removed before checking disk_cap", func() {
 		runs := []retention.Run{run("2026-10-01", 1, 10), run("2026-10-04", 2, 10)}
 
