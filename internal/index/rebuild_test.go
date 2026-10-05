@@ -111,8 +111,8 @@ func corruptRootPage(name string) func(path string) {
 		db, err := sql.Open("sqlite", path)
 		Expect(err).NotTo(HaveOccurred())
 		var page, pageSize int64
-		Expect(db.QueryRow("SELECT rootpage FROM sqlite_master WHERE name = ?", name).Scan(&page)).To(Succeed())
-		Expect(db.QueryRow("PRAGMA page_size").Scan(&pageSize)).To(Succeed())
+		Expect(db.QueryRowContext(context.Background(), "SELECT rootpage FROM sqlite_master WHERE name = ?", name).Scan(&page)).To(Succeed())
+		Expect(db.QueryRowContext(context.Background(), "PRAGMA page_size").Scan(&pageSize)).To(Succeed())
 		Expect(db.Close()).To(Succeed())
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		Expect(err).NotTo(HaveOccurred())
