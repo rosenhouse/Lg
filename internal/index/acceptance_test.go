@@ -61,6 +61,7 @@ var _ = Describe("the index after syncing through after-attempt-1, -2 and -3", L
 	})
 
 	It("holds the recorded values of attempt 1, its failed job flaky, and that job's failed step and the step before", func() {
+		Expect(column[string](db, "SELECT pr_numbers FROM runs")).To(Equal([]string{"[]"}))
 		attempt := layout.AttemptDir(runDir(env.Data(), runID), 1)
 		Expect(row(db, "SELECT * FROM attempts WHERE attempt = 1")).To(Equal(map[string]any{
 			"run_id": int64(runID), "attempt": int64(1), "path": attempt, "status": "completed", "conclusion": "failure",
@@ -175,6 +176,7 @@ var _ = Describe("index.Reconcile", Label("index"), func() {
 			hidden := filepath.Join(env.Tmp(), "hidden")
 			Expect(os.Rename(other, hidden)).To(Succeed())
 			reconcile(ctx, path, env.Data())
+			Expect(column[string](openDB(path), "SELECT created_at FROM runs")).To(Equal([]string{"2026-10-03T14:22:54Z"}))
 			Expect(os.Rename(hidden, other)).To(Succeed())
 			reconcile(ctx, path, env.Data())
 			return contents(openDB(path), env.Data())
@@ -213,8 +215,9 @@ var _ = Describe("index.Reconcile", Label("index"), func() {
 			HaveKeyWithValue("display_title", "Add lg-fixture workflow for recording Actions API shapes"),
 			HaveKeyWithValue("latest_attempt", BeNil()),
 		))
-		Expect(column[string](db, "SELECT attribution FROM artifacts WHERE run_id = ? AND has_zip", cloneID)).
-			To(Equal([]string{"unknown", "unknown", "unknown", "unknown"}))
+		Expect(dump(db, "SELECT attribution, attributed_attempt FROM artifacts WHERE run_id = ? AND has_zip", cloneID)).
+			To(HaveEach(Equal(map[string]any{"attribution": "unknown", "attributed_attempt": nil})))
+		Expect(count(db, "SELECT count(*) FROM artifacts WHERE run_id = ? AND has_zip", cloneID)).To(Equal(4))
 	}, syncTimeout)
 })
 
