@@ -262,7 +262,7 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 		return err
 	}
 	read := map[string]Rows{}
-	var unreadable []error
+	var failed []error
 	for _, runDir := range slices.Sorted(maps.Keys(onDisk)) {
 		if slices.Equal(onDisk[runDir], indexed[runDir]) {
 			continue
@@ -273,7 +273,7 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 				// Retention evicted the run while IndexRun read it.
 				delete(onDisk, runDir)
 			} else {
-				unreadable = append(unreadable, err)
+				failed = append(failed, err)
 			}
 			continue
 		}
@@ -286,7 +286,7 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 		}
 	}
 	if unchanged {
-		return errors.Join(unreadable...)
+		return errors.Join(failed...)
 	}
 	err = ix.inTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if fresh {
@@ -296,7 +296,7 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 		}
 		return write(ctx, tx, onDisk, read)
 	})
-	return errors.Join(append([]error{ix.dbError(err)}, unreadable...)...)
+	return errors.Join(append([]error{ix.dbError(err)}, failed...)...)
 }
 
 // dbError names lg.db in err.
