@@ -93,6 +93,7 @@ var _ = DescribeTable("FromErrno", Label("blocked"),
 	Entry("EROFS", syscall.EROFS),
 	Entry("EACCES", syscall.EACCES),
 	Entry("EXDEV", syscall.EXDEV),
+	Entry("EPERM", syscall.EPERM),
 )
 
 var _ = Describe("FromErrno", Label("blocked"), func() {

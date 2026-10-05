@@ -108,10 +108,10 @@ func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 }
 
 // FromErrno blocks on a local error that no retry fixes: a full, read-only or
-// unwritable store, or a tmp/ that cannot be renamed into data/. It returns
+// unwritable or immutable store, or a tmp/ that cannot be renamed into data/. It returns
 // any other err as it is.
 func FromErrno(err error) error {
-	for _, errno := range []syscall.Errno{syscall.ENOSPC, syscall.EDQUOT, syscall.EROFS, syscall.EACCES, syscall.EXDEV} {
+	for _, errno := range []syscall.Errno{syscall.ENOSPC, syscall.EDQUOT, syscall.EROFS, syscall.EACCES, syscall.EXDEV, syscall.EPERM} {
 		if errors.Is(err, errno) {
 			return Blocked{Kind: LocalIO, Detail: err.Error()}
 		}
