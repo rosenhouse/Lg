@@ -35,6 +35,10 @@ var _ = Describe("NewLive", Label("cli"), func() {
 	})
 
 	It("keeps the proxy variables, GH_TOKEN and GH_CONFIG_DIR, and drops the other GH_ and XDG_ variables", func() {
+		GinkgoT().Setenv("HTTPS_PROXY", "P")
+		GinkgoT().Setenv("https_proxy", "p")
+		GinkgoT().Setenv("NO_PROXY", "N")
+		GinkgoT().Setenv("no_proxy", "n")
 		GinkgoT().Setenv("GH_TOKEN", "t")
 		GinkgoT().Setenv("GH_CONFIG_DIR", "/gh")
 		GinkgoT().Setenv("GH_HOST", "h")
@@ -42,9 +46,10 @@ var _ = Describe("NewLive", Label("cli"), func() {
 
 		env := harness.NewLive("/bin/lg")
 
-		for _, key := range []string{"HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"} {
-			Expect(env.Getenv(key)).To(Equal(os.Getenv(key)), key)
-		}
+		Expect(env.Getenv("HTTPS_PROXY")).To(Equal("P"))
+		Expect(env.Getenv("https_proxy")).To(Equal("p"))
+		Expect(env.Getenv("NO_PROXY")).To(Equal("N"))
+		Expect(env.Getenv("no_proxy")).To(Equal("n"))
 		Expect(env.Getenv("GH_TOKEN")).To(Equal("t"))
 		Expect(env.Getenv("GH_CONFIG_DIR")).To(Equal("/gh"))
 		Expect(env.Getenv("GH_HOST")).To(BeEmpty())
