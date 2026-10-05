@@ -62,7 +62,43 @@ var _ = Describe("IndexRun", Label("index"), func() {
 			"LatestAttempt": Equal(10),
 		}))
 	})
+
+	It("gives an artifact row has_zip, expired from its zip's tombstone, and extracted when extracted/ exists", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeArtifact(dir, 1, "artifact.zip.tombstone", `{"lg_format":1,"reason":"expired","http_status":410,"tombstoned_at":"2026-10-02T00:00:00Z"}`)
+		writeArtifact(dir, 2, "artifact.zip", "PK")
+		Expect(os.Mkdir(filepath.Join(dir, "artifacts/2_a/extracted"), 0o755)).To(Succeed())
+
+		rows, err := index.IndexRun(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows.Artifacts).To(ConsistOf(
+			MatchFields(IgnoreExtras, Fields{"ArtifactID": BeEquivalentTo(1), "HasZip": BeFalse(), "Expired": BeTrue(), "Extracted": BeFalse()}),
+			MatchFields(IgnoreExtras, Fields{"ArtifactID": BeEquivalentTo(2), "HasZip": BeTrue(), "Expired": BeFalse(), "Extracted": BeTrue()}),
+		))
+		Expect(rows.Units).To(ConsistOf("artifacts/1_a", "artifacts/2_a", "artifacts/2_a/extracted"))
+		Expect(rows.Tombstones).To(ConsistOf(MatchAllFields(Fields{
+			"Path":         Equal("artifacts/1_a/artifact.zip.tombstone"),
+			"Reason":       Equal("expired"),
+			"HTTPStatus":   PointTo(Equal(410)),
+			"TombstonedAt": Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)),
+		})))
+	})
 })
+
+// writeArtifact writes a hand-made artifact of run 5 named a, with one more file.
+func writeArtifact(runDir string, id int64, name, content string) {
+	GinkgoHelper()
+	dir := layout.ArtifactDir(runDir, id, "a")
+	Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+	files := map[string]string{
+		"artifact.json": fmt.Sprintf(`{"id":%d,"name":"a","created_at":"2026-10-01T00:00:00Z"}`, id),
+		"fetch.json":    `{"lg_format":1,"run_id":5,"run_created_at":"2026-10-01T00:00:00Z","run_attempt_at_fetch":1}`,
+		name:            content,
+	}
+	for name, content := range files {
+		Expect(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)).To(Succeed())
+	}
+}
 
 // writeAttempt writes a hand-made attempt of run 5 with no jobs and no
 // artifacts, whose own created_at is a day after the run's.
