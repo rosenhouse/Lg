@@ -299,7 +299,7 @@ func (r *runFiles) addAttempt(rows *Rows, a attemptFiles, earlier []attemptFiles
 func (r *runFiles) addArtifact(rows *Rows, a artifactFiles, attempts []attemptFiles) error {
 	snapshots := make([]model.Snapshot, len(attempts))
 	for i, at := range attempts {
-		snapshots[i] = model.Snapshot{Attempt: at.n, RunStartedAt: at.run.RunStartedAt, ListedAt: at.fetch.RunAttemptAtFetch}
+		snapshots[i] = model.Snapshot{Attempt: at.n, RunStartedAt: at.run.RunStartedAt, ListedDuring: at.fetch.RunAttemptAtFetch}
 		for _, listed := range at.listed {
 			snapshots[i].Listed = append(snapshots[i].Listed, listed.ID)
 		}

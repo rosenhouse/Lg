@@ -39,7 +39,7 @@ func openDB(path string) *sql.DB {
 
 func dbPath(env *harness.InProcessEnv) string { return filepath.Join(env.State(), "lg.db") }
 
-// reconcile opens the index at path over env's data/, reconciles it and closes it.
+// reconcile opens the index at path over data, reconciles it and closes it.
 func reconcile(ctx context.Context, path string, data string) {
 	GinkgoHelper()
 	ix, err := index.Open(path, data)

@@ -31,17 +31,21 @@ func writeScaleStore(data string, runs int) (files int) {
 		runDir := filepath.Join(data, "github.com", "o", "r", "runs", created.Format(time.DateOnly), fmt.Sprintf("%d_ci_main", id))
 		attempt := layout.AttemptDir(runDir, 1)
 		write(filepath.Join(attempt, "attempt.json"), fmt.Sprintf(`{"id":%d,"name":"ci","head_branch":"main","head_sha":"%040d","event":"push","status":"completed","conclusion":"success","workflow_id":7,"pull_requests":[],"display_title":"commit %d","created_at":%q,"updated_at":%q,"run_started_at":%q,"run_attempt":1,"repository":{"full_name":"o/r"}}`, id, id, i, at, at, at))
-		var jobs []string
-		for j := range 2 + i%18/17 {
+		var jobsJSON []string
+		jobs := 2
+		if i%18 == 17 {
+			jobs = 3
+		}
+		for j := range jobs {
 			jobID := id*10 + int64(j)
 			job := fmt.Sprintf(`{"id":%d,"run_id":%d,"run_attempt":1,"name":"build %d","status":"completed","conclusion":"success","started_at":%q,"completed_at":%q,"runner_name":"r","labels":["ubuntu-latest"],"steps":[{"name":"Run","status":"completed","conclusion":"success","number":1,"started_at":%q,"completed_at":%q}]}`, jobID, id, j, at, at, at, at)
-			jobs = append(jobs, job)
+			jobsJSON = append(jobsJSON, job)
 			jobDir := layout.JobDir(attempt, jobID, fmt.Sprintf("build %d", j))
 			write(filepath.Join(jobDir, "job.json"), job)
 			write(filepath.Join(jobDir, "log.txt"), "\ufeff"+at+" build output\n")
 		}
 		artifact := fmt.Sprintf(`{"id":%d,"name":"report","size_in_bytes":22,"expired":false,"created_at":%q,"workflow_run":{"id":%d,"head_branch":"main","head_sha":"%040d"}}`, id, at, id, id)
-		write(filepath.Join(attempt, "jobs.json"), "["+strings.Join(jobs, ",")+"]")
+		write(filepath.Join(attempt, "jobs.json"), "["+strings.Join(jobsJSON, ",")+"]")
 		write(filepath.Join(attempt, "artifacts.json"), "["+artifact+"]")
 		fetch := fmt.Sprintf(`{"lg_format":1,"host":"github.com","repo":"o/r","run_id":%d,"run_created_at":%q,"run_attempt_at_fetch":1,"run_status_at_fetch":"completed"`, id, at)
 		write(filepath.Join(attempt, "fetch.json"), fetch+`,"attempt":1,"sources":{},"carried_forward_jobs":[]}`)

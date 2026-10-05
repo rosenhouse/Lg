@@ -7,11 +7,11 @@ import (
 )
 
 // Snapshot is what an attempt on disk tells about the run's artifacts: its
-// start, and the ids its artifacts.json listed while run_attempt was ListedAt.
+// start, and the ids its artifacts.json listed while run_attempt was ListedDuring.
 type Snapshot struct {
 	Attempt      int
 	RunStartedAt time.Time
-	ListedAt     int
+	ListedDuring int
 	Listed       []int64
 }
 
@@ -19,7 +19,7 @@ type Snapshot struct {
 type Attribution string
 
 const (
-	ByListing   Attribution = "listing"
+	ByListing   Attribution = "listing-diff"
 	ByTimestamp Attribution = "timestamp"
 	Unknown     Attribution = "unknown"
 )
@@ -27,13 +27,15 @@ const (
 // Attribute gives the attempt that uploaded an artifact. Attempt N lists it by
 // listing-diff when attempt N-1 does not, provided each listed during its own
 // attempt. Otherwise createdAt must fall in [run_started_at(N),
-// run_started_at(N+1)), which needs attempt N+1 on disk unless no later
-// attempt is known: latest is the highest run_attempt seen elsewhere.
-func Attribute(id int64, createdAt time.Time, latest int, snapshots []Snapshot) (int, Attribution) {
+// run_started_at(N+1)), which needs attempt N+1 on disk unless N is the last
+// attempt known. No attempt after fetchedDuring can hold the artifact.
+func Attribute(id int64, createdAt time.Time, fetchedDuring int, snapshots []Snapshot) (int, Attribution) {
+	last := fetchedDuring
+	// Before attempt 1, the run listed no artifacts.
 	byAttempt := map[int]Snapshot{0: {}}
 	for _, s := range snapshots {
 		byAttempt[s.Attempt] = s
-		latest = max(latest, s.Attempt)
+		last = max(last, s.Attempt)
 	}
 	sorted := slices.SortedFunc(slices.Values(snapshots), func(a, b Snapshot) int { return cmp.Compare(a.Attempt, b.Attempt) })
 	for _, s := range sorted {
@@ -47,14 +49,14 @@ func Attribute(id int64, createdAt time.Time, latest int, snapshots []Snapshot) 
 			continue
 		}
 		next, ok := byAttempt[s.Attempt+1]
-		if ok && createdAt.Before(next.RunStartedAt) || !ok && latest == s.Attempt {
+		if ok && createdAt.Before(next.RunStartedAt) || !ok && last == s.Attempt {
 			return s.Attempt, ByTimestamp
 		}
 	}
 	return 0, Unknown
 }
 
-func listedOwn(s Snapshot) bool { return s.ListedAt == s.Attempt }
+func listedOwn(s Snapshot) bool { return s.ListedDuring == s.Attempt }
 
 // AttemptJobs is an attempt's jobs with its run_started_at, which Classify needs.
 type AttemptJobs struct {
@@ -68,7 +70,7 @@ type AttemptJobs struct {
 func MatchOriginal(job Job, earlier []AttemptJobs) (Job, bool) {
 	for _, attempt := range slices.Backward(earlier) {
 		for _, candidate := range attempt.Jobs {
-			if sameRun(candidate, job) && Classify(candidate, attempt.RunStartedAt) != CarriedForward {
+			if sameExecution(candidate, job) && Classify(candidate, attempt.RunStartedAt) != CarriedForward {
 				return candidate, true
 			}
 		}
@@ -76,7 +78,7 @@ func MatchOriginal(job Job, earlier []AttemptJobs) (Job, bool) {
 	return Job{}, false
 }
 
-func sameRun(a, b Job) bool {
+func sameExecution(a, b Job) bool {
 	return a.Name == b.Name && sameTime(a.StartedAt, b.StartedAt) && sameTime(a.CompletedAt, b.CompletedAt) &&
 		(a.RunnerName == nil) == (b.RunnerName == nil) && (a.RunnerName == nil || *a.RunnerName == *b.RunnerName)
 }

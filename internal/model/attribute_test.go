@@ -12,20 +12,20 @@ import (
 var _ = Describe("Attribute", Label("index"), func() {
 	t0 := time.Date(2026, 10, 3, 14, 0, 0, 0, time.UTC)
 	at := func(minutes int) time.Time { return t0.Add(time.Duration(minutes) * time.Minute) }
-	// snapshot is attempt n started at minute 10n, listing ids while run_attempt was listedAt.
-	snapshot := func(n, listedAt int, ids ...int64) model.Snapshot {
-		return model.Snapshot{Attempt: n, RunStartedAt: at(10 * n), ListedAt: listedAt, Listed: ids}
+	// snapshot is attempt n started at minute 10n, listing ids while run_attempt was listedDuring.
+	snapshot := func(n, listedDuring int, ids ...int64) model.Snapshot {
+		return model.Snapshot{Attempt: n, RunStartedAt: at(10 * n), ListedDuring: listedDuring, Listed: ids}
 	}
 	type result struct {
 		Attempt int
 		By      model.Attribution
 	}
-	attribute := func(id int64, created time.Time, latest int, snapshots ...model.Snapshot) result {
-		n, by := model.Attribute(id, created, latest, snapshots)
+	attribute := func(id int64, created time.Time, fetchedDuring int, snapshots ...model.Snapshot) result {
+		n, by := model.Attribute(id, created, fetchedDuring, snapshots)
 		return result{n, by}
 	}
 
-	It("gives attempt N by listing when attempt-N lists the id and attempt-(N-1) does not, both listed during their own attempt", func() {
+	It("gives attempt N by listing-diff when attempt-N lists the id and attempt-(N-1) does not, both listed during their own attempt", func() {
 		Expect(attribute(7, at(99), 2, snapshot(1, 1, 5), snapshot(2, 2, 5, 7))).To(Equal(result{2, model.ByListing}))
 		Expect(attribute(5, at(99), 2, snapshot(1, 1, 5), snapshot(2, 2, 5, 7))).To(Equal(result{1, model.ByListing}))
 	})
@@ -53,8 +53,8 @@ var _ = Describe("Attribute", Label("index"), func() {
 	)
 
 	DescribeTable("gives unknown when no window holds created_at",
-		func(created time.Time, latest int, snapshots ...model.Snapshot) {
-			Expect(attribute(7, created, latest, snapshots...)).To(Equal(result{0, model.Unknown}))
+		func(created time.Time, fetchedDuring int, snapshots ...model.Snapshot) {
+			Expect(attribute(7, created, fetchedDuring, snapshots...)).To(Equal(result{0, model.Unknown}))
 		},
 		Entry("no attempt on disk", at(15), 1),
 		Entry("before the earliest attempt on disk", at(15), 2, snapshot(2, 2)),
