@@ -48,3 +48,25 @@ var _ = Describe("index.Reconcile failing", Label("index"), func() {
 		Expect(ix.Reconcile(ctx)).To(MatchError(ContainSubstring(dbPath(env) + ": ")))
 	}, syncTimeout)
 })
+
+var _ = Describe("index.Reconcile", Label("index"), func() {
+	It("gives the rows a rebuild gives after a run is re-published under the same unit paths", func(ctx SpecContext) {
+		env := harness.InProcess()
+		syncStages(ctx, env, "after-attempt-1")
+		reconcile(ctx, dbPath(env), env.Data())
+		attempt := layout.AttemptDir(runDir(env.Data(), runID), 1)
+		staged := filepath.Join(env.Tmp(), "staged")
+		Expect(os.CopyFS(staged, os.DirFS(attempt))).To(Succeed())
+		job := layout.JobDir(staged, 111221289888, "flaky")
+		Expect(os.Remove(filepath.Join(job, "log.txt"))).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(job, "log.txt.tombstone"),
+			[]byte(`{"lg_format":1,"reason":"expired","http_status":410,"tombstoned_at":"2026-10-03T18:00:00Z"}`), 0o644)).To(Succeed())
+		Expect(os.RemoveAll(attempt)).To(Succeed())
+		Expect(os.Rename(staged, attempt)).To(Succeed())
+
+		reconcile(ctx, dbPath(env), env.Data())
+		rebuilt := filepath.Join(GinkgoT().TempDir(), "lg.db")
+		Expect(index.Rebuild(ctx, rebuilt, env.Data())).To(Succeed())
+		Expect(contents(openDB(dbPath(env)), env.Data())).To(Equal(contents(openDB(rebuilt), env.Data())))
+	}, syncTimeout)
+})
