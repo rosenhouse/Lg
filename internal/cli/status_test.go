@@ -289,3 +289,46 @@ var _ = Describe("lg sync that cannot write status.json", Label("status"), func(
 		Expect(s.StatusFile()).NotTo(BeAnExistingFile())
 	})
 })
+
+var _ = Describe("lg status after a cycle blocked before GET /repos", Label("status"), func() {
+	It("prints the default branch as unknown", func() {
+		s := harness.NewCLI()
+		s.Runner = failingRunner{"not logged in"}
+		Expect(s.Main("sync")).To(Equal(3))
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(ContainSubstring("\n  default branch: unknown\n"))
+	})
+})
+
+var _ = Describe("lg status with several repos", Label("status"), func() {
+	It("prints them in name order", func() {
+		s := harness.NewCLI()
+		names := []string{"github.com/o/h", "github.com/o/c", "github.com/o/f", "github.com/o/a", "github.com/o/g", "github.com/o/b", "github.com/o/e", "github.com/o/d"}
+		repos := map[string]any{}
+		for _, name := range names {
+			repos[name] = map[string]any{"default_branch": "main"}
+		}
+		raw, err := json.Marshal(map[string]any{"lg_format": 1, "sync_interval_seconds": 600, "repos": repos})
+		Expect(err).NotTo(HaveOccurred())
+		s.WriteStatus(string(raw))
+
+		for range 5 {
+			Expect(s.Main("status")).To(Equal(0))
+			Expect(regexp.MustCompile(`(?m)^github\.com/o/.:$`).FindAllString(s.Stdout.String(), -1)).To(Equal([]string{
+				"github.com/o/a:", "github.com/o/b:", "github.com/o/c:", "github.com/o/d:", "github.com/o/e:", "github.com/o/f:", "github.com/o/g:", "github.com/o/h:",
+			}))
+		}
+	})
+})
+
+var _ = Describe("lg status with a status.json it cannot parse", Label("status"), func() {
+	It("exits 1, naming the file once", func() {
+		s := harness.NewCLI()
+		s.WriteStatus("{")
+
+		Expect(s.Main("status")).To(Equal(1))
+		Expect(s.Stdout.String()).To(BeEmpty())
+		Expect(s.Stderr.String()).To(Equal("lg: warning: " + s.StatusFile() + ": unexpected end of JSON input\n"))
+	})
+})

@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,7 +41,7 @@ func (c statusCmd) Run(deps *Deps) error {
 	}
 	st, err := status.Read(path)
 	if err != nil {
-		return err
+		return warned{err}
 	}
 	daemon, err := lock.Held(filepath.Join(roots.State, "daemon.lock"))
 	if err != nil {
@@ -67,14 +70,15 @@ func statusLines(st *status.Status, daemon bool) []string {
 		"blocked: " + blocked,
 		daemonLine,
 	}
-	for name, r := range st.Repos {
+	for _, name := range slices.Sorted(maps.Keys(st.Repos)) {
+		r := st.Repos[name]
 		lag := "none"
 		if r.LagSeconds != nil {
 			lag = (time.Duration(*r.LagSeconds) * time.Second).String()
 		}
 		lines = append(lines,
 			name+":",
-			"  default branch: "+r.DefaultBranch,
+			"  default branch: "+cmp.Or(r.DefaultBranch, "unknown"),
 			fmt.Sprintf("  newest completed run: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
 			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
 			fmt.Sprintf("  pending units: %d", r.PendingUnits))

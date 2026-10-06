@@ -112,7 +112,9 @@ func Main(args []string, deps Deps) (code int) {
 		err = ctx.Run(&deps)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+		if !errors.As(err, new(warned)) {
+			_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+		}
 		var configErr config.Error
 		var blocked failure.Blocked
 		switch {
@@ -135,17 +137,23 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	st, err := status.Read(filepath.Join(roots.State, "status.json"))
+	if err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", err)
+		return
+	}
 	warning := status.Warning(deps.Clock.Now(), st)
 	if st == nil && command != "sync" {
 		warning += "; run `lg sync`"
-	}
-	if err != nil {
-		warning = err.Error()
 	}
 	if warning != "" {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)
 	}
 }
+
+// warned is an error that warn has already printed.
+type warned struct{ error }
+
+func (w warned) Unwrap() error { return w.error }
 
 // checkStore refuses a store that lg cannot own before any command but version runs.
 func checkStore(command string, env map[string]string) error {
