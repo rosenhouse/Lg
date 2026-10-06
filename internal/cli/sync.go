@@ -92,9 +92,26 @@ func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.
 	path := filepath.Join(roots.State, "status.json")
 	// Main already warned about an unparsable status.json; Next starts over without it.
 	prev, _ := status.Read(path)
-	c.Repo = cfg.Host + "/" + cfg.Repo
+	c.Repo = repoKey(cfg)
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	var err error
 	c.Disk, err = status.Measure(roots.Data, roots.State, c.Repo)
 	return failure.FromErrno(errors.Join(err, status.Write(fsys, path, status.Next(prev, c))))
 }
+
+// remeasureStatus rewrites the disk fields in state/status.json, if a sync
+// wrote one Read can parse. Callers hold state/write.lock.
+func remeasureStatus(fsys store.FS, roots config.Roots, cfg config.Config) error {
+	path := filepath.Join(roots.State, "status.json")
+	st, err := status.Read(path)
+	if st == nil || err != nil {
+		return nil
+	}
+	d, err := status.Measure(roots.Data, roots.State, repoKey(cfg))
+	if err != nil {
+		return err
+	}
+	return status.Write(fsys, path, status.Remeasured(*st, repoKey(cfg), d, time.Duration(cfg.Retention), int64(cfg.DiskCap)))
+}
+
+func repoKey(cfg config.Config) string { return cfg.Host + "/" + cfg.Repo }

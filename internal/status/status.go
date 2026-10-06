@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -155,20 +156,8 @@ func Next(prev *Status, c Cycle) Status {
 		LastSyncFinishedAt:  finished,
 		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
 	}
-	repo := Repo{
-		DefaultBranch: c.DefaultBranch,
-		Runs:          c.Disk.Runs,
-		Attempts:      c.Disk.Attempts,
-		BytesData:     c.Disk.Bytes,
-		RetentionDays: int64((c.Retention + day - 1) / day),
-		DiskCapBytes:  c.DiskCap,
-		Horizon:       timeOrNil(c.Disk.Horizon),
-	}
-	if !c.Disk.NewestCompleted.IsZero() {
-		repo.NewestCompletedRunCreatedAt = timeOrNil(c.Disk.NewestCompleted)
-		lag := int64(finished.Sub(c.Disk.NewestCompleted) / time.Second)
-		repo.LagSeconds = &lag
-	}
+	repo := Repo{DefaultBranch: c.DefaultBranch}
+	repo.setDisk(c.Disk, finished, c.Retention, c.DiskCap)
 	var last Repo
 	if prev != nil {
 		st.Cycle = prev.Cycle + 1
@@ -193,7 +182,26 @@ func Next(prev *Status, c Cycle) Status {
 // Remeasured is st with repo's disk fields from d, retention and diskCap,
 // and its lag as at st's last sync.
 func Remeasured(st Status, repo string, d Disk, retention time.Duration, diskCap int64) Status {
+	st.Repos = maps.Clone(st.Repos)
+	r := st.Repos[repo]
+	r.setDisk(d, st.LastSyncFinishedAt, retention, diskCap)
+	st.Repos[repo] = r
 	return st
+}
+
+// setDisk sets r's fields that d, retention and diskCap give, with its lag
+// as at synced.
+func (r *Repo) setDisk(d Disk, synced time.Time, retention time.Duration, diskCap int64) {
+	r.Runs, r.Attempts, r.BytesData = d.Runs, d.Attempts, d.Bytes
+	r.RetentionDays = int64((retention + day - 1) / day)
+	r.DiskCapBytes = diskCap
+	r.Horizon = timeOrNil(d.Horizon)
+	r.NewestCompletedRunCreatedAt, r.LagSeconds = nil, nil
+	if !d.NewestCompleted.IsZero() {
+		r.NewestCompletedRunCreatedAt = timeOrNil(d.NewestCompleted)
+		lag := int64(synced.Sub(d.NewestCompleted) / time.Second)
+		r.LagSeconds = &lag
+	}
 }
 
 // nextBlocked is what err blocks, since prev's blocked.since when prev was

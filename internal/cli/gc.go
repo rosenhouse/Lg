@@ -66,6 +66,7 @@ func (c gcCmd) Run(deps *Deps) error {
 			_, printErr = fmt.Fprintln(deps.Stdout, dir)
 		}
 	})
+	err = errors.Join(err, remeasureStatus(deps.StoreFS, roots, cfg))
 	return errors.Join(failure.FromErrno(err), printErr)
 }
 
