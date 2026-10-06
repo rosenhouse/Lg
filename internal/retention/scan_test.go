@@ -51,16 +51,16 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		runs, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(ConsistOf(
-			retention.Run{Dir: run, Repo: "github.com/o/r", Date: "2026-10-01", ID: 12, Bytes: 120, Attempts: 1, Extracted: []retention.Tree{
+			retention.Run{Dir: run, Repo: "github.com/o/r", Date: "2026-10-01", ID: 12, Bytes: 120, Attempts: []int{1}, Artifacts: []int64{5, 6}, Extracted: []retention.Tree{
 				{Dir: filepath.Join(run, "artifacts/5_report/extracted"), Bytes: 7},
 				{Dir: filepath.Join(run, "artifacts/6_cov/extracted"), Bytes: 3},
 			}},
-			retention.Run{Dir: other, Repo: "ghe.example.com/a/b", Date: "2026-09-01", ID: 3, Bytes: 20, Attempts: 1},
+			retention.Run{Dir: other, Repo: "ghe.example.com/a/b", Date: "2026-09-01", ID: 3, Bytes: 20, Attempts: []int{1}},
 			retention.Run{Dir: empty, Repo: "ghe.example.com/a/b", Date: "2026-09-02", ID: 4},
 		))
 	})
 
-	It("counts each run's attempt dirs", Label("status"), func() {
+	It("finds each run's attempt dirs and artifact dirs", Label("status"), func() {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
 		run := filepath.Join(data, "github.com/o/r/runs/2026-10-01/1_ci_main")
 		writeSized(run, "attempt-1/attempt.json", 1)
@@ -68,10 +68,14 @@ var _ = Describe("retention.Scan", Label("retention"), func() {
 		writeSized(run, "attempt-x/attempt.json", 1)
 		writeSized(run, "attempt-2", 1)
 		writeSized(run, "artifacts/attempt-4/artifact.json", 1)
+		writeSized(run, "artifacts/9_x/artifact.json", 1)
+		writeSized(run, "artifacts/10_y", 1)
+		writeSized(run, "artifacts/11_z/extracted/12_w/a.txt", 1)
+		writeSized(run, "attempt-1/13_v/a.txt", 1)
 
 		got, err := retention.Scan(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(got).To(HaveExactElements(HaveField("Attempts", 2)))
+		Expect(got).To(HaveExactElements(And(HaveField("Attempts", []int{1, 3}), HaveField("Artifacts", ConsistOf(int64(9), int64(11))))))
 	})
 
 	It("takes each run's created_at from a fetch.json of an attempt or else of an artifact", func() {

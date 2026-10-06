@@ -318,9 +318,9 @@ func Measure(data, state, repo string) (Disk, error) {
 			return Disk{}, err
 		}
 		d.Runs++
-		d.Attempts += r.Attempts
+		d.Attempts += len(r.Attempts)
 		d.Bytes += r.Bytes
-		if r.Attempts > 0 && r.CreatedAt.After(d.NewestCompleted) {
+		if len(r.Attempts) > 0 && r.CreatedAt.After(d.NewestCompleted) {
 			d.NewestCompleted = r.CreatedAt
 		}
 	}

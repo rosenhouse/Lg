@@ -30,8 +30,10 @@ type Run struct {
 	Date  string
 	ID    int64
 	Bytes int64
-	// Attempts counts its attempt dirs.
-	Attempts int
+	// Attempts are the numbers of its attempt dirs.
+	Attempts []int
+	// Artifacts are the ids of its artifact dirs.
+	Artifacts []int64
 	// CreatedAt is the run_created_at in a fetch.json of the run, and zero
 	// when it has none.
 	CreatedAt time.Time
@@ -191,7 +193,8 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 				runs = append(runs, r)
 			case run == nil || !within(path, run.Dir):
 			case isAttempt(parts):
-				run.Attempts++
+				n, _ := layout.AttemptNumber(parts[runDepth])
+				run.Attempts = append(run.Attempts, n)
 			case isExtracted(parts):
 				run.Extracted = append(run.Extracted, Tree{Dir: path})
 			}
