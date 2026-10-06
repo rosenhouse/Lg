@@ -68,7 +68,9 @@ func (f *Fake) After(d time.Duration) <-chan time.Time {
 
 // Waiting counts the Afters that have not fired.
 func (f *Fake) Waiting() int {
-	return 0
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.waiters)
 }
 
 // FromEnv gives base, or, when LG_TEST_NOW is set, a clock that starts at
