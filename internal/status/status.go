@@ -55,7 +55,7 @@ func Warning(now time.Time, st *Status) string {
 		return "no sync has succeeded yet"
 	}
 	interval := time.Duration(st.SyncIntervalSeconds) * time.Second
-	if age := now.Sub(*st.LastSyncOKAt); age > 2*interval {
+	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
 		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
 	}
 	return ""

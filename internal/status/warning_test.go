@@ -51,4 +51,9 @@ var _ = DescribeTable("Warning", Label("status"),
 		"last successful sync was 20m1s ago, at 2026-10-03T17:39:59Z, over twice sync_interval 10m0s"),
 	Entry("at twice sync_interval", synced(20*time.Minute), ""),
 	Entry("fresh", synced(time.Minute), ""),
+	Entry("fresh, with a sync_interval whose double overflows", func() *status.Status {
+		st := synced(time.Minute)
+		st.SyncIntervalSeconds = 2_000_000 * 3600
+		return st
+	}(), ""),
 )
