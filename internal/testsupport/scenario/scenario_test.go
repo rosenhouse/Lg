@@ -3,6 +3,7 @@ package scenario_test
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -10,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
@@ -420,5 +422,105 @@ var _ = Describe("job conclusions", Label("flakes"), func() {
 			Expect(jobOf(concluded, "attempt-1", pass)).To(HaveKeyWithValue("conclusion", "success"))
 			Expect(stepOf(jobOf(run, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "success"))
 		})
+	})
+})
+
+var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
+	var run scenario.Run
+
+	BeforeEach(func() {
+		run = scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), 7)
+	})
+
+	attemptOf := func(r scenario.Run, n int) (model.Run, []model.Job) {
+		GinkgoHelper()
+		var attempt model.Run
+		var listing struct{ Jobs []model.Job }
+		Expect(json.Unmarshal(r.Files[fmt.Sprintf("attempt-%d/attempt.json", n)].Data, &attempt)).To(Succeed())
+		Expect(json.Unmarshal(r.Files[fmt.Sprintf("attempt-%d/jobs.json", n)].Data, &listing)).To(Succeed())
+		return attempt, listing.Jobs
+	}
+
+	kinds := func(r scenario.Run, n int) map[string][]model.JobKind {
+		GinkgoHelper()
+		attempt, jobs := attemptOf(r, n)
+		byName := map[string][]model.JobKind{}
+		for _, job := range jobs {
+			byName[job.Name] = append(byName[job.Name], model.Classify(job, attempt.RunStartedAt))
+		}
+		return byName
+	}
+
+	It("adds a completed attempt, after the latest, that re-runs the jobs named and carries the others forward under new ids", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		first, _ := attemptOf(rerun, 1)
+		second, jobs := attemptOf(rerun, 2)
+		Expect(second.RunAttempt).To(Equal(2))
+		Expect(second.Status).To(Equal("completed"))
+		Expect(second.RunStartedAt).To(BeTemporally(">", first.UpdatedAt))
+		Expect(second.UpdatedAt).To(BeTemporally(">", second.RunStartedAt))
+		Expect(field(rerun, "run.json", "run_attempt")).To(BeEquivalentTo(2))
+		Expect(field(rerun, "run.json", "run_started_at")).To(Equal(second.RunStartedAt.Format(time.RFC3339)))
+
+		Expect(kinds(rerun, 2)).To(SatisfyAll(
+			HaveKeyWithValue("flaky", []model.JobKind{model.Ran}),
+			HaveKeyWithValue("pass", []model.JobKind{model.CarriedForward}),
+			HaveKeyWithValue("same name", []model.JobKind{model.CarriedForward, model.CarriedForward}),
+		))
+		_, firstJobs := attemptOf(rerun, 1)
+		for i, job := range jobs {
+			Expect(job.Name).To(Equal(firstJobs[i].Name))
+			Expect(job.ID).NotTo(BeElementOf(run.JobIDs(1, job.Name)))
+			Expect(jobs).To(HaveEach(Not(BeIdenticalTo(job))))
+		}
+		Expect(run.Files).NotTo(HaveKey("attempt-2/jobs.json"))
+	})
+
+	It("concludes the re-run jobs and their steps success, keeping the carried ones' conclusions", func() {
+		rerun := scenario.AddRerunAttempt(scenario.SetJobConclusion(run, 1, run.JobIDs(1, "pass")[0], "failure"), "flaky")
+
+		_, jobs := attemptOf(rerun, 2)
+		for _, job := range jobs {
+			switch job.Name {
+			case "flaky":
+				Expect(job.Conclusion).To(Equal("success"))
+				Expect(job.Steps).To(HaveEach(HaveField("Conclusion", "success")))
+			case "pass":
+				Expect(job.Conclusion).To(Equal("failure"))
+			}
+		}
+		Expect(field(rerun, "attempt-2/attempt.json", "conclusion")).To(Equal("failure"))
+		Expect(field(scenario.AddRerunAttempt(run, "flaky", "timeout"), "attempt-2/attempt.json", "conclusion")).To(Equal("success"))
+	})
+
+	It("serves each new job's log as the job of the latest attempt it copies", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		_, before := attemptOf(rerun, 1)
+		_, after := attemptOf(rerun, 2)
+		status := string(rerun.Files["status.txt"].Data)
+		for i, job := range after {
+			old := before[i].ID
+			Expect(rerun.Files[fmt.Sprintf("attempt-2/logs/%d.txt", job.ID)].Data).To(Equal(run.Files[fmt.Sprintf("attempt-1/logs/%d.txt", old)].Data))
+			oldLine := regexp.MustCompile(fmt.Sprintf(`(?m)^(\S+) jobs/%d/logs$`, old)).FindStringSubmatch(status)
+			Expect(status).To(ContainSubstring(fmt.Sprintf("\n%s jobs/%d/logs\n", oldLine[1], job.ID)))
+		}
+	})
+
+	It("re-runs a job carried forward by an earlier re-run after the attempt starts", func() {
+		twice := scenario.AddRerunAttempt(scenario.AddRerunAttempt(run, "flaky"), "pass")
+
+		Expect(field(twice, "run.json", "run_attempt")).To(BeEquivalentTo(3))
+		Expect(kinds(twice, 3)).To(SatisfyAll(
+			HaveKeyWithValue("flaky", []model.JobKind{model.CarriedForward}),
+			HaveKeyWithValue("pass", []model.JobKind{model.Ran}),
+		))
+		_, jobs := attemptOf(twice, 3)
+		Expect(twice.Files).To(HaveKey(fmt.Sprintf("attempt-3/logs/%d.txt", jobs[0].ID)))
+	})
+
+	It("panics when the latest attempt has no job of a name given", func() {
+		Expect(func() { scenario.AddRerunAttempt(run, "none") }).To(PanicWith(ContainSubstring(`"none"`)))
 	})
 })
