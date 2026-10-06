@@ -144,7 +144,8 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning, hint := status.Warning(deps.Clock.Now(), st)
-	if hint != "" && hint != command && !(hint == "sync" && command == "daemon run") {
+	runsHint := command == hint || hint == "sync" && command == "daemon run"
+	if hint != "" && !runsHint {
 		warning += "; run `lg " + hint + "`"
 	}
 	if warning != "" {
