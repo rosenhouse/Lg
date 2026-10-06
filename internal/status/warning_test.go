@@ -50,11 +50,11 @@ func withConfigError(st *status.Status) *status.Status {
 	return st
 }
 
-const stuckLine = "2 units pending since 2026-10-03T17:35:00Z; run `lg status`"
+const stuckLine = "4 units pending since 2026-10-03T17:30:00Z; run `lg status`"
 
 var stuck = map[string][]time.Duration{
-	"github.com/rosenhouse/lg": {21 * time.Minute, 5 * time.Minute},
-	"ghe.example.com/o/r":      {25 * time.Minute, 0},
+	"github.com/rosenhouse/lg": {21 * time.Minute, 30 * time.Minute, 5 * time.Minute, 25 * time.Minute},
+	"ghe.example.com/o/r":      {22 * time.Minute, 0},
 }
 
 var _ = DescribeTable("Warning", Label("status"),
