@@ -162,6 +162,17 @@ var _ = Describe("lg status with a daemon running and no next_sync_at", Label("s
 	})
 })
 
+var _ = Describe("lg status with pending units", Label("status"), func() {
+	It("prints each unit with the time it was first seen pending, when status.json has it", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(strings.Replace(goodStatus, `"pending": []`,
+			`"pending": [{"run": 1, "attempt": 2, "error": "503", "since": "2026-10-03T17:01:00Z"}, {"run": 3, "error": "502"}]`, 1))
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(ContainSubstring("\n    run 1 attempt 2, pending since 2026-10-03T17:01:00Z: 503\n    run 3: 502\n"))
+	})
+})
+
 // goodStatus is a status.json from a one-shot sync with no runs.
 const goodStatus = `{
   "lg_format": 1,
