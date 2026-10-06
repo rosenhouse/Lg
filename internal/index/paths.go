@@ -55,13 +55,6 @@ type source struct {
 	when, attempt, id, conclusion string
 	// jobs is the dir whose jobs Filter.Jobs matches, or "" when x is the job.
 	jobs string
-	// requires is a column that is true when the unit's files exist.
-	requires string
-}
-
-func (s source) requiring(column string) source {
-	s.requires = column
-	return s
 }
 
 // within selects the rows of table x below the dir of run r.
@@ -89,9 +82,9 @@ var (
 			when: "x.run_started_at", attempt: "x.attempt", id: "NULL", conclusion: "x.conclusion", jobs: "x.path",
 		},
 		UnitJob:       jobSource,
-		UnitLog:       jobSource.requiring("x.has_log"),
-		UnitArtifact:  artifactSource.requiring("x.has_zip"),
-		UnitExtracted: artifactSource.requiring("x.extracted"),
+		UnitLog:       jobSource,
+		UnitArtifact:  artifactSource,
+		UnitExtracted: artifactSource,
 	}
 )
 
@@ -162,9 +155,6 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	}
 	if !f.Until.IsZero() {
 		w.add(s.when+" <= ?", timeText(f.Until))
-	}
-	if s.requires != "" {
-		w.add(s.requires)
 	}
 	query := fmt.Sprintf("SELECT %s AS at, r.run_id AS run, %s AS attempt, %s AS id, '%s' AS unit, %s AS path FROM %s",
 		s.when, s.attempt, s.id, unit, s.path, s.from)
