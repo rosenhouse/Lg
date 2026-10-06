@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -303,6 +305,7 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(manager("darwin").Install(context.Background(), unit)).To(Equal(path))
 
 			Expect(runner.Calls()).To(Equal([]string{print, bootout, print, print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
+			Expect(runner.Files()[1]).To(ConsistOf(label+".plist", MatchRegexp(`^\.`+regexp.QuoteMeta(label)+`\.plist\.\d+\.tmp$`)), "launchd and systemd skip a dotfile")
 			Expect(runner.Files()[4]).To(Equal([]string{label + ".plist"}))
 			Expect(os.ReadFile(path)).To(ContainSubstring("/opt/lg2/bin/lg"))
 		})
@@ -458,6 +461,47 @@ var _ = Describe("Manager", Label("install"), func() {
 		Entry("when systemctl is missing", "linux", ".config/systemd/user/lg.service", true, 2),
 		Entry(nil, "darwin", "Library/LaunchAgents/com.github.rosenhouse.lg.plist", false, 1),
 	)
+
+	DescribeTable("waits for another install or uninstall in the unit's dir to finish",
+		func(goos string, dir func() string, uninstall bool) {
+			Expect(os.MkdirAll(dir(), 0o755)).To(Succeed())
+			f, err := os.Open(dir())
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(f.Close)
+			Expect(syscall.Flock(int(f.Fd()), syscall.LOCK_EX)).To(Succeed())
+			errs := make(chan error, 1)
+
+			go func() {
+				var err error
+				if uninstall {
+					_, err = manager(goos).Uninstall(context.Background(), "lg")
+				} else {
+					_, err = manager(goos).Install(context.Background(), unit)
+				}
+				errs <- err
+			}()
+
+			Consistently(runner.Calls).Should(BeEmpty())
+			Expect(syscall.Flock(int(f.Fd()), syscall.LOCK_UN)).To(Succeed())
+			Eventually(errs).Should(Receive(Succeed()))
+			Expect(runner.Calls()).NotTo(BeEmpty())
+		},
+		Entry("install on linux", "linux", func() string { return systemd }, false),
+		Entry("uninstall on linux", "linux", func() string { return systemd }, true),
+		Entry("install on darwin", "darwin", func() string { return agents }, false),
+		Entry("uninstall on darwin", "darwin", func() string { return agents }, true),
+	)
+
+	It("removes a temp unit file left by an interrupted install", func() {
+		Expect(os.MkdirAll(systemd, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(systemd, ".lg.service.123.tmp"), nil, 0o600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(systemd, ".lg-test.service.123.tmp"), nil, 0o600)).To(Succeed())
+
+		Expect(manager("linux").Install(context.Background(), unit)).Error().NotTo(HaveOccurred())
+
+		Expect(os.ReadDir(systemd)).To(HaveLen(2))
+		Expect(filepath.Join(systemd, ".lg-test.service.123.tmp")).To(BeAnExistingFile())
+	})
 
 	It("installs the same unit from concurrent calls", func() {
 		m := service.Manager{GOOS: "linux", Runner: &fakeservice.Runner{UnitPath: systemd}, Env: map[string]string{"HOME": home}}

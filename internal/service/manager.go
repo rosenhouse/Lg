@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
@@ -43,6 +44,14 @@ func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	if err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(filepath.Dir(b.path()), 0o755); err != nil {
+		return "", err
+	}
+	unlock, err := lockDir(filepath.Dir(b.path()))
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	running, err := b.prepare(ctx, u)
 	if err != nil {
 		return "", err
@@ -61,13 +70,34 @@ func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	return b.path(), b.start(ctx, running)
 }
 
+// lockDir holds an exclusive flock on dir until unlock, so that installs
+// and uninstalls of units in it never interleave.
+func lockDir(dir string) (unlock func(), err error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, errors.Join(&os.PathError{Op: "flock", Path: dir, Err: err}, f.Close())
+	}
+	return func() { _ = f.Close() }, nil
+}
+
 // writeTemp writes content to a private temp file beside path, since a
-// unit may carry proxy credentials and concurrent installs must not share one.
+// unit may carry proxy credentials. It removes those an interrupted install
+// left. Their names start with a dot, so systemd and launchd skip them.
 func writeTemp(path string, content []byte) (string, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	pattern := "." + filepath.Base(path) + ".*.tmp"
+	stale, err := filepath.Glob(filepath.Join(filepath.Dir(path), pattern))
+	if err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	for _, name := range stale {
+		if err := os.Remove(name); err != nil {
+			return "", err
+		}
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return "", err
 	}
@@ -96,6 +126,13 @@ func (m Manager) Uninstall(ctx context.Context, name string) (Removal, error) {
 		return Removal{}, err
 	}
 	r := Removal{Path: b.path()}
+	unlock, err := lockDir(filepath.Dir(b.path()))
+	if errors.Is(err, fs.ErrNotExist) {
+		unlock = func() {}
+	} else if err != nil {
+		return r, err
+	}
+	defer unlock()
 	if _, err := os.Stat(b.path()); errors.Is(err, fs.ErrNotExist) {
 		r.Stopped, err = b.stopOrphan(ctx)
 		return r, err
@@ -185,9 +222,6 @@ func (s systemd) prepare(ctx context.Context, _ Unit) (bool, error) {
 	out, err := s.output(ctx, "show", "-p", "UnitPath", "--value")
 	if err != nil {
 		return false, fmt.Errorf("no systemd user manager is reachable: %w", err)
-	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return false, err
 	}
 	if !slices.ContainsFunc(splitQuoted(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
 		return false, fmt.Errorf("the systemd user manager does not load units from %s; give lg the XDG_CONFIG_HOME the manager has", s.dir)
