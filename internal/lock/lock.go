@@ -3,6 +3,7 @@ package lock
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -28,6 +29,11 @@ type Lock struct {
 // process's pid in it if it can. If the lock is busy, it first calls waiting
 // with the holder.
 func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(holder string)) (*Lock, error) {
+	return WaitContext(context.Background(), path, timeout, clk, waiting)
+}
+
+// WaitContext is Wait, giving up with ctx's error when ctx is done first.
+func WaitContext(ctx context.Context, path string, timeout time.Duration, clk clock.Clock, waiting func(holder string)) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return nil, err
@@ -46,6 +52,9 @@ func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(hold
 			waiting(holder(path))
 		}
 		select {
+		case <-ctx.Done():
+			_ = file.Close()
+			return nil, ctx.Err()
 		case <-deadline:
 			_ = file.Close()
 			return nil, fmt.Errorf("%s is held by %s; %w after %s", path, holder(path), ErrTimeout, timeout)

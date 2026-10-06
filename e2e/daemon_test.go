@@ -102,6 +102,20 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(attemptDir(env, 1)).NotTo(BeADirectory())
 	}, daemonTimeout)
 
+	It("exits 0 on SIGTERM while another process holds write.lock, and records no cycle", func(SpecContext) {
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
+		writer, err := lock.Wait(filepath.Join(env.State(), "write.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(writer.Release)
+		daemon := env.Start("daemon", "run")
+		Eventually(daemon.Err, cycleWait).Should(gbytes.Say("waiting for .*write.lock"))
+
+		daemon.Signal(syscall.SIGTERM)
+
+		Eventually(daemon, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(filepath.Join(env.State(), "status.json")).NotTo(BeAnExistingFile())
+	}, daemonTimeout)
+
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(SpecContext) {
 		env.GH().SetToken("gho_first")
 		fake.RequireToken("gho_first")

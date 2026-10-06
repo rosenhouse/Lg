@@ -1,6 +1,7 @@
 package lock_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,6 +112,20 @@ var _ = Describe("Wait", Label("store"), func() {
 		Consistently(got, 200*time.Millisecond).ShouldNot(Receive())
 		Expect(held.Release()).To(Succeed())
 		Eventually(got, giveUp).Should(Receive(BeNil()))
+	})
+
+	It("stops waiting with ctx's error when ctx is done", func() {
+		holdAs("424242\n")
+		ctx, cancel := context.WithCancel(context.Background())
+		got := make(chan error, 1)
+		go func() {
+			_, err := lock.WaitContext(ctx, path, time.Minute, clock.Real{}, ignore)
+			got <- err
+		}()
+
+		Consistently(got, 200*time.Millisecond).ShouldNot(Receive())
+		cancel()
+		Eventually(got, giveUp).Should(Receive(MatchError(context.Canceled)))
 	})
 })
 

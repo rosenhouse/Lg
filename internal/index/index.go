@@ -45,7 +45,7 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	l, err := lockFile(path)
+	l, err := lockFile(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -53,10 +53,11 @@ func Open(ctx context.Context, path, data string) (*Index, error) {
 	return openReadable(ctx, path, data)
 }
 
-// lockFile takes path.lock. Every opener and every writer holds it, so none
-// opens a file while another replaces it, and writers take turns.
-func lockFile(path string) (*lock.Lock, error) {
-	return lock.Wait(path+".lock", lockTimeout, clock.Real{}, func(string) {})
+// lockFile takes path.lock, unless ctx is done first. Every opener and
+// every writer holds it, so none opens a file while another replaces it, and
+// writers take turns.
+func lockFile(ctx context.Context, path string) (*lock.Lock, error) {
+	return lock.WaitContext(ctx, path+".lock", lockTimeout, clock.Real{}, func(string) {})
 }
 
 // openReadable opens path, first removing a file SQLite cannot read.
@@ -220,7 +221,7 @@ func (ix *Index) startOver(ctx context.Context) error {
 	unread, statErr := os.Stat(ix.path)
 	// The unreadable db is about to go.
 	_ = ix.db.Close()
-	l, err := lockFile(ix.path)
+	l, err := lockFile(ctx, ix.path)
 	if err != nil {
 		return err
 	}
@@ -246,7 +247,7 @@ func (ix *Index) Close() error { return ix.db.Close() }
 // takes the write lock only when the db changes. It returns the errors of the
 // runs whose files it could not read, after indexing the others.
 func (ix *Index) index(ctx context.Context, fresh bool) error {
-	l, err := lockFile(ix.path)
+	l, err := lockFile(ctx, ix.path)
 	if err != nil {
 		return err
 	}

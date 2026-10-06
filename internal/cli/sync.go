@@ -40,7 +40,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	held, err := lockWrites(t.roots, deps, writeLockWait)
+	held, err := lockWrites(context.Background(), t.roots, deps, writeLockWait)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

@@ -72,7 +72,7 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 		configErr = fmt.Errorf("%w; kept the last good config", configErr)
 	}
 	interval := time.Duration(d.target.cfg.SyncInterval)
-	held, err := lockWrites(d.target.roots, d.deps, writeLockWait)
+	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
 		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: interval, Err: errors.Join(configErr, err)}
 	}
