@@ -163,7 +163,7 @@ func (u Unit) String() string {
 type Pending struct {
 	Unit
 	Error string `json:"error"`
-	// Since is when the cycle that first left the unit pending started.
+	// Since is when the cycle that first left the unit pending finished.
 	Since time.Time `json:"since,omitzero"`
 }
 
@@ -245,7 +245,7 @@ func Next(prev *Status, c Cycle) Status {
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
-	repo.Pending = withSince(c.Pending, last.Pending, st.LastSyncStartedAt)
+	repo.Pending = withSince(c.Pending, last.Pending, finished)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
@@ -325,13 +325,13 @@ func lines(err error) []string {
 }
 
 // withSince gives pending with each error passed through OneLine. A unit
-// keeps its since from last. Any other unit is pending since started.
-func withSince(pending, last []Pending, started time.Time) []Pending {
+// keeps its since from last. Any other unit is pending since finished.
+func withSince(pending, last []Pending, finished time.Time) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
 		since, ok := sinceIn(last, p.Unit)
 		if !ok {
-			since = started
+			since = finished
 		}
 		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: since})
 	}
