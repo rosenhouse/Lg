@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/config"
-	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/status"
 )
 
@@ -43,11 +43,11 @@ func (c statusCmd) Run(deps *Deps) error {
 	if err != nil {
 		return warned{err}
 	}
-	daemon, err := lock.Held(filepath.Join(roots.State, "daemon.lock"))
+	running, err := daemon.Running(roots.State)
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(deps.Stdout, strings.Join(statusLines(st, daemon), "\n")+"\n")
+	_, err = io.WriteString(deps.Stdout, strings.Join(statusLines(st, running), "\n")+"\n")
 	return err
 }
 

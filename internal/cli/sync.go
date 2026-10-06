@@ -13,7 +13,6 @@ import (
 	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
-	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
@@ -26,7 +25,7 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	running, err := lock.Held(filepath.Join(t.roots.State, "daemon.lock"))
+	running, err := daemon.Running(t.roots.State)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

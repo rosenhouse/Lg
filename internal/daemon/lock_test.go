@@ -82,6 +82,16 @@ var _ = Describe("LockInstance", Label("daemon"), func() {
 		Expect(err).To(MatchError(fmt.Sprintf("already running (pid %d)", os.Getpid())))
 	})
 
+	It("makes Running report true while held", func() {
+		Expect(daemon.Running(state)).To(BeFalse())
+		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(daemon.Running(state)).To(BeTrue())
+
+		Expect(held.Release()).To(Succeed())
+		Expect(daemon.Running(state)).To(BeFalse())
+	})
+
 	It("lets the next holder in after Release, which removes state/daemon.pid", func() {
 		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
 		Expect(err).NotTo(HaveOccurred())

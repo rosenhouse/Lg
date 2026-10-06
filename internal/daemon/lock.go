@@ -35,7 +35,7 @@ type InstanceLock struct {
 // stop the daemon whose retention frees space.
 func LockInstance(fsys store.FS, state string, clk clock.Clock, warn func(error)) (*InstanceLock, error) {
 	pid := filepath.Join(state, "daemon.pid")
-	held, err := lock.Wait(filepath.Join(state, "daemon.lock"), instanceWait, clk, func(string) {})
+	held, err := lock.Wait(instanceFile(state), instanceWait, clk, func(string) {})
 	if errors.Is(err, lock.ErrTimeout) {
 		return nil, fmt.Errorf("already running (%s)", runningPID(state))
 	}
@@ -47,6 +47,11 @@ func LockInstance(fsys store.FS, state string, clk clock.Clock, warn func(error)
 	}
 	return &InstanceLock{held: held, pid: pid}, nil
 }
+
+// Running reports whether a daemon holds state/daemon.lock.
+func Running(state string) (bool, error) { return lock.Held(instanceFile(state)) }
+
+func instanceFile(state string) string { return filepath.Join(state, "daemon.lock") }
 
 // runningPID names the daemon by state/daemon.pid, else by the pid
 // state/daemon.lock records.
