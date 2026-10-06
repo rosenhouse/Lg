@@ -2,6 +2,8 @@ package model_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -10,9 +12,9 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
-var _ = DescribeTable("Run.FromFork reports whether the head repository is another than the repository", Label("paths"),
+var _ = DescribeTable("RunRepositories.FromFork reports whether the head repository is another than the repository", Label("paths"),
 	func(raw string, fork bool) {
-		var run model.Run
+		var run model.RunRepositories
 		Expect(json.Unmarshal([]byte(raw), &run)).To(Succeed())
 		Expect(run.FromFork()).To(Equal(fork))
 	},
@@ -33,8 +35,10 @@ var _ = DescribeTable("ArtifactRun.FromFork reports whether the head repository 
 
 var _ = Describe("the recorded run and its artifacts", Label("paths"), func() {
 	It("are not from a fork", func() {
-		run, err := recordings.Attempt(37129390741, "after-attempt-1", 1)
+		raw, err := os.ReadFile(filepath.Join(recordings.Dir(37129390741, "after-attempt-1"), "attempt-1", "attempt.json"))
 		Expect(err).NotTo(HaveOccurred())
+		var run model.RunRepositories
+		Expect(json.Unmarshal(raw, &run)).To(Succeed())
 		Expect(run.FromFork()).To(BeFalse())
 		artifacts, err := recordings.Artifacts(37129390741, "after-attempt-1")
 		Expect(err).NotTo(HaveOccurred())

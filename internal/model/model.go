@@ -17,18 +17,16 @@ type Run struct {
 	HeadSHA    string    `json:"head_sha"`
 	CreatedAt  time.Time `json:"created_at"`
 	// RunStartedAt is when the latest attempt, or the one fetched, started.
-	RunStartedAt time.Time  `json:"run_started_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	Status       string     `json:"status"`
-	Conclusion   string     `json:"conclusion"`
-	RunAttempt   int        `json:"run_attempt"`
-	Repository   Repository `json:"repository"`
-	// HeadRepository is nil for a run from a deleted fork.
-	HeadRepository *Repository   `json:"head_repository,omitempty"`
-	WorkflowID     int64         `json:"workflow_id"`
-	Event          string        `json:"event"`
-	PullRequests   []PullRequest `json:"pull_requests"`
-	DisplayTitle   string        `json:"display_title"`
+	RunStartedAt time.Time     `json:"run_started_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	Status       string        `json:"status"`
+	Conclusion   string        `json:"conclusion"`
+	RunAttempt   int           `json:"run_attempt"`
+	Repository   Repository    `json:"repository"`
+	WorkflowID   int64         `json:"workflow_id"`
+	Event        string        `json:"event"`
+	PullRequests []PullRequest `json:"pull_requests"`
+	DisplayTitle string        `json:"display_title"`
 }
 
 type PullRequest struct {
@@ -36,12 +34,18 @@ type PullRequest struct {
 }
 
 type Repository struct {
-	ID       int64  `json:"id,omitempty"`
 	FullName string `json:"full_name"`
 }
 
+// RunRepositories are the ids of a run's repository and head repository.
+// The head repository is nil for a run from a deleted fork.
+type RunRepositories struct {
+	Repository     struct{ ID int64 }  `json:"repository"`
+	HeadRepository *struct{ ID int64 } `json:"head_repository"`
+}
+
 // FromFork reports whether the run's head repository is another than its repository.
-func (r Run) FromFork() bool {
+func (r RunRepositories) FromFork() bool {
 	return r.HeadRepository == nil || r.HeadRepository.ID != r.Repository.ID
 }
 
