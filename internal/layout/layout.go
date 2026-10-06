@@ -165,12 +165,16 @@ type Hit struct {
 const maxPath = 4095
 
 // ParseHit splits hit at the longest prefix that exists, since a path may
-// hold colons, and gives false when no prefix exists. It reads a match as
+// hold colons, and gives false when no prefix exists. A prefix shorter than
+// hit must not be a dir, since rg prints files. It reads a match as
 // path:line:text, path:line or path:text, and a context line as path-line-text
 // or path-text.
-func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
+func ParseHit(hit string, stat func(path string) (isDir, exists bool)) (Hit, bool) {
 	for end := len(hit); end > 0; end = strings.LastIndexAny(hit[:end], ":-") {
-		if end > maxPath || !exists(hit[:end]) {
+		if end > maxPath {
+			continue
+		}
+		if isDir, exists := stat(hit[:end]); !exists || isDir && end < len(hit) {
 			continue
 		}
 		h := Hit{Path: hit[:end]}

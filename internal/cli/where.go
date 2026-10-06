@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -176,9 +177,9 @@ var leadingLine = regexp.MustCompile(`^[0-9]+:`)
 
 func (f *placeFinder) find(hit string) (place, error) {
 	var path string
-	h, ok := layout.ParseHit(hit, func(p string) (found bool) {
-		path, found = f.existing(p)
-		return found
+	h, ok := layout.ParseHit(hit, func(p string) (isDir, found bool) {
+		path, isDir, found = f.existing(p)
+		return isDir, found
 	})
 	if !ok {
 		if leadingLine.MatchString(hit) {
@@ -237,7 +238,7 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 // existing gives the file path names: path itself when absolute, else path
 // relative to the working directory, data/ or a repo dir. It checks each
 // before cleaning it, so that a .. in a hit's text cannot reach a parent dir.
-func (f *placeFinder) existing(path string) (string, bool) {
+func (f *placeFinder) existing(path string) (abs string, isDir, found bool) {
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
 		candidates = []string{path, f.data + string(filepath.Separator) + path}
@@ -246,12 +247,15 @@ func (f *placeFinder) existing(path string) (string, bool) {
 		}
 	}
 	for _, c := range candidates {
-		if _, err := os.Lstat(c); err == nil {
-			abs, err := filepath.Abs(c)
-			return abs, err == nil
+		if info, err := os.Lstat(c); err == nil {
+			if info.Mode()&fs.ModeSymlink != 0 {
+				info, err = os.Stat(c)
+			}
+			abs, absErr := filepath.Abs(c)
+			return abs, err == nil && info.IsDir(), absErr == nil
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 func (f *placeFinder) describe(loc layout.Location) (place, error) {

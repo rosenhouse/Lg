@@ -10,9 +10,19 @@ import (
 	"github.com/rosenhouse/lg/internal/layout"
 )
 
+// stat tells whether path is in existing, where a dir ends in /.
+func stat(existing []string) func(path string) (isDir, exists bool) {
+	return func(path string) (bool, bool) {
+		if slices.Contains(existing, path+"/") {
+			return true, true
+		}
+		return false, slices.Contains(existing, path)
+	}
+}
+
 var _ = DescribeTable("ParseHit splits an rg or grep hit at the longest prefix that exists", Label("where"),
 	func(hit string, existing []string, want layout.Hit, ok bool) {
-		got, gotOK := layout.ParseHit(hit, func(path string) bool { return slices.Contains(existing, path) })
+		got, gotOK := layout.ParseHit(hit, stat(existing))
 		Expect(gotOK).To(Equal(ok))
 		Expect(got).To(Equal(want))
 	},
@@ -48,6 +58,10 @@ var _ = DescribeTable("ParseHit splits an rg or grep hit at the longest prefix t
 		layout.Hit{}, false),
 	Entry("no existing prefix", "a:1:b", []string{"b"},
 		layout.Hit{}, false),
+	Entry("a dir", "/lg-home/data", []string{"/lg-home/data/"},
+		layout.Hit{Path: "/lg-home/data"}, true),
+	Entry("a dir followed by - or :", "/lg-home/data:1:x", []string{"/lg/", "/lg-home/data/"},
+		layout.Hit{}, false),
 	Entry("a path as long as Linux allows", strings.Repeat("a", 4095)+":1:x", []string{strings.Repeat("a", 4095)},
 		layout.Hit{Path: strings.Repeat("a", 4095), Line: 1, Text: "x"}, true),
 )
@@ -55,9 +69,9 @@ var _ = DescribeTable("ParseHit splits an rg or grep hit at the longest prefix t
 var _ = It("ParseHit tries no prefix longer than a path can be", Label("where"), func() {
 	text := strings.Repeat("a:", 1<<19)
 	var longest int
-	hit, ok := layout.ParseHit("path:1:"+text, func(path string) bool {
+	hit, ok := layout.ParseHit("path:1:"+text, func(path string) (bool, bool) {
 		longest = max(longest, len(path))
-		return path == "path"
+		return false, path == "path"
 	})
 	Expect(ok).To(BeTrue())
 	Expect(hit).To(Equal(layout.Hit{Path: "path", Line: 1, Text: text}))
