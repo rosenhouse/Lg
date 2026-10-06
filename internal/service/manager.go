@@ -191,6 +191,9 @@ func (s systemd) prepare(ctx context.Context, _ Unit) (bool, error) {
 	if !slices.ContainsFunc(splitQuoted(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
 		return false, fmt.Errorf("the systemd user manager does not load units from %s; give lg the XDG_CONFIG_HOME the manager has", s.dir)
 	}
+	if err := s.notElsewhere(ctx); err != nil {
+		return false, err
+	}
 	state, err := s.activeState(ctx)
 	return running(state), err
 }
@@ -281,6 +284,9 @@ func (s systemd) removed(ctx context.Context) error {
 // stopOrphan stops a service whose unit file was deleted, which systemd
 // cannot disable, and removes the wants link enabling it left.
 func (s systemd) stopOrphan(ctx context.Context) (bool, error) {
+	if err := s.notElsewhere(ctx); err != nil {
+		return false, err
+	}
 	if state, err := s.activeState(ctx); err != nil || !running(state) {
 		return false, nil
 	}
@@ -294,6 +300,19 @@ func (s systemd) stopOrphan(ctx context.Context) (bool, error) {
 		}
 	}
 	return true, s.systemctl(ctx, "daemon-reload")
+}
+
+// notElsewhere refuses when the user manager loads the unit from a file
+// other than s.path(), as when the unit was installed with another
+// XDG_CONFIG_HOME.
+func (s systemd) notElsewhere(ctx context.Context) error {
+	// A manager that cannot say, or a fragment since deleted, names no other file.
+	out, _ := s.output(ctx, "show", "-p", "FragmentPath", "--value", s.unit)
+	fragment := strings.TrimSpace(out)
+	if _, err := os.Stat(fragment); err != nil || sameFile(fragment, s.path()) {
+		return nil
+	}
+	return fmt.Errorf("the systemd user manager loads %s from %s, not %s; give lg the XDG_CONFIG_HOME it was installed with", s.unit, fragment, s.path())
 }
 
 func (s systemd) activeState(ctx context.Context) (string, error) {

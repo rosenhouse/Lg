@@ -93,17 +93,17 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 	})
 
 	It("runs `systemctl --user daemon-reload` then `systemctl --user enable --now lg.service`, and on reinstall rewrites the unit and restarts it", func() {
-		queries := []string{"--user show -p UnitPath --value", "--user show -p ActiveState --value lg.service"}
+		queries := []string{"--user show -p UnitPath --value", "--user show -p FragmentPath --value lg.service", "--user show -p ActiveState --value lg.service"}
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(systemctl.Calls()).To(Equal(append(queries, "--user daemon-reload", "--user enable --now lg.service")))
-		Expect(systemctl.Units()[2:]).To(HaveEach([]string{"lg.service"}))
+		Expect(systemctl.Units()[3:]).To(HaveEach([]string{"lg.service"}))
 		fresh := readFile(unit)
 		Expect(os.WriteFile(unit, []byte("[Service]\nExecStart=/old/lg daemon run\n"), 0o644)).To(Succeed())
 
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
 
 		Expect(readFile(unit)).To(Equal(fresh))
-		Expect(systemctl.Calls()[4:]).To(Equal(append(queries, "--user daemon-reload", "--user enable --now lg.service", "--user restart lg.service")))
+		Expect(systemctl.Calls()[5:]).To(Equal(append(queries, "--user daemon-reload", "--user enable --now lg.service", "--user restart lg.service")))
 	})
 
 	It("runs lg by the symlink it was run by, so an upgrade that repoints the link reaches the unit", func() {

@@ -17,18 +17,20 @@ import (
 // every command is not found.
 //
 // It models a user manager that loads units from UnitPath, and one service,
-// which enable --now and restart start, and disable and stop stop. It
-// models one launchd agent, which bootstrap loads, and bootout unloads after
-// Lingering more prints; print fails while the agent is not loaded.
+// loaded from FragmentPath, which enable --now and restart start, and
+// disable and stop stop. It models one launchd agent, which bootstrap
+// loads, and bootout unloads after Lingering more prints; print fails while
+// the agent is not loaded.
 type Runner struct {
-	Dir       string
-	Fail      map[string]string
-	Out       map[string]string
-	Missing   bool
-	UnitPath  string
-	Active    bool
-	Loaded    bool
-	Lingering int
+	Dir          string
+	Fail         map[string]string
+	Out          map[string]string
+	Missing      bool
+	UnitPath     string
+	FragmentPath string
+	Active       bool
+	Loaded       bool
+	Lingering    int
 
 	mu        sync.Mutex
 	calls     []string
@@ -75,6 +77,9 @@ func (r *Runner) systemctl(args []string) (stdout, stderr []byte, err error) {
 	case "show":
 		if slices.Contains(args, "UnitPath") {
 			return []byte(r.UnitPath + "\n"), nil, nil
+		}
+		if slices.Contains(args, "FragmentPath") {
+			return []byte(r.FragmentPath + "\n"), nil, nil
 		}
 		if r.Active {
 			return []byte("active\n"), nil, nil

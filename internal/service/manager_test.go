@@ -40,11 +40,13 @@ var _ = Describe("Manager", Label("install"), func() {
 	})
 
 	Describe("on linux", func() {
-		var unitPath, activeState string
+		var unitPath, fragmentPath, activeState string
 
 		BeforeEach(func() {
 			runner.Dir = systemd
-			unitPath, activeState = "systemctl --user show -p UnitPath --value", "systemctl --user show -p ActiveState --value lg.service"
+			unitPath = "systemctl --user show -p UnitPath --value"
+			fragmentPath = "systemctl --user show -p FragmentPath --value lg.service"
+			activeState = "systemctl --user show -p ActiveState --value lg.service"
 		})
 
 		It("writes the systemd unit and starts it, running systemctl in the user's env", func() {
@@ -56,32 +58,33 @@ var _ = Describe("Manager", Label("install"), func() {
 			want, err := service.RenderSystemd(unit)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.ReadFile(path)).To(Equal(want))
-			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
-			Expect(runner.Files()).To(Equal([][]string{nil, nil, {"lg.service"}, {"lg.service"}}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, fragmentPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
+			Expect(runner.Files()).To(Equal([][]string{nil, nil, nil, {"lg.service"}, {"lg.service"}}))
 			Expect(runner.Envs()).To(HaveEach(Equal(m.Env)))
 		})
 
 		It("restarts a running service whose unit it rewrites", func() {
-			_, err := manager("linux").Install(context.Background(), unit)
+			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
+			runner.FragmentPath = path
 			unit.Exe = "/opt/lg2/bin/lg"
 
-			path, err := manager("linux").Install(context.Background(), unit)
+			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(path))
 
-			Expect(err).NotTo(HaveOccurred())
 			Expect(os.ReadFile(path)).To(ContainSubstring("/opt/lg2/bin/lg"))
-			Expect(runner.Calls()[4:]).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
+			Expect(runner.Calls()[5:]).To(Equal([]string{unitPath, fragmentPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
 		})
 
 		It("restarts a running service whose unit file is missing", func() {
 			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
+			runner.FragmentPath = path
 			Expect(os.Remove(path)).To(Succeed())
 			runner.Reset()
 
 			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(path))
 
-			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, fragmentPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
 		})
 
 		It("starts, without restarting, a stopped service whose unit it rewrites", func() {
@@ -93,7 +96,7 @@ var _ = Describe("Manager", Label("install"), func() {
 			_, err = manager("linux").Install(context.Background(), unit)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, fragmentPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
 		})
 
 		It("puts the unit under an absolute XDG_CONFIG_HOME, and ignores a relative one", func() {
@@ -178,13 +181,41 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(os.MkdirAll(filepath.Dir(wants), 0o755)).To(Succeed())
 			Expect(os.Symlink(path, wants)).To(Succeed())
 			Expect(os.Remove(path)).To(Succeed())
+			runner.FragmentPath = path
 			runner.Reset()
 
 			Expect(manager("linux").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Stopped: true}))
 
-			Expect(runner.Calls()).To(Equal([]string{activeState, "systemctl --user stop lg.service", "systemctl --user daemon-reload"}))
+			Expect(runner.Calls()).To(Equal([]string{fragmentPath, activeState, "systemctl --user stop lg.service", "systemctl --user daemon-reload"}))
 			_, err = os.Lstat(wants)
 			Expect(err).To(MatchError(os.ErrNotExist))
+		})
+
+		Describe("when the user manager loads the unit from another dir, as one XDG_CONFIG_HOME gave", func() {
+			var other string
+
+			BeforeEach(func() {
+				other = filepath.Join(GinkgoT().TempDir(), "systemd", "user", "lg.service")
+				Expect(os.MkdirAll(filepath.Dir(other), 0o755)).To(Succeed())
+				Expect(os.WriteFile(other, nil, 0o644)).To(Succeed())
+				runner.FragmentPath, runner.Active = other, true
+			})
+
+			It("refuses to install a unit it would not load, before writing it", func() {
+				_, err := manager("linux").Install(context.Background(), unit)
+
+				Expect(err).To(MatchError("the systemd user manager loads lg.service from " + other + ", not " + filepath.Join(systemd, "lg.service") + "; give lg the XDG_CONFIG_HOME it was installed with"))
+				Expect(filepath.Join(systemd, "lg.service")).NotTo(BeAnExistingFile())
+				Expect(runner.Calls()).To(Equal([]string{unitPath, fragmentPath}))
+			})
+
+			It("refuses to uninstall, leaving the service running", func() {
+				_, err := manager("linux").Uninstall(context.Background(), "lg")
+
+				Expect(err).To(MatchError(ContainSubstring("loads lg.service from " + other)))
+				Expect(runner.Calls()).To(Equal([]string{fragmentPath}))
+				Expect(runner.Active).To(BeTrue())
+			})
 		})
 
 		It("keeps the unit when it cannot stop the service, and says why", func() {
@@ -399,16 +430,16 @@ var _ = Describe("Manager", Label("install"), func() {
 	)
 
 	DescribeTable("does nothing to uninstall when nothing is installed or running",
-		func(goos, file string, missing bool) {
+		func(goos, file string, missing bool, queries int) {
 			runner.Missing = missing
 
 			Expect(manager(goos).Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: filepath.Join(home, file)}))
 
-			Expect(runner.Calls()).To(HaveLen(1))
+			Expect(runner.Calls()).To(HaveLen(queries))
 		},
-		Entry(nil, "linux", ".config/systemd/user/lg.service", false),
-		Entry("when systemctl is missing", "linux", ".config/systemd/user/lg.service", true),
-		Entry(nil, "darwin", "Library/LaunchAgents/com.github.rosenhouse.lg.plist", false),
+		Entry(nil, "linux", ".config/systemd/user/lg.service", false, 2),
+		Entry("when systemctl is missing", "linux", ".config/systemd/user/lg.service", true, 2),
+		Entry(nil, "darwin", "Library/LaunchAgents/com.github.rosenhouse.lg.plist", false, 1),
 	)
 
 	It("installs the same unit from concurrent calls", func() {

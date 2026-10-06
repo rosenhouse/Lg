@@ -104,13 +104,19 @@ var _ = Describe("Runner", Label("install"), func() {
 		Expect(r.Calls()).To(BeEmpty())
 	})
 
-	It("loads units from UnitPath, and starts and stops one service", func() {
+	It("loads units from UnitPath, and the service from FragmentPath", func() {
+		r.FragmentPath = "/u/lg.service"
+
+		Expect(run("systemctl", "--user", "show", "-p", "UnitPath", "--value")).To(Equal("/u\n"))
+		Expect(run("systemctl", "--user", "show", "-p", "FragmentPath", "--value", "lg.service")).To(Equal("/u/lg.service\n"))
+	})
+
+	It("starts and stops one service", func() {
 		state := func() string {
 			out, err := run("systemctl", "--user", "show", "-p", "ActiveState", "--value", "lg.service")
 			Expect(err).NotTo(HaveOccurred())
 			return out
 		}
-		Expect(run("systemctl", "--user", "show", "-p", "UnitPath", "--value")).To(Equal("/u\n"))
 		Expect(state()).To(Equal("inactive\n"))
 		Expect(run("systemctl", "--user", "enable", "lg.service")).To(BeEmpty())
 		Expect(state()).To(Equal("inactive\n"))
