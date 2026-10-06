@@ -92,12 +92,15 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 
 	It("exits 0 on SIGTERM mid-cycle, releases its locks and leaves no partial unit", func(SpecContext) {
 		DeferCleanup(fake.Hold(heldLog))
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(env.State(), "sync-request"), []byte("7\n"), 0o644)).To(Succeed())
 		daemon := env.Start("daemon", "run")
 		Eventually(fake.Requests, cycleWait).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
 
 		daemon.Signal(syscall.SIGTERM)
 
 		Eventually(daemon, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(env.Status()).To(HaveKeyWithValue("served_request", 0.0))
 		Expect(filepath.Join(env.State(), "daemon.pid")).NotTo(BeAnExistingFile())
 		Expect(os.ReadFile(filepath.Join(env.State(), "daemon.lock"))).To(BeEmpty())
 		Expect(os.ReadFile(filepath.Join(env.State(), "write.lock"))).To(BeEmpty())

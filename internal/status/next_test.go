@@ -90,6 +90,14 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(status.Next(&prev, good(started.Add(time.Hour))).ServedRequest).To(Equal(int64(7)))
 	})
 
+	It("keeps the served request after a cycle that was cancelled, since it served none", func() {
+		prev := status.Next(nil, good(started))
+		c := good(started.Add(time.Hour))
+		c.Completed, c.Err, c.ServedRequest = false, fmt.Errorf("sync: %w", context.Canceled), 7
+
+		Expect(status.Next(&prev, c).ServedRequest).To(BeZero())
+	})
+
 	It("records the horizon, and no newest run or lag without a completed run on disk", func() {
 		c := good(started)
 		c.Disk = status.Disk{Horizon: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}

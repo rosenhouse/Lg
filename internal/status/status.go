@@ -167,7 +167,9 @@ func Next(prev *Status, c Cycle) Status {
 		LastSyncFinishedAt:  finished,
 		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
 		NextSyncAt:          timeOrNil(c.NextSyncAt),
-		ServedRequest:       c.ServedRequest,
+	}
+	if !errors.Is(c.Err, context.Canceled) {
+		st.ServedRequest = c.ServedRequest
 	}
 	if c.Daemon != nil {
 		d := *c.Daemon
