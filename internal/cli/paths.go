@@ -28,7 +28,7 @@ func (p pathsCmd) Validate() error {
 	if len(p.Unit) > 1 {
 		return errors.New("--unit must not be given more than once")
 	}
-	return p.filters.validate()
+	return p.validate()
 }
 
 func (p pathsCmd) Run(deps *Deps) error {

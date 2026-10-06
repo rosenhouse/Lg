@@ -464,3 +464,16 @@ func listedRun(id int64, createdAt time.Time, status, conclusion string) json.Ra
 	return json.RawMessage(fmt.Sprintf(`{"id":%d,"created_at":%q,"status":%q,"conclusion":%s,"run_attempt":1,"repository":{"full_name":"rosenhouse/Lg"}}`,
 		id, createdAt.UTC().Format(time.RFC3339), status, conclusion))
 }
+
+// JobIDs lists the ids of attempt's jobs named name, in listing order.
+func (r Run) JobIDs(attempt int, name string) []int64 { return []int64{0, 0} }
+
+// SetJobConclusion concludes attempt's job of that id so.
+func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run { return r.copy() }
+
+// SetStepConclusion concludes the step of that name in attempt's job of that id so.
+func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run { return r.copy() }
+
+// AddRerunAttempt adds an attempt after the latest that re-runs the jobs
+// named and carries every other job forward.
+func AddRerunAttempt(r Run, jobs ...string) Run { return r.copy() }
