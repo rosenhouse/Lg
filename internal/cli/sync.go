@@ -46,7 +46,7 @@ func (syncCmd) Run(deps *Deps) error {
 
 // requestSync asks the running daemon for a cycle.
 func requestSync(roots config.Roots, deps *Deps) error {
-	n, err := daemon.Request(roots.State, deps.Clock)
+	n, err := daemon.Request(deps.StoreFS, roots.State, deps.Clock)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
