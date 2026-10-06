@@ -173,7 +173,7 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		Entry("--workflow", index.Filter{Workflows: []string{"ci"}}, func() []string { return nil }),
 		Entry("--event", index.Filter{Events: []string{"pull_request"}}, func() []string { return logsOf(env, a.Fork.ID, a.PR42.ID) }),
 		Entry("--conclusion of a job", index.Filter{Conclusions: []string{"failure"}, SHAs: []string{"8"}}, func() []string {
-			return under(env, "attempt-*/jobs/*_flaky/log.txt", a.Rerun.ID)
+			return under(env, "attempt-1/jobs/*_flaky/log.txt", a.Rerun.ID)
 		}),
 	)
 
