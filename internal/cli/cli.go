@@ -53,6 +53,7 @@ type commands struct {
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
+	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }

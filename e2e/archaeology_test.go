@@ -23,7 +23,11 @@ import (
 // archaeologyEnv syncs the Archaeology runs and any others with backfill 60d.
 func archaeologyEnv(others ...scenario.Run) *harness.Env {
 	GinkgoHelper()
-	env := harness.New(lgPath)
+	return syncArchaeology(harness.New(lgPath), others...)
+}
+
+func syncArchaeology(env *harness.Env, others ...scenario.Run) *harness.Env {
+	GinkgoHelper()
 	fake := fakegithub.New()
 	DeferCleanup(fake.Close)
 	for _, r := range append(scenario.Archaeology().All(), others...) {
