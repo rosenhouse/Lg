@@ -203,12 +203,15 @@ var _ = Describe("under a real systemd user manager", Label("systemd"), func() {
 		env.Setenv("XDG_RUNTIME_DIR", os.Getenv("XDG_RUNTIME_DIR"))
 		name := fmt.Sprintf("lg-test-%d-%d", GinkgoParallelProcess(), GinkgoRandomSeed())
 
+		// Command must be built here: building it in a cleanup would call DeferCleanup there.
+		uninstall := env.Command("daemon", "uninstall", "--name", name)
 		DeferCleanup(func() {
 			if CurrentSpecReport().Failed() {
 				journal, _ := exec.CommandContext(context.Background(), "journalctl", "--user", "--no-pager", "-u", name+".service").CombinedOutput()
 				AddReportEntry("journal", string(journal))
 			}
-			Eventually(env.Lg("daemon", "uninstall", "--name", name), harness.ExitTimeout).Should(gexec.Exit())
+			out, err := uninstall.CombinedOutput()
+			Expect(err).NotTo(HaveOccurred(), string(out))
 			Expect(filepath.Join(home, ".config", "systemd", "user", name+".service")).NotTo(BeAnExistingFile())
 		})
 		Eventually(env.Lg("daemon", "install", "--name", name), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
