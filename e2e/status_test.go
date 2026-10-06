@@ -184,6 +184,20 @@ github.com/rosenhouse/lg:
 		Eventually(jsonOut, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(string(jsonOut.Out.Contents())).To(Equal(raw))
 	})
+
+	It("prints each pending unit with the time it was first seen pending", func() {
+		env, fake := withStuckLog()
+		env.SetNow(harness.DefaultNow().Add(15*time.Minute), fake)
+		Expect(env.Sync()).To(gexec.Exit(1))
+
+		session := env.Lg("status")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		since := pendingSince(env)
+		Expect(since).To(BeTemporally("~", harness.DefaultNow().Add(time.Minute), harness.ExitTimeout))
+		Expect(string(session.Out.Contents())).To(MatchRegexp(
+			`\n    run 37129390741 attempt 2, pending since ` + since.Format(time.RFC3339) + `: [^\n]*503[^\n]*\n`))
+	})
 })
 
 // statusJSON is a status.json from a good cycle that finished at ok, with
@@ -226,10 +240,9 @@ var _ = Describe("lg paths after units stayed pending past twice sync_interval",
 		session := env.Lg("paths")
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(session.Err.Contents())).To(MatchRegexp("^lg: warning: 1 units pending since (\\S+); run `lg status`\n$"))
 		since := pendingSince(env)
 		Expect(since).To(BeTemporally("~", harness.DefaultNow().Add(time.Minute), harness.ExitTimeout))
-		Expect(string(session.Err.Contents())).To(ContainSubstring(" since " + since.Format(time.RFC3339) + ";"))
+		Expect(string(session.Err.Contents())).To(Equal("lg: warning: 1 units pending since " + since.Format(time.RFC3339) + "; run `lg status`\n"))
 		Expect(string(session.Out.Contents())).To(ContainSubstring(filepath.Join(fixtureRunDir, "attempt-1")))
 	})
 })
@@ -244,20 +257,6 @@ var _ = Describe("lg paths while units are pending for less than twice sync_inte
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(session.Err.Contents()).To(BeEmpty())
-	})
-})
-
-var _ = Describe("lg status", Label("status"), func() {
-	It("prints each pending unit with the time it was first seen pending", func() {
-		env, fake := withStuckLog()
-		env.SetNow(harness.DefaultNow().Add(15*time.Minute), fake)
-		Expect(env.Sync()).To(gexec.Exit(1))
-
-		session := env.Lg("status")
-
-		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(session.Out.Contents())).To(MatchRegexp(
-			`\n    run 37129390741 attempt 2, pending since ` + pendingSince(env).Format(time.RFC3339) + `: [^\n]*503[^\n]*\n`))
 	})
 })
 
