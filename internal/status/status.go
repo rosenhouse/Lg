@@ -59,7 +59,30 @@ func Warning(now time.Time, st *Status) string {
 	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
 		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
 	}
+	if n, oldest := stuck(now, st, interval); n > 0 {
+		return fmt.Sprintf("%d units pending since %s; run `lg status`", n, oldest.Format(time.RFC3339))
+	}
+	if st.ConfigError != nil {
+		return "config.yaml is invalid: " + *st.ConfigError
+	}
 	return ""
+}
+
+// stuck counts the units in st pending longer than twice interval at now,
+// and gives the oldest since among them. A zero since is unknown.
+func stuck(now time.Time, st *Status, interval time.Duration) (n int, oldest time.Time) {
+	for _, r := range st.Repos {
+		for _, p := range r.Pending {
+			if p.Since.IsZero() || now.Sub(p.Since)/2 <= interval {
+				continue
+			}
+			n++
+			if oldest.IsZero() || p.Since.Before(oldest) {
+				oldest = p.Since
+			}
+		}
+	}
+	return n, oldest
 }
 
 // String gives b on one line, without the terminal controls that gh's
