@@ -146,7 +146,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		))
 	})
 
-	It("says nothing was installed when the service fails to start", func() {
+	It("prints installed only when the service starts", func() {
 		runner.fail = "enable"
 
 		Expect(run("linux", "daemon", "install")).To(Equal(1))

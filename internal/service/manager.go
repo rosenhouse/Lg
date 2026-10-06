@@ -224,10 +224,11 @@ func (s systemd) stop(ctx context.Context) error {
 }
 
 func (s systemd) removed(ctx context.Context) error {
-	if err := s.systemctl(ctx, "daemon-reload"); !errors.Is(err, exec.ErrNotFound) {
-		return err
+	err := s.systemctl(ctx, "daemon-reload")
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
 	}
-	return nil
+	return err
 }
 
 // stopOrphan stops a service whose unit file was deleted, which systemd

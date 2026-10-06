@@ -80,7 +80,7 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		Expect(content).NotTo(ContainSubstring("gho_"))
 	})
 
-	It("adds XDG_DATA_HOME and XDG_CONFIG_HOME when they locate the store and config.yaml", func() {
+	It("adds XDG_DATA_HOME and XDG_CONFIG_HOME whenever they are set to an absolute path", func() {
 		data, config := filepath.Join(GinkgoT().TempDir(), "data"), filepath.Join(GinkgoT().TempDir(), "config")
 		env, _, unit = newInstallEnv("XDG_DATA_HOME", data, "XDG_CONFIG_HOME", config)
 

@@ -56,7 +56,7 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 }
 
 type daemonUninstallCmd struct {
-	Name string `hidden:"" default:"lg" help:"Name of the unit and label to remove."`
+	Name string `hidden:"" default:"lg" help:"Remove the unit and label of this name."`
 }
 
 func (c daemonUninstallCmd) Run(deps *Deps) error {
