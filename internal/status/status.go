@@ -58,9 +58,6 @@ func Warning(now time.Time, st *Status) string {
 	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
 		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
 	}
-	if st.ConfigError != nil {
-		return "config.yaml is invalid: " + OneLine(*st.ConfigError)
-	}
 	return ""
 }
 
