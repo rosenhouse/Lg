@@ -75,4 +75,26 @@ var _ = Describe("a daemon cycle", Label("sync"), func() {
 		Expect(runsThen).To(BeZero())
 		Expect(harness.ReadStatus(filepath.Join(home, "state", "status.json"))).To(HaveKeyWithValue("served_request", 7.0))
 	})
+
+	It("records a write.lock it cannot open in status.json, serving the request", func() {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		writeLock := filepath.Join(home, "state", "write.lock")
+		Expect(os.MkdirAll(writeLock, 0o755)).To(Succeed())
+
+		out, err := cli.RunDaemonCycle(context.Background(), cli.Deps{
+			Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+			Stdout:  &bytes.Buffer{},
+			Stderr:  &bytes.Buffer{},
+			Clock:   clock.Real{},
+			StoreFS: store.OSFS{},
+		}, func() int64 { return 7 })
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out.Err).To(MatchError(ContainSubstring(writeLock)))
+		Expect(harness.ReadStatus(filepath.Join(home, "state", "status.json"))).To(And(
+			HaveKeyWithValue("served_request", 7.0),
+			HaveKeyWithValue("last_sync_errors", ConsistOf(ContainSubstring(writeLock+": is a directory")))))
+	})
 })

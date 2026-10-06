@@ -100,6 +100,22 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 	}, daemonTimeout)
 })
 
+var _ = Describe("lg sync --wait when the daemon cannot open write.lock", Label("sync"), func() {
+	It("exits 1 at once naming write.lock", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		writeLock := filepath.Join(env.State(), "write.lock")
+		Expect(os.Remove(writeLock)).To(Succeed())
+		Expect(os.Mkdir(writeLock, 0o755)).To(Succeed())
+
+		waiting := env.Lg("sync", "--wait")
+
+		Eventually(waiting, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(1))
+		Expect(waiting.Err).To(gbytes.Say(`lg: .*%s: is a directory`, writeLock))
+	}, daemonTimeout)
+})
+
 var _ = Describe("lg sync --wait --timeout 1s", Label("sync"), func() {
 	It("exits 4 when the cycle does not finish in time", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
