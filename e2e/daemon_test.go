@@ -96,8 +96,9 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		daemon.Signal(syscall.SIGTERM)
 
 		Eventually(daemon, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(held(env, "daemon.lock")()).To(BeFalse())
-		Expect(held(env, "write.lock")()).To(BeFalse())
+		Expect(filepath.Join(env.State(), "daemon.pid")).NotTo(BeAnExistingFile())
+		Expect(os.ReadFile(filepath.Join(env.State(), "daemon.lock"))).To(BeEmpty())
+		Expect(os.ReadFile(filepath.Join(env.State(), "write.lock"))).To(BeEmpty())
 		Expect(env.Tmp()).To(matchers.BeSwept())
 		Expect(attemptDir(env, 1)).NotTo(BeADirectory())
 	}, daemonTimeout)
