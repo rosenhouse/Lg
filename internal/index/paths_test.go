@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -222,6 +223,21 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		Entry("artifact", index.UnitArtifact),
 		Entry("extracted", index.UnitExtracted),
 	)
+
+	It("takes thousands of values of each flag", func() {
+		many := func(last ...string) []string {
+			values := make([]string, 2000-len(last))
+			for i := range values {
+				values[i] = fmt.Sprintf("%040x", i+1<<40)
+			}
+			return append(values, last...)
+		}
+		f := index.Filter{
+			SHAs: many("222"), Branches: many("main"), Workflows: many("lg-fixture"), Jobs: many("*"),
+			Events: many("push"), Conclusions: many("success", "failure", "cancelled"),
+		}
+		Expect(paths(f, index.UnitDefault)).To(ConsistOf(logsOf(env, a.MainSeptember.ID)))
+	})
 
 	It("--job selects only the attempts that hold a matching job", func() {
 		Expect(paths(index.Filter{Jobs: []string{"steady"}}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-12/*.json", steady)))

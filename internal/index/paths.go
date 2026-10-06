@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -148,17 +149,17 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	var w where
 	if len(f.Branches) > 0 {
 		w.add("NOT r.from_fork")
-		anyOf(&w, "r.head_branch = ?", f.Branches)
+		anyOf(&w, "r.head_branch IN (SELECT value FROM json_each(?))", f.Branches)
 	}
-	anyOf(&w, `r.head_sha LIKE ? ESCAPE '\'`, likePrefixes(f.SHAs))
-	anyOf(&w, "EXISTS (SELECT 1 FROM json_each(r.pr_numbers) WHERE value = ?)", f.PRs)
-	anyOf(&w, "r.workflow_id IN (SELECT workflow_id FROM runs WHERE workflow_name = ?)", f.Workflows)
-	anyOf(&w, "r.event = ?", f.Events)
-	anyOf(&w, s.conclusion+" = ?", f.Conclusions)
+	anyOf(&w, `EXISTS (SELECT 1 FROM json_each(?) WHERE r.head_sha LIKE value ESCAPE '\')`, likePrefixes(f.SHAs))
+	anyOf(&w, "EXISTS (SELECT 1 FROM json_each(r.pr_numbers) p JOIN json_each(?) v ON p.value = v.value)", f.PRs)
+	anyOf(&w, "r.workflow_id IN (SELECT workflow_id FROM runs WHERE workflow_name IN (SELECT value FROM json_each(?)))", f.Workflows)
+	anyOf(&w, "r.event IN (SELECT value FROM json_each(?))", f.Events)
+	anyOf(&w, s.conclusion+" IN (SELECT value FROM json_each(?))", f.Conclusions)
 	if s.jobs == "" {
-		anyOf(&w, "x.name GLOB ?", f.Jobs)
+		anyOf(&w, "EXISTS (SELECT 1 FROM json_each(?) WHERE x.name GLOB value)", f.Jobs)
 	} else {
-		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j WHERE "+below("j.path", s.jobs)+" AND j.name GLOB ?)", f.Jobs)
+		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j JOIN json_each(?) g ON j.name GLOB g.value WHERE "+below("j.path", s.jobs)+")", f.Jobs)
 	}
 	if !f.Since.IsZero() {
 		w.add(s.when+" >= ?", timeText(f.Since))
@@ -185,17 +186,18 @@ func (w *where) add(condition string, args ...any) {
 	w.args = append(w.args, args...)
 }
 
-// anyOf adds the condition, holding one ?, for any of the values, unless there are none.
+// anyOf adds the condition, whose one ? is bound to the values as a JSON
+// array, unless there are none. One parameter keeps the expression small
+// however many values there are.
 func anyOf[T any](w *where, condition string, values []T) {
 	if len(values) == 0 {
 		return
 	}
-	alternatives := make([]string, len(values))
-	for i, v := range values {
-		alternatives[i] = condition
-		w.args = append(w.args, v)
+	array, err := json.Marshal(values)
+	if err != nil {
+		panic(err)
 	}
-	w.conditions = append(w.conditions, "("+strings.Join(alternatives, " OR ")+")")
+	w.add(condition, string(array))
 }
 
 // likePrefixes gives LIKE patterns, escaped with \, that match strings starting with each prefix.
