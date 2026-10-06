@@ -43,3 +43,14 @@ var _ = Describe("index.Open", Label("paths"), func() {
 		Expect(column[int64](db, "SELECT run_id FROM runs WHERE NOT from_fork")).To(Equal([]int64{runID}))
 	}, syncTimeout)
 })
+
+var _ = Describe("lg.db", Label("paths"), func() {
+	It("refuses a runs row without from_fork, as an lg older than the column inserts", func(ctx SpecContext) {
+		env := harness.InProcess()
+		syncStages(ctx, env, "after-attempt-1")
+		reconcile(ctx, dbPath(env), env.Data())
+
+		_, err := openDB(dbPath(env)).Exec("INSERT INTO runs (run_id, path) VALUES (99, 'older')")
+		Expect(err).To(MatchError(ContainSubstring("NOT NULL constraint failed: runs.from_fork")))
+	}, syncTimeout)
+})
