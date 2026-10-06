@@ -35,7 +35,7 @@ var _ = Describe("index.Open", Label("paths"), func() {
 		syncStages(ctx, env, "after-attempt-1")
 		reconcile(ctx, dbPath(env), env.Data())
 		db := openDB(dbPath(env))
-		_, err := db.Exec(`ALTER TABLE runs DROP COLUMN from_fork; DELETE FROM meta; INSERT INTO meta (format) VALUES (1);
+		_, err := db.Exec(`ALTER TABLE runs DROP COLUMN from_fork; UPDATE meta SET schema = 'older';
 			INSERT INTO runs (run_id, path) VALUES (99, 'stale')`)
 		Expect(err).NotTo(HaveOccurred())
 

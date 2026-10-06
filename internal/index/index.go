@@ -91,7 +91,7 @@ func open(ctx context.Context, path, data string) (*Index, error) {
 	return ix, nil
 }
 
-// resetUnlessCurrent empties a db whose meta.format is not Format. It takes
+// resetUnlessCurrent empties a db that isCurrent rejects. It takes
 // the write lock only to do so.
 func (ix *Index) resetUnlessCurrent(ctx context.Context) error {
 	if isCurrent(ctx, ix.db) {
