@@ -20,14 +20,15 @@ const maxLogBytes = 10_000_000
 // Outcome is what a Loop needs to know of a cycle. RetryAt is zero unless
 // the cycle blocked until then.
 type Outcome struct {
-	Started time.Time
-	Next    time.Time
-	RetryAt time.Time
-	Err     error
+	Started  time.Time
+	Interval time.Duration
+	RetryAt  time.Time
+	Err      error
 }
 
-// Loop runs Cycle at once, and then at each Outcome's Next or when a sync
-// request comes. After each cycle it reconciles the index and logs one line.
+// Loop runs Cycle at once, and then when Next says each next is due, or when
+// a sync request comes. After each cycle it reconciles the index and logs one
+// line.
 type Loop struct {
 	Clock clock.Clock
 	// RetryAt defers the first cycle, as a restarted daemon's blocked.retry_at does.
@@ -61,11 +62,12 @@ func (l *Loop) Run(ctx context.Context) {
 		if out.Err != nil {
 			result = status.OneLine(out.Err.Error())
 		}
-		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, out.Next.UTC().Format(time.RFC3339))
+		next := Next(out.Started, out.Interval, out.RetryAt)
+		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, next.UTC().Format(time.RFC3339))
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
-		l.wait(ctx, served, out.Next, out.RetryAt)
+		l.wait(ctx, served, next, out.RetryAt)
 	}
 }
 

@@ -96,8 +96,7 @@ type daemonCycle struct {
 func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
-		now := d.deps.Clock.Now()
-		return daemon.Outcome{Started: now, Next: daemon.Next(now, time.Duration(d.target.cfg.SyncInterval), time.Time{}), Err: err}
+		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err}
 	}
 	defer func() { _ = held.Release() }()
 	fresh, configErr := loadTarget(d.deps.Env)
@@ -112,7 +111,7 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 		c.ServedRequest = served
 		c.ConfigError = configErr
 	})
-	return daemon.Outcome{Started: c.Started, Next: c.NextSyncAt, RetryAt: retryAt(c.Err), Err: errors.Join(configErr, err)}
+	return daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err), Err: errors.Join(configErr, err)}
 }
 
 // retryAt gives the time a Blocked err defers the next cycle to, or zero.

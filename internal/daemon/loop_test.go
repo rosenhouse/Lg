@@ -99,16 +99,16 @@ func (e *loopEnv) expectNoCycle() {
 	Consistently(e.cycles, 100*time.Millisecond).ShouldNot(Receive())
 }
 
-// outcomeAt is the outcome of a cycle that started at at, with the next due 10m later.
+// outcomeAt is the outcome of a cycle that started at at, with a 10m interval.
 func outcomeAt(at time.Time) daemon.Outcome {
-	return daemon.Outcome{Started: at, Next: at.Add(10 * time.Minute)}
+	return daemon.Outcome{Started: at, Interval: 10 * time.Minute}
 }
 
 var _ = Describe("Loop", Label("daemon"), func() {
-	It("runs the first cycle at once, and each next at its outcome's Next", func() {
-		late := outcomeAt(t0.Add(10 * time.Minute))
-		late.Next = t0.Add(30 * time.Minute)
-		e := newLoopEnv(outcomeAt(t0), late, outcomeAt(t0.Add(30*time.Minute)))
+	It("runs the first cycle at once, and the next at max(start+interval, retry_at)", func() {
+		blocked := outcomeAt(t0.Add(10 * time.Minute))
+		blocked.RetryAt = t0.Add(40 * time.Minute)
+		e := newLoopEnv(outcomeAt(t0), blocked, outcomeAt(t0.Add(40*time.Minute)))
 		e.run()
 
 		e.expectCycle(t0, 0)
@@ -118,21 +118,21 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(10*time.Minute), 0)
 		e.set(t0.Add(20 * time.Minute))
 		e.expectNoCycle()
-		e.set(t0.Add(30 * time.Minute))
-		e.expectCycle(t0.Add(30*time.Minute), 0)
+		e.set(t0.Add(40 * time.Minute))
+		e.expectCycle(t0.Add(40*time.Minute), 0)
 	})
 
-	It("runs a cycle due between polls at its Next", func() {
+	It("runs a cycle due between polls at its retry_at", func() {
 		between := outcomeAt(t0)
-		between.Next = t0.Add(10*time.Minute + 500*time.Millisecond)
-		e := newLoopEnv(between, outcomeAt(between.Next))
+		between.RetryAt = t0.Add(10*time.Minute + 500*time.Millisecond)
+		e := newLoopEnv(between, outcomeAt(between.RetryAt))
 		e.run()
 		e.expectCycle(t0, 0)
 
 		e.set(t0.Add(10 * time.Minute))
 		e.expectNoCycle()
-		e.set(between.Next)
-		e.expectCycle(between.Next, 0)
+		e.set(between.RetryAt)
+		e.expectCycle(between.RetryAt, 0)
 	})
 
 	It("logs an error reading the requests, and keeps its schedule", func() {
