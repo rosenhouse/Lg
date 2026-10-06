@@ -89,7 +89,8 @@ var (
 )
 
 // Paths gives the regular files of the units f selects, ordered by unit
-// time, run id, attempt, and job or artifact id.
+// time, run id, attempt, and job or artifact id. With them it returns the
+// error of each file or dir it could not read.
 func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) {
 	units := []Unit{u}
 	if u == UnitDefault {
@@ -123,14 +124,13 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 		return nil, ix.dbError(err)
 	}
 	var paths []string
+	var unread []error
 	for _, d := range dirs {
 		files, err := unitFiles(Unit(d[0]), d[1])
-		if err != nil {
-			return nil, err
-		}
 		paths = append(paths, files...)
+		unread = append(unread, err)
 	}
-	return paths, nil
+	return paths, errors.Join(unread...)
 }
 
 // query selects the unit's dirs that f selects, with the columns Paths orders them by.
@@ -222,12 +222,17 @@ func unitFiles(u Unit, dir string) ([]string, error) {
 	return regular(dir, "artifact.zip")
 }
 
-// walk gives the regular files below root that keep accepts, or none when root is gone.
+// walk gives the regular files below root that keep accepts, skipping what is
+// gone, and the error of each dir it cannot read.
 func walk(root string, keep func(path string, d fs.DirEntry) (bool, error)) ([]string, error) {
 	var files []string
+	var unread []error
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if !errors.Is(err, fs.ErrNotExist) {
+				unread = append(unread, err)
+			}
+			return nil
 		}
 		ok, err := keep(path, d)
 		if ok && d.Type().IsRegular() {
@@ -235,27 +240,26 @@ func walk(root string, keep func(path string, d fs.DirEntry) (bool, error)) ([]s
 		}
 		return err
 	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	return files, err
+	return files, errors.Join(append(unread, err)...)
 }
 
-// regular gives those of the named files in dir that are regular files.
+// regular gives those of the named files in dir that are regular files, and
+// the error of each it cannot stat but for being gone.
 func regular(dir string, names ...string) ([]string, error) {
 	var files []string
+	var unread []error
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		info, err := os.Lstat(path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
 		if err != nil {
-			return nil, err
+			if !errors.Is(err, fs.ErrNotExist) {
+				unread = append(unread, err)
+			}
+			continue
 		}
 		if info.Mode().IsRegular() {
 			files = append(files, path)
 		}
 	}
-	return files, nil
+	return files, errors.Join(unread...)
 }
