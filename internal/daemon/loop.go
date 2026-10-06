@@ -35,8 +35,9 @@ type Loop struct {
 	Clock clock.Clock
 	// RetryAt defers the first cycle, as a restarted daemon's blocked.retry_at does.
 	RetryAt time.Time
-	// Cycle runs one cycle that serves sync requests up to served.
-	Cycle func(ctx context.Context, served int64) Outcome
+	// Cycle runs one cycle. Before it starts, it calls serving, which gives
+	// the latest sync request, and serves the requests up to that one.
+	Cycle func(ctx context.Context, serving func() int64) Outcome
 	// Requested gives the number of the latest sync request.
 	Requested func() (int64, error)
 	// Lost gives an error once this daemon no longer holds the instance lock.
@@ -61,7 +62,7 @@ func (l *Loop) Run(ctx context.Context) error {
 			serving = n
 		}
 		l.truncateLog()
-		out := l.Cycle(ctx, serving)
+		out := l.Cycle(ctx, func() int64 { return serving })
 		if ctx.Err() != nil {
 			l.logf("stopped")
 			return nil

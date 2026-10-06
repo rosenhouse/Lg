@@ -99,7 +99,7 @@ type daemonCycle struct {
 // made while it waited. It skips the cycle when that wait times out, so the
 // daemon retries a request. Another lock error counts as the cycle, so the
 // daemon does not retry it every second.
-func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
+func (d *daemonCycle) run(ctx context.Context, serving func() int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
 		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: errors.Is(err, lock.ErrTimeout)}
@@ -116,7 +116,7 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 		out = daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err)}
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
 		c.NextSyncAt = out.Next()
-		c.ServedRequest = served
+		c.ServedRequest = serving()
 		c.ConfigError = configErr
 	})
 	out.Err = errors.Join(configErr, err)
