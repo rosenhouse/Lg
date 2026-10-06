@@ -46,11 +46,13 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		writeStatus(`{"last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "served_request": %d}`, n)
 	}
 
-	wait := func(request int64) <-chan error {
+	waitSince := func(request int64, since time.Time) <-chan error {
 		done := make(chan error, 1)
-		go func() { done <- daemon.WaitForCycle(state, request, waitTimeout, clk) }()
+		go func() { done <- daemon.WaitForCycle(state, request, since, waitTimeout, clk) }()
 		return done
 	}
+
+	wait := func(request int64) <-chan error { return waitSince(request, t0) }
 
 	// result waits a second for WaitForCycle to return, so a regression fails instead of hanging.
 	result := func(request int64) error {
@@ -93,6 +95,16 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Eventually(done, time.Second).Should(Receive(&err))
 		Expect(err).To(MatchError(lock.ErrTimeout))
 		Expect(err).To(MatchError("no cycle served sync request 3; gave up after 1m0s"))
+	})
+
+	It("counts its timeout from since", func() {
+		runDaemon()
+		done := waitSince(3, t0.Add(-30*time.Second))
+		polling()
+
+		clk.Set(t0.Add(30 * time.Second))
+
+		Eventually(done, time.Second).Should(Receive(MatchError("no cycle served sync request 3; gave up after 1m0s")))
 	})
 
 	It("fails at once when no daemon holds state/daemon.lock", func() {

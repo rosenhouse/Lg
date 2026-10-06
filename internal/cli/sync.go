@@ -40,7 +40,7 @@ func (c syncCmd) Run(deps *Deps) error {
 		if err != nil || !c.Wait {
 			return err
 		}
-		return daemon.WaitForCycle(t.roots.State, n, c.timeout(cycleWait), deps.Clock)
+		return daemon.WaitForCycle(t.roots.State, n, deps.Clock.Now(), c.timeout(cycleWait), deps.Clock)
 	}
 	held, err := lockWrites(context.Background(), t.roots, deps, c.timeout(writeLockWait))
 	if err != nil {

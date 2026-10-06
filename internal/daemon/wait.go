@@ -19,7 +19,7 @@ const waitPoll = 100 * time.Millisecond
 // that served sync request n, and gives that cycle's result. It fails at
 // once when the daemon exits first, or when the daemon is blocked past the
 // timeout.
-func WaitForCycle(state string, n int64, timeout time.Duration, clk clock.Clock) error {
+func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration, clk clock.Clock) error {
 	deadline := clk.Now().Add(timeout)
 	timedOut := clk.After(timeout)
 	for {
