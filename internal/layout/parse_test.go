@@ -59,7 +59,7 @@ var _ = Describe("Parse", Label("where"), func() {
 		Entry("a bad date", "github.com/rosenhouse/Lg/runs/2026-13-03/1_a_b"),
 		Entry("a bad repo", "github.com/rosenhouse/../runs/2026-10-03/1_a_b"),
 		Entry("a bad host", "../rosenhouse/Lg/runs/2026-10-03/1_a_b"),
-		Entry("an absolute path", "/github.com/rosenhouse/Lg/runs/2026-10-03/1_a_b"),
+		Entry("an absolute path", "/rosenhouse/Lg/runs/2026-10-03/1_a_b"),
 		Entry("a run dir with no id", "github.com/rosenhouse/Lg/runs/2026-10-03/x_a_b"),
 		Entry("an attempt dir with no number", run+"/attempt-x/fetch.json"),
 		Entry("another dir in a run", run+"/other"),

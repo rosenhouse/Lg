@@ -162,22 +162,28 @@ type Hit struct {
 }
 
 // ParseHit splits hit at the longest prefix that exists, since a path may
-// hold colons, and gives false when no prefix exists.
+// hold colons, and gives false when no prefix exists. It reads a match as
+// path:line:text, path:line or path:text, and a context line as path-line-text.
 func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
-	for end := len(hit); end > 0; end = strings.LastIndexByte(hit[:end], ':') {
+	for end := len(hit); end > 0; end = strings.LastIndexAny(hit[:end], ":-") {
 		if !exists(hit[:end]) {
 			continue
 		}
 		h := Hit{Path: hit[:end]}
-		rest, ok := strings.CutPrefix(hit[end:], ":")
-		if !ok {
+		if end == len(hit) {
 			return h, true
 		}
-		digits, text, ok := strings.Cut(rest, ":")
-		if n, err := strconv.Atoi(digits); ok && err == nil && n > 0 && strconv.Itoa(n) == digits {
+		sep, rest := hit[end], hit[end+1:]
+		digits, text, found := strings.Cut(rest, string(sep))
+		n, err := strconv.Atoi(digits)
+		isLine := err == nil && n > 0 && strconv.Itoa(n) == digits
+		switch {
+		case isLine && (found || sep == ':'):
 			h.Line, h.Text = n, text
-		} else {
+		case sep == ':':
 			h.Text = rest
+		default:
+			continue
 		}
 		return h, true
 	}
