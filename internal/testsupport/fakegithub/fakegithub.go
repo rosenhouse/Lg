@@ -317,7 +317,6 @@ func (s *Server) Requests() []Request {
 	return append([]Request(nil), s.requests...)
 }
 
-// statusWriter remembers the status a handler wrote.
 // RunListings gives the query of each request that listed runs.
 func RunListings(requests []Request) []url.Values {
 	ginkgo.GinkgoHelper()
@@ -332,17 +331,29 @@ func RunListings(requests []Request) []url.Values {
 	return queries
 }
 
+// statusWriter records the status a handler writes before the client can see it.
 type statusWriter struct {
 	http.ResponseWriter
-	status int
+	record func(status int)
+	wrote  bool
 }
 
 // Unwrap lets http.ResponseController flush through statusWriter.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *statusWriter) WriteHeader(status int) {
-	w.status = status
+	if !w.wrote {
+		w.wrote = true
+		w.record(status)
+	}
 	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 func (s *Server) record(host string, h http.Handler) http.Handler {
@@ -373,10 +384,13 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 				return
 			}
 		}
-		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		sw := &statusWriter{ResponseWriter: w, record: func(status int) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.requests[i].Status = status
+		}}
 		switch {
 		case f.Drop:
-			sw.status = 0
 			if conn, _, err := http.NewResponseController(w).Hijack(); err == nil {
 				// A response cut short, unlike none at all, is one Go never retries.
 				_, _ = conn.Write([]byte("HTTP/1.1 2"))
@@ -385,7 +399,6 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		case f.Truncate:
 			s.truncate(sw, r, h, f.Stall)
 		case f.Stall:
-			sw.status = 0
 			s.stall(r)
 		case f.Body != "" || f.Status == http.StatusOK:
 			sw.WriteHeader(f.Status)
@@ -396,10 +409,11 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 			writeError(sw, f.Status)
 		default:
 			h.ServeHTTP(sw, r)
+			if !sw.wrote {
+				// net/http sends 200 for a handler that wrote nothing.
+				sw.WriteHeader(http.StatusOK)
+			}
 		}
-		s.mu.Lock()
-		s.requests[i].Status = sw.status
-		s.mu.Unlock()
 	})
 }
 
