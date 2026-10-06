@@ -75,13 +75,16 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(filepath.Join(root, "tmp", "trash")).To(BeADirectory())
 	})
 
-	It("claims a root holding only what lg writes before FORMAT, a starting daemon's state and requests, and lg's config.yaml", func() {
+	It("claims a root holding only what lg writes before FORMAT, a starting daemon's state and requests, a failed cycle's status and index, and lg's config.yaml", func() {
 		Expect(os.MkdirAll(filepath.Join(root, "data"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "unit-1"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "unit-1", "FORMAT"), nil, 0o644)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "trash"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
-		for _, name := range []string{"write.lock", "daemon.lock", "daemon.pid", "request.lock", "sync-request"} {
+		for _, name := range []string{
+			"write.lock", "daemon.lock", "daemon.pid", "daemon.pid.tmp", "request.lock", "sync-request", "sync-request.tmp",
+			"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock",
+		} {
 			Expect(os.WriteFile(filepath.Join(root, "state", name), []byte("1\n"), 0o644)).To(Succeed())
 		}
 		Expect(os.WriteFile(filepath.Join(root, ".rgignore"), []byte("state/\n"), 0o644)).To(Succeed())
