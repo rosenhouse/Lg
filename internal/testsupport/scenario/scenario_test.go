@@ -410,6 +410,10 @@ var _ = Describe("job conclusions", Label("flakes"), func() {
 			Expect(jobOf(concluded, "attempt-1", second)).To(HaveKeyWithValue("conclusion", "success"))
 			Expect(jobOf(run, "attempt-1", first)).To(HaveKeyWithValue("conclusion", "success"))
 		})
+
+		It("panics when the attempt has no job of that id", func() {
+			Expect(func() { scenario.SetJobConclusion(run, 1, 1, "failure") }).To(PanicWith(ContainSubstring("job 1")))
+		})
 	})
 
 	Describe("SetStepConclusion", func() {
@@ -421,6 +425,11 @@ var _ = Describe("job conclusions", Label("flakes"), func() {
 			Expect(stepOf(jobOf(concluded, "attempt-1", pass), "Emit log markers")).To(HaveKeyWithValue("conclusion", "success"))
 			Expect(jobOf(concluded, "attempt-1", pass)).To(HaveKeyWithValue("conclusion", "success"))
 			Expect(stepOf(jobOf(run, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "success"))
+		})
+
+		It("panics when the job has no step of that name", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			Expect(func() { scenario.SetStepConclusion(run, 1, pass, "No such step", "failure") }).To(PanicWith(ContainSubstring(`"No such step"`)))
 		})
 	})
 })

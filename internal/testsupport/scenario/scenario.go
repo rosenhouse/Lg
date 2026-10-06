@@ -491,24 +491,34 @@ func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run {
 // SetStepConclusion concludes the step of that name in attempt's job of that id so.
 func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run {
 	return r.editJob(attempt, jobID, func(job map[string]any) {
+		found := false
 		for _, s := range job["steps"].([]any) {
 			if s := s.(map[string]any); s["name"] == step {
 				s["conclusion"] = conclusion
+				found = true
 			}
+		}
+		if !found {
+			panic(fmt.Sprintf("attempt %d's job %d has no step named %q", attempt, jobID, step))
 		}
 	})
 }
 
 func (r Run) editJob(attempt int, jobID int64, edit func(map[string]any)) Run {
 	out := r.copy()
+	found := false
 	out.editJobs(attempt, func(jobs []any) []any {
 		for _, job := range jobs {
 			if job := job.(map[string]any); job["id"].(json.Number).String() == strconv.FormatInt(jobID, 10) {
 				edit(job)
+				found = true
 			}
 		}
 		return jobs
 	})
+	if !found {
+		panic(fmt.Sprintf("attempt %d has no job %d", attempt, jobID))
+	}
 	return out
 }
 
