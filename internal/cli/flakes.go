@@ -28,12 +28,12 @@ func (f flakesCmd) Validate() error { return f.validate() }
 func (f flakesCmd) Run(deps *Deps) error {
 	return query(deps, func(ctx context.Context, ix *index.Index) error {
 		flips, unread := ix.RerunFlips(ctx, f.filter(deps.Clock.Now()))
-		print := printFlip
+		write := printFlip
 		if f.JSON {
-			print = printFlipJSON
+			write = printFlipJSON
 		}
 		for _, flip := range flips {
-			if err := print(deps.Stdout, flip); err != nil {
+			if err := write(deps.Stdout, flip); err != nil {
 				return err
 			}
 		}

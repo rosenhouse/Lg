@@ -177,24 +177,19 @@ var _ = Describe("a run where one of two jobs named 'same name' fails in attempt
 	})
 })
 
-var _ = Describe("lg flakes", Ordered, ContinueOnFailure, Label("flakes"), func() {
-	const other = 2
-	var env *harness.Env
-
-	BeforeAll(func() {
-		env = harness.New(lgPath)
-		syncThroughAttempt3(env, scenario.OnBranch(scenario.WithSHA(sameNameFlip(other), strings.Repeat("2", 40)), "main"))
-	})
-
-	runIDs := func(args ...string) []any {
-		var ids []any
-		for _, f := range flakes(env, args...) {
-			ids = append(ids, f["run_id"])
-		}
-		return ids
-	}
-
+var _ = Describe("lg flakes", Label("flakes"), func() {
 	It("applies --sha 1a51097 and the lg paths filters, and with --json prints one object per finding with run_id, head_sha, job, step (null for a job finding), attempts, conclusions, failing steps and log paths", func() {
+		const other = 2
+		env := harness.New(lgPath)
+		syncThroughAttempt3(env, scenario.OnBranch(scenario.WithSHA(sameNameFlip(other), strings.Repeat("2", 40)), "main"))
+		runIDs := func(args ...string) []any {
+			var ids []any
+			for _, f := range flakes(env, args...) {
+				ids = append(ids, f["run_id"])
+			}
+			return ids
+		}
+
 		Expect(runIDs()).To(ContainElements(BeEquivalentTo(fixtureRun), BeEquivalentTo(other)))
 		Expect(runIDs("--sha", "1a51097")).To(HaveEach(BeEquivalentTo(fixtureRun)))
 		Expect(runIDs("--branch", "main")).To(HaveExactElements(BeEquivalentTo(other)))

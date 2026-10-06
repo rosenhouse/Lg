@@ -29,7 +29,7 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
 	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
 		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY x.path, s.number"
-	jobs, restarted, err := readOrStartOver(ctx, ix, func() (attemptJobs, error) { return ix.attemptJobs(ctx, query, w.args) })
+	jobs, restarted, err := readOrStartOver(ctx, ix, func() (attemptJobs, error) { return ix.readAttemptJobs(ctx, query, w.args) })
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
@@ -55,8 +55,8 @@ type attemptJobs struct {
 	headSHAs map[int64]string
 }
 
-// attemptJobs reads the jobs, with their steps, that the query selects, one row per step.
-func (ix *Index) attemptJobs(ctx context.Context, query string, args []any) (attemptJobs, error) {
+// readAttemptJobs reads the jobs, with their steps, that the query selects, one row per step.
+func (ix *Index) readAttemptJobs(ctx context.Context, query string, args []any) (attemptJobs, error) {
 	rows, err := ix.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return attemptJobs{}, ix.dbError(err)
