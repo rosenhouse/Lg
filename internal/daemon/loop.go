@@ -26,7 +26,7 @@ type Outcome struct {
 	Err      error
 }
 
-// Loop runs Cycle at once, and then when Next says each next is due, or when
+// Loop runs Cycle at once, and then when each Outcome says the next is due, or when
 // a sync request comes. After each cycle it reconciles the index and logs one
 // line.
 type Loop struct {
@@ -67,7 +67,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		if out.Err != nil {
 			result = status.OneLine(out.Err.Error())
 		}
-		next := Next(out.Started, out.Interval, out.RetryAt)
+		next := out.Next()
 		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, next.UTC().Format(time.RFC3339))
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)

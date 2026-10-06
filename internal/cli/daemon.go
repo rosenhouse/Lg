@@ -105,13 +105,16 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	} else {
 		configErr = fmt.Errorf("%w; kept the last good config", configErr)
 	}
-	c, err := recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
+	var out daemon.Outcome
+	_, err = recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
+		out = daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err)}
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
-		c.NextSyncAt = daemon.Next(c.Started, time.Duration(d.target.cfg.SyncInterval), retryAt(c.Err))
+		c.NextSyncAt = out.Next()
 		c.ServedRequest = served
 		c.ConfigError = configErr
 	})
-	return daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err), Err: errors.Join(configErr, err)}
+	out.Err = errors.Join(configErr, err)
+	return out
 }
 
 // retryAt gives the time a Blocked err defers the next cycle to, or zero.
