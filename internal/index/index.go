@@ -35,6 +35,9 @@ var busyTimeout = 10 * time.Second
 // writer holds while it indexes.
 const lockTimeout = 5 * time.Minute
 
+// quietWait is how long an index user waits for lg.db.lock before saying so.
+const quietWait = time.Second
+
 type Index struct {
 	db         *sql.DB
 	path, data string
@@ -44,8 +47,8 @@ type Index struct {
 // Open opens the index at path over the data dir data. It starts from empty
 // when SQLite cannot read meta. A transaction takes the write lock at its
 // start, and waits up to busyTimeout for another process to release it.
-// Whenever the index waits for lg.db.lock, it first calls waiting, unless
-// nil, with the holder.
+// Whenever the index waits longer than quietWait for lg.db.lock, it calls
+// waiting, unless nil, with the holder.
 func Open(ctx context.Context, path, data string, waiting func(holder string)) (*Index, error) {
 	if waiting == nil {
 		waiting = func(string) {}
@@ -69,7 +72,11 @@ func Open(ctx context.Context, path, data string, waiting func(holder string)) (
 // every writer holds it, so none opens a file while another replaces it, and
 // writers take turns.
 func (ix *Index) lockFile(ctx context.Context) (*lock.Lock, error) {
-	return lock.WaitContext(ctx, ix.path+".lock", lockTimeout, clock.Real{}, ix.waiting)
+	l, err := lock.WaitContext(ctx, ix.path+".lock", quietWait, clock.Real{}, func(string) {})
+	if !errors.Is(err, lock.ErrTimeout) {
+		return l, err
+	}
+	return lock.WaitContext(ctx, ix.path+".lock", lockTimeout-quietWait, clock.Real{}, ix.waiting)
 }
 
 // openReadable opens lg.db, first removing a file SQLite cannot read.

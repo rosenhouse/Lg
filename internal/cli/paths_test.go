@@ -233,3 +233,22 @@ var _ = DescribeTable("lg says that it waits for lg.db.lock, and whom for", Labe
 	Entry("lg paths", "paths"),
 	Entry("lg index rebuild", "index", "rebuild"),
 )
+
+var _ = Describe("lg paths", Label("paths"), func() {
+	It("says nothing of a wait for lg.db.lock shorter than a second", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		held, err := lock.Wait(filepath.Join(c.Home, "state", "lg.db.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		stderr := gbytes.NewBuffer()
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": c.Home}, Stdout: io.Discard, Stderr: stderr, Clock: clock.Real{}})
+		}()
+
+		<-clock.Real{}.After(300 * time.Millisecond)
+		Expect(held.Release()).To(Succeed())
+		Eventually(code, 5*time.Second).Should(Receive(Equal(0)))
+		Expect(string(stderr.Contents())).NotTo(ContainSubstring("lg.db.lock"))
+	})
+})
