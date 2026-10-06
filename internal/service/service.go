@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // Unit is how a service runs lg daemon run.
@@ -92,12 +93,15 @@ func xmlText(s string) string {
 	return b.String()
 }
 
-// check refuses control characters, which neither format can carry.
+// check refuses control characters and invalid UTF-8, which neither format can carry.
 func (u Unit) check() error {
 	values := append([]string{u.Name, u.Exe, u.Log}, slices.Collect(maps.Keys(u.Env))...)
 	for _, v := range append(values, slices.Collect(maps.Values(u.Env))...) {
 		if strings.ContainsFunc(v, isControl) {
 			return fmt.Errorf("a service cannot carry a control character: %q", v)
+		}
+		if !utf8.ValidString(v) {
+			return fmt.Errorf("a service cannot carry invalid UTF-8: %q", v)
 		}
 	}
 	return nil

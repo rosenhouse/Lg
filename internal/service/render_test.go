@@ -89,3 +89,12 @@ var _ = DescribeTable("a unit with a control character", Label("install"),
 	Entry("in Log for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/lg", Log: "/a\x00"}),
 	Entry("in Name for launchd", service.RenderLaunchd, service.Unit{Name: "l\rg", Exe: "/lg"}),
 )
+
+var _ = DescribeTable("a unit with invalid UTF-8", Label("install"),
+	func(render func(service.Unit) ([]byte, error), u service.Unit) {
+		_, err := render(u)
+		Expect(err).To(MatchError(ContainSubstring("invalid UTF-8")))
+	},
+	Entry("in an env value for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"LG_HOME": "/caf\xe9"}}),
+	Entry("in Exe for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/caf\xe9/lg"}),
+)
