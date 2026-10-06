@@ -49,13 +49,15 @@ const (
 )
 
 // source is how to select the dirs of a unit: from runs r joined to the
-// unit's table x, with the unit's columns.
+// unit's table x, with the unit's columns. Its files give the unit's regular
+// files at such a dir.
 type source struct {
 	from, path string
 	// when is the unit's time: run created_at, attempt run_started_at, or artifact created_at.
 	when, attempt, id, conclusion string
 	// jobs is the dir whose jobs Filter.Jobs matches, or "" when x is the job.
-	jobs string
+	jobs  string
+	files func(dir string) ([]string, error)
 }
 
 // below selects the rows whose path column child is below the dir in column parent.
@@ -83,17 +85,24 @@ var (
 		UnitRun: {
 			from: "runs r", path: "r.path",
 			when: "r.created_at", attempt: "NULL", id: "NULL", conclusion: latestConclusion, jobs: "r.path",
+			files: runJSON,
 		},
 		UnitAttempt: {
 			from: "runs r JOIN attempts x ON " + within, path: "x.path",
 			when: "x.run_started_at", attempt: "x.attempt", id: "NULL", conclusion: "x.conclusion", jobs: "x.path",
+			files: named("attempt.json", "jobs.json", "artifacts.json", "fetch.json"),
 		},
-		UnitJob:       jobSource,
-		UnitLog:       jobSource,
-		UnitArtifact:  artifactSource,
-		UnitExtracted: artifactSource,
+		UnitJob:       jobSource.giving(named("job.json")),
+		UnitLog:       jobSource.giving(named("log.txt")),
+		UnitArtifact:  artifactSource.giving(named("artifact.zip")),
+		UnitExtracted: artifactSource.giving(extractedFiles),
 	}
 )
+
+func (s source) giving(files func(dir string) ([]string, error)) source {
+	s.files = files
+	return s
+}
 
 // Paths gives the regular files of the units f selects, ordered by unit
 // time, run id, attempt, and job or artifact id. With them it returns the
@@ -137,7 +146,7 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 	var paths []string
 	var unread []error
 	for _, d := range dirs {
-		files, err := unitFiles(d.unit, d.dir)
+		files, err := sources[d.unit].files(d.dir)
 		paths = append(paths, files...)
 		unread = append(unread, err)
 	}
@@ -210,30 +219,26 @@ func likePrefixes(prefixes []string) []string {
 	return patterns
 }
 
-// unitFiles gives the regular files of the unit at dir.
-func unitFiles(u Unit, dir string) ([]string, error) {
-	switch u {
-	case UnitRun:
-		return walk(dir, func(path string, d fs.DirEntry) (bool, error) {
-			if d.IsDir() && d.Name() == "extracted" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "artifacts" {
-				return false, filepath.SkipDir
-			}
-			return strings.HasSuffix(path, ".json"), nil
-		})
-	case UnitExtracted:
-		extracted := filepath.Join(dir, "extracted")
-		manifest := filepath.Join(extracted, ".lg-extract.json")
-		return walk(extracted, func(path string, d fs.DirEntry) (bool, error) { return path != manifest, nil })
-	case UnitAttempt:
-		return regular(dir, "attempt.json", "jobs.json", "artifacts.json", "fetch.json")
-	case UnitJob:
-		return regular(dir, "job.json")
-	case UnitLog:
-		return regular(dir, "log.txt")
-	case UnitArtifact:
-		return regular(dir, "artifact.zip")
-	}
-	return nil, errors.New("unknown unit " + string(u))
+// runJSON gives the .json files of the run at dir, outside extracted/ trees.
+func runJSON(dir string) ([]string, error) {
+	return walk(dir, func(path string, d fs.DirEntry) (bool, error) {
+		if d.IsDir() && d.Name() == "extracted" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "artifacts" {
+			return false, filepath.SkipDir
+		}
+		return strings.HasSuffix(path, ".json"), nil
+	})
+}
+
+// extractedFiles gives the files of the artifact's extracted/ tree but its .lg-extract.json.
+func extractedFiles(dir string) ([]string, error) {
+	extracted := filepath.Join(dir, "extracted")
+	manifest := filepath.Join(extracted, ".lg-extract.json")
+	return walk(extracted, func(path string, d fs.DirEntry) (bool, error) { return path != manifest, nil })
+}
+
+// named gives the files of a dir that are among names.
+func named(names ...string) func(dir string) ([]string, error) {
+	return func(dir string) ([]string, error) { return regular(dir, names...) }
 }
 
 // walk gives the regular files below root that keep accepts, skipping what is
