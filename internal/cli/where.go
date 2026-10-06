@@ -141,7 +141,7 @@ type placeFinder struct {
 func newPlaceFinder(data string) placeFinder {
 	// A missing data/ holds no path, so its real path need not be known.
 	real, _ := filepath.EvalSymlinks(data)
-	return placeFinder{data: data, real: real, repos: repoDirs(data), runs: map[string]runFacts{}, lines: &lineReader{}}
+	return placeFinder{data: data, real: real, repos: repoDirs(data), runs: map[string]runFacts{}, lines: newLineReader(openFile)}
 }
 
 // repoDirs gives each data/<host>/<owner>/<repo>.
@@ -346,40 +346,63 @@ func readJSONFile(path string, v any) error {
 	return nil
 }
 
-// lineReader reads one file at a time, keeping its place, so that hits in
-// line order read the file once.
+func openFile(path string) (io.ReadSeekCloser, error) {
+	return os.Open(path)
+}
+
+func newLineReader(open func(path string) (io.ReadSeekCloser, error)) *lineReader {
+	return &lineReader{open: open}
+}
+
+// lineReader reads one file at a time. It keeps where each line it has read
+// starts, so that it reads each line about once, whatever order hits are in.
 type lineReader struct {
+	open func(path string) (io.ReadSeekCloser, error)
 	path string
-	file *os.File
+	file io.ReadSeekCloser
 	r    *bufio.Reader
-	// n is the number of lines read, and last is the last of them.
-	n    int
-	last string
+	// at is the offset r reads from, and starts[i] where line i+1 starts.
+	at     int64
+	starts []int64
 }
 
 // line gives line n of the file at path.
 func (l *lineReader) line(path string, n int) (string, bool) {
-	if path != l.path || n < l.n {
+	if path != l.path {
 		l.close()
-		file, err := os.Open(path)
+		file, err := l.open(path)
 		if err != nil {
 			return "", false
 		}
-		l.path, l.file, l.r = path, file, bufio.NewReader(file)
+		l.path, l.file, l.r, l.starts = path, file, bufio.NewReader(file), []int64{0}
 	}
-	for l.n < n {
+	i := min(n, len(l.starts)) - 1
+	if l.at != l.starts[i] {
+		if _, err := l.file.Seek(l.starts[i], io.SeekStart); err != nil {
+			return "", false
+		}
+		l.r.Reset(l.file)
+		l.at = l.starts[i]
+	}
+	for {
 		line, err := l.r.ReadString('\n')
 		if line == "" && err != nil {
 			return "", false
 		}
-		l.n, l.last = l.n+1, strings.TrimSuffix(line, "\n")
+		l.at += int64(len(line))
+		i++
+		if i == len(l.starts) {
+			l.starts = append(l.starts, l.at)
+		}
+		if i == n {
+			return strings.TrimSuffix(line, "\n"), true
+		}
 	}
-	return l.last, true
 }
 
 func (l *lineReader) close() {
 	if l.file != nil {
 		_ = l.file.Close()
 	}
-	*l = lineReader{}
+	*l = lineReader{open: l.open}
 }

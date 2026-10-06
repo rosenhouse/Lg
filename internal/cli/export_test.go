@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 
 	"github.com/rosenhouse/lg/internal/daemon"
 )
@@ -15,3 +16,14 @@ func RunDaemonCycle(ctx context.Context, deps Deps, serving func() int64) (daemo
 	d := daemonCycle{deps: &deps, target: t}
 	return d.run(ctx, serving), nil
 }
+
+type LineReader = lineReader
+
+// NewLineReader gives a LineReader that opens files with open.
+func NewLineReader(open func(path string) (io.ReadSeekCloser, error)) *LineReader {
+	return newLineReader(open)
+}
+
+func (l *LineReader) Line(path string, n int) (string, bool) { return l.line(path, n) }
+
+func (l *LineReader) Close() { l.close() }

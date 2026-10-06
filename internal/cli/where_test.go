@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
@@ -259,6 +261,45 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(c.Stdout.String()).To(SatisfyAll(ContainSubstring(`"original_job_id":111221289911`), Not(ContainSubstring("original_log"))))
 	})
 })
+
+var _ = Describe("LineReader", Label("where"), func() {
+	It("reads each line of a file about once, whatever order it is asked for lines in", func() {
+		path := filepath.Join(GinkgoT().TempDir(), "log.txt")
+		var lines []string
+		for n := range 100 {
+			lines = append(lines, fmt.Sprintf("%d %s", n+1, strings.Repeat("x", 8192)))
+		}
+		content := strings.Join(lines, "\n") + "\n"
+		Expect(os.WriteFile(path, []byte(content), 0o644)).To(Succeed())
+		var read int
+		l := cli.NewLineReader(func(path string) (io.ReadSeekCloser, error) {
+			file, err := os.Open(path)
+			return countingFile{file, &read}, err
+		})
+		DeferCleanup(l.Close)
+
+		for _, n := range []int{100, 99, 50, 1, 2, 3, 51, 99} {
+			line, ok := l.Line(path, n)
+			Expect(ok).To(BeTrue())
+			Expect(line).To(Equal(lines[n-1]))
+		}
+		_, ok := l.Line(path, 101)
+		Expect(ok).To(BeFalse())
+		Expect(read).To(BeNumerically("<", 2*len(content)))
+	})
+})
+
+// countingFile adds the bytes it reads to *read.
+type countingFile struct {
+	io.ReadSeekCloser
+	read *int
+}
+
+func (c countingFile) Read(p []byte) (int, error) {
+	n, err := c.ReadSeekCloser.Read(p)
+	*c.read += n
+	return n, err
+}
 
 // onRead is a reader that calls f on its first read, and is empty.
 type onRead func()
