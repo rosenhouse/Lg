@@ -51,6 +51,18 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		Expect(waiting.Err).To(gbytes.Say(`lg: blocked \(auth\): .*no oauth token found for github.com`))
 	}, daemonTimeout)
 
+	It("exits 1 with the errors of a cycle that completes with them", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		Expect(os.WriteFile(filepath.Join(env.State(), "watch.json"), []byte("{not json"), 0o644)).To(Succeed())
+
+		waiting := env.Lg("sync", "--wait")
+
+		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(1))
+		Expect(waiting.Err).To(gbytes.Say(`lg: .*watch.json: moved to .*watch.json.corrupt`))
+	}, daemonTimeout)
+
 	It("coalesces concurrent --wait calls into one cycle", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
 		release := holdFirstCycle(ctx, env, fake)
@@ -144,7 +156,7 @@ var _ = Describe("lg sync with no daemon while another process holds the write l
 
 var _ = Describe("lg sync with no daemon, when a daemon starts while it waits for the write lock", Label("sync"), func() {
 	It("still completes its own cycle", func(ctx SpecContext) {
-		env, _ := newDaemonEnv()
+		env, fake := newDaemonEnv()
 		release := holdWriteLock(env)
 		oneShot := env.Lg("sync")
 		Eventually(oneShot.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("waiting for .*write.lock"))
@@ -156,6 +168,8 @@ var _ = Describe("lg sync with no daemon, when a daemon starts while it waits fo
 		Eventually(oneShot, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
 		Expect(string(oneShot.Err.Contents())).NotTo(ContainSubstring("sent sync request"))
 		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		Expect(cycleListings(fake)).To(Equal(2))
 	}, daemonTimeout)
 })
 
