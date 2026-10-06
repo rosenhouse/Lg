@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/service"
 )
 
@@ -32,6 +33,10 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	configFile, err := config.File(deps.Env)
+	if err != nil {
+		return err
+	}
 	env, err := service.Env(deps.Env, gh)
 	if err != nil {
 		return err
@@ -45,7 +50,8 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(deps.Stdout, "installed %s\n", path)
+	// Naming what the service uses shows a reinstall that dropped LG_HOME or LG_CONFIG.
+	_, err = fmt.Fprintf(deps.Stdout, "installed %s; store %s, config %s\n", path, t.roots.Store, configFile)
 	return err
 }
 

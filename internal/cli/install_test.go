@@ -73,7 +73,8 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 
 			Expect(run(goos, append([]string{"daemon", "install"}, args...)...)).To(Equal(0), stderr.String())
 			Expect(path).To(BeAnExistingFile())
-			Expect(stdout.String()).To(Equal(fmt.Sprintf("installed %s\n", path)))
+			Expect(stdout.String()).To(Equal(fmt.Sprintf("installed %s; store %s, config %s\n",
+				path, filepath.Join(home, ".local", "share", "lg"), filepath.Join(home, ".config", "lg", "config.yaml"))))
 
 			stdout.Reset()
 			Expect(run(goos, append([]string{"daemon", "uninstall"}, args...)...)).To(Equal(0), stderr.String())
