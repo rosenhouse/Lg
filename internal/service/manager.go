@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/execx"
 )
@@ -26,7 +29,8 @@ type Manager struct {
 	UID int
 }
 
-// Install writes u's unit file and starts it, restarting a service it replaces.
+// Install writes u's unit file and starts it, restarting a service it
+// replaces. It does all that can fail before it stops that service.
 func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	b, err := m.backend(u.Name)
 	if err != nil {
@@ -36,66 +40,88 @@ func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	if err != nil {
 		return "", err
 	}
-	_, err = os.Stat(b.path())
-	replacing := err == nil
-	if err := b.prepare(ctx, u); err != nil {
+	running, err := b.prepare(ctx, u)
+	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(b.path()), 0o755); err != nil {
+	tmp, err := writeTemp(b.path(), content)
+	if err != nil {
 		return "", err
 	}
-	if err := replaceFile(b.path(), content); err != nil {
+	defer func() { _ = os.Remove(tmp) }()
+	if err := b.unload(ctx); err != nil {
 		return "", err
 	}
-	return b.path(), b.start(ctx, replacing)
+	if err := os.Rename(tmp, b.path()); err != nil {
+		return "", err
+	}
+	return b.path(), b.start(ctx, running)
 }
 
-// replaceFile writes path through a private temp file of its own, since a
+// writeTemp writes content to a private temp file beside path, since a
 // unit may carry proxy credentials and concurrent installs must not share one.
-func replaceFile(path string, content []byte) error {
+func writeTemp(path string, content []byte) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
-		return err
+		return "", err
 	}
 	_, err = f.Write(content)
-	err = errors.Join(err, f.Sync(), f.Close())
-	if err == nil {
-		err = os.Rename(f.Name(), path)
+	if err = errors.Join(err, f.Sync(), f.Close()); err != nil {
+		return "", errors.Join(err, os.Remove(f.Name()))
 	}
-	if err != nil {
-		return errors.Join(err, os.Remove(f.Name()))
-	}
-	return nil
+	return f.Name(), nil
 }
 
-// Uninstall stops the service named name and removes its unit file. It
-// gives the path it removed, or "" when there was none.
-func (m Manager) Uninstall(ctx context.Context, name string) (path string, err error) {
+// Removal is what Uninstall did.
+type Removal struct {
+	// Path is the unit file's path.
+	Path string
+	// Removed says Uninstall removed the unit file.
+	Removed bool
+	// Stopped says Uninstall stopped a service whose unit file was missing.
+	Stopped bool
+}
+
+// Uninstall stops the service named name and removes its unit file. When
+// the unit file is missing, it stops the service if it still runs.
+func (m Manager) Uninstall(ctx context.Context, name string) (Removal, error) {
 	b, err := m.backend(name)
 	if err != nil {
-		return "", err
+		return Removal{}, err
 	}
+	r := Removal{Path: b.path()}
 	if _, err := os.Stat(b.path()); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+		r.Stopped, err = b.stopOrphan(ctx)
+		return r, err
 	}
 	if err := b.stop(ctx); err != nil {
-		return "", err
+		return r, err
 	}
 	if err := os.Remove(b.path()); err != nil {
-		return "", err
+		return r, err
 	}
-	return b.path(), b.removed(ctx)
+	r.Removed = true
+	return r, b.removed(ctx)
 }
 
 type backend interface {
 	path() string
 	render(Unit) ([]byte, error)
-	// prepare runs before the unit file is written.
-	prepare(ctx context.Context, u Unit) error
-	start(ctx context.Context, replacing bool) error
+	// prepare does what can fail before Install changes anything, and
+	// reports whether the service runs.
+	prepare(ctx context.Context, u Unit) (running bool, err error)
+	// unload runs before Install replaces the unit file.
+	unload(ctx context.Context) error
+	start(ctx context.Context, running bool) error
 	stop(ctx context.Context) error
-	// removed runs after the unit file is removed.
+	// removed runs after Uninstall removes the unit file.
 	removed(ctx context.Context) error
+	// stopOrphan stops a service whose unit file is missing, and reports
+	// whether one ran.
+	stopOrphan(ctx context.Context) (bool, error)
 }
 
 // validName keeps a name to one plain file name that systemd and launchd accept.
@@ -124,15 +150,21 @@ func (m Manager) backend(name string) (backend, error) {
 
 // run runs a command in m.Env, and says what it printed to stderr when it fails.
 func (m Manager) run(ctx context.Context, name string, args ...string) error {
-	_, stderr, err := m.Runner.Run(ctx, name, args, m.Env)
+	_, err := m.output(ctx, name, args...)
+	return err
+}
+
+// output is run, giving what the command printed to stdout.
+func (m Manager) output(ctx context.Context, name string, args ...string) (string, error) {
+	stdout, stderr, err := m.Runner.Run(ctx, name, args, m.Env)
 	if err != nil {
 		command := strings.Join(append([]string{name}, args...), " ")
 		if msg := string(bytes.TrimSpace(stderr)); msg != "" {
-			return fmt.Errorf("%s: %w: %s", command, err, msg)
+			return "", fmt.Errorf("%s: %w: %s", command, err, msg)
 		}
-		return fmt.Errorf("%s: %w", command, err)
+		return "", fmt.Errorf("%s: %w", command, err)
 	}
-	return nil
+	return string(stdout), nil
 }
 
 type systemd struct {
@@ -144,16 +176,33 @@ func (s systemd) path() string { return filepath.Join(s.dir, s.unit) }
 
 func (systemd) render(u Unit) ([]byte, error) { return RenderSystemd(u) }
 
-func (systemd) prepare(context.Context, Unit) error { return nil }
+// prepare checks that a user manager is reachable and loads units from
+// s.dir, which a shell's XDG_CONFIG_HOME can move.
+func (s systemd) prepare(ctx context.Context, _ Unit) (bool, error) {
+	out, err := s.output(ctx, "show", "-p", "UnitPath", "--value")
+	if err != nil {
+		return false, fmt.Errorf("no systemd user manager is reachable: %w", err)
+	}
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return false, err
+	}
+	if !slices.ContainsFunc(strings.Fields(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
+		return false, fmt.Errorf("the systemd user manager does not load units from %s; give lg the XDG_CONFIG_HOME the manager has", s.dir)
+	}
+	state, err := s.activeState(ctx)
+	return running(state), err
+}
 
-func (s systemd) start(ctx context.Context, replacing bool) error {
+func (systemd) unload(context.Context) error { return nil }
+
+func (s systemd) start(ctx context.Context, running bool) error {
 	if err := s.systemctl(ctx, "daemon-reload"); err != nil {
 		return err
 	}
 	if err := s.systemctl(ctx, "enable", "--now", s.unit); err != nil {
 		return err
 	}
-	if replacing {
+	if running {
 		return s.systemctl(ctx, "restart", s.unit)
 	}
 	return nil
@@ -161,24 +210,58 @@ func (s systemd) start(ctx context.Context, replacing bool) error {
 
 // stop disables and stops the service. A unit systemd cannot disable, as
 // when it never loaded the unit, counts as stopped when it is not running.
+// Without systemctl, no user manager can run it.
 func (s systemd) stop(ctx context.Context) error {
 	err := s.systemctl(ctx, "disable", "--now", s.unit)
-	if err != nil && s.notRunning(ctx) {
+	if err == nil || errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if state, stateErr := s.activeState(ctx); stateErr == nil && !running(state) {
 		return nil
 	}
 	return err
 }
 
-func (s systemd) notRunning(ctx context.Context) bool {
-	out, _, err := s.m.Runner.Run(ctx, "systemctl", []string{"--user", "show", "-p", "ActiveState", "--value", s.unit}, s.m.Env)
-	state := string(bytes.TrimSpace(out))
-	return err == nil && (state == "inactive" || state == "failed")
+func (s systemd) removed(ctx context.Context) error {
+	if err := s.systemctl(ctx, "daemon-reload"); !errors.Is(err, exec.ErrNotFound) {
+		return err
+	}
+	return nil
 }
 
-func (s systemd) removed(ctx context.Context) error { return s.systemctl(ctx, "daemon-reload") }
+// stopOrphan stops a service whose unit file was deleted, which systemd
+// cannot disable, and removes the wants link enabling it left.
+func (s systemd) stopOrphan(ctx context.Context) (bool, error) {
+	if state, err := s.activeState(ctx); err != nil || !running(state) {
+		return false, nil
+	}
+	if err := s.systemctl(ctx, "stop", s.unit); err != nil {
+		return false, err
+	}
+	wants := filepath.Join(s.dir, "default.target.wants", s.unit)
+	if _, err := os.Stat(wants); errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(wants); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return true, err
+		}
+	}
+	return true, s.systemctl(ctx, "daemon-reload")
+}
+
+func (s systemd) activeState(ctx context.Context) (string, error) {
+	out, err := s.output(ctx, "show", "-p", "ActiveState", "--value", s.unit)
+	return strings.TrimSpace(out), err
+}
+
+// running reports whether a unit in ActiveState state runs or is starting.
+func running(state string) bool { return state != "inactive" && state != "failed" }
 
 func (s systemd) systemctl(ctx context.Context, args ...string) error {
-	return s.m.run(ctx, "systemctl", append([]string{"--user"}, args...)...)
+	_, err := s.output(ctx, args...)
+	return err
+}
+
+func (s systemd) output(ctx context.Context, args ...string) (string, error) {
+	return s.m.output(ctx, "systemctl", append([]string{"--user"}, args...)...)
 }
 
 type launchd struct {
@@ -190,28 +273,63 @@ func (l launchd) path() string { return filepath.Join(l.dir, l.label+".plist") }
 
 func (launchd) render(u Unit) ([]byte, error) { return RenderLaunchd(u) }
 
-// prepare boots out a loaded agent, since bootstrap refuses one, and
-// creates the log's dir, since launchd does not.
-func (l launchd) prepare(ctx context.Context, u Unit) error {
-	if err := l.stop(ctx); err != nil {
-		return err
-	}
-	return os.MkdirAll(filepath.Dir(u.Log), 0o755)
+// prepare creates the log's dir, since launchd does not.
+func (launchd) prepare(_ context.Context, u Unit) (bool, error) {
+	return false, os.MkdirAll(filepath.Dir(u.Log), 0o755)
 }
+
+// unload boots out a loaded agent, since bootstrap refuses one.
+func (l launchd) unload(ctx context.Context) error { return l.stop(ctx) }
 
 func (l launchd) start(ctx context.Context, _ bool) error {
-	return l.m.run(ctx, "launchctl", "bootstrap", l.domain(), l.path())
+	if err := l.m.run(ctx, "launchctl", "bootstrap", l.domain(), l.path()); err != nil {
+		return fmt.Errorf("%w; the agent is not loaded", err)
+	}
+	return nil
 }
 
-// stop boots out the agent if it is loaded.
+// unloadWait bounds how long launchd may take to unload a booted-out agent.
+const unloadWait = 10 * time.Second
+
+// stop boots out the agent if it is loaded, and waits until launchd has
+// unloaded it.
 func (l launchd) stop(ctx context.Context) error {
-	target := l.domain() + "/" + l.label
-	if l.m.run(ctx, "launchctl", "print", target) != nil {
+	if !l.loaded(ctx) {
 		return nil
 	}
-	return l.m.run(ctx, "launchctl", "bootout", target)
+	if err := l.m.run(ctx, "launchctl", "bootout", l.target()); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, unloadWait)
+	defer cancel()
+	stillLoaded := fmt.Errorf("launchd has %s still loaded after bootout", l.target())
+	for l.loaded(ctx) {
+		select {
+		case <-ctx.Done():
+			return stillLoaded
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if ctx.Err() != nil {
+		// print failed because ctx ended, not because launchd unloaded the agent.
+		return stillLoaded
+	}
+	return nil
 }
 
 func (launchd) removed(context.Context) error { return nil }
+
+func (l launchd) stopOrphan(ctx context.Context) (bool, error) {
+	if !l.loaded(ctx) {
+		return false, nil
+	}
+	return true, l.stop(ctx)
+}
+
+func (l launchd) loaded(ctx context.Context) bool {
+	return l.m.run(ctx, "launchctl", "print", l.target()) == nil
+}
+
+func (l launchd) target() string { return l.domain() + "/" + l.label }
 
 func (l launchd) domain() string { return fmt.Sprintf("gui/%d", l.m.UID) }

@@ -36,6 +36,19 @@ var _ = Describe("fake systemctl", Label("install"), func() {
 		Expect(fake.Units()).To(Equal([][]string{nil, {"lg.service"}}))
 	})
 
+	It("loads units from the unit dir, and starts and stops one service", func() {
+		Expect(run("--user", "show", "-p", "UnitPath", "--value")).To(Equal(units + "\n"))
+		Expect(run("--user", "show", "-p", "ActiveState", "--value", "lg.service")).To(Equal("inactive\n"))
+		Expect(run("--user", "enable", "--now", "lg.service")).To(BeEmpty())
+		Expect(run("--user", "show", "-p", "ActiveState", "--value", "lg.service")).To(Equal("active\n"))
+		Expect(run("--user", "disable", "--now", "lg.service")).To(BeEmpty())
+		Expect(run("--user", "show", "-p", "ActiveState", "--value", "lg.service")).To(Equal("inactive\n"))
+		Expect(run("--user", "restart", "lg.service")).To(BeEmpty())
+		Expect(run("--user", "show", "-p", "ActiveState", "--value", "lg.service")).To(Equal("active\n"))
+		Expect(run("--user", "stop", "lg.service")).To(BeEmpty())
+		Expect(run("--user", "show", "-p", "ActiveState", "--value", "lg.service")).To(Equal("inactive\n"))
+	})
+
 	It("fails a run with an argument Fail names until Unfail", func() {
 		fake.Fail("disable", "Failed to disable unit")
 

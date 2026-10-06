@@ -60,14 +60,16 @@ type daemonUninstallCmd struct {
 }
 
 func (c daemonUninstallCmd) Run(deps *Deps) error {
-	path, err := manager(deps).Uninstall(context.Background(), c.Name)
+	r, err := manager(deps).Uninstall(context.Background(), c.Name)
 	switch {
 	case err != nil:
 		return err
-	case path == "":
-		_, err = fmt.Fprintf(deps.Stdout, "no service named %s is installed\n", c.Name)
+	case r.Removed:
+		_, err = fmt.Fprintf(deps.Stdout, "removed %s\n", r.Path)
+	case r.Stopped:
+		_, err = fmt.Fprintf(deps.Stdout, "stopped the service named %s, whose unit file %s was missing\n", c.Name, r.Path)
 	default:
-		_, err = fmt.Fprintf(deps.Stdout, "removed %s\n", path)
+		_, err = fmt.Fprintf(deps.Stdout, "no service named %s is installed\n", c.Name)
 	}
 	return err
 }

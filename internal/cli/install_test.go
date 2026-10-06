@@ -18,16 +18,26 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// loggingRunner logs each command it runs, and fails one whose arguments include fail.
+// loggingRunner logs each command it runs, and fails one whose arguments
+// include fail. systemctl show prints unitPath as the manager's UnitPath,
+// and state as a unit's ActiveState. launchctl print finds no agent loaded.
 type loggingRunner struct {
-	calls []string
-	fail  string
+	calls           []string
+	fail            string
+	unitPath, state string
 }
 
 func (l *loggingRunner) Run(_ context.Context, name string, args []string, _ map[string]string) (stdout, stderr []byte, err error) {
 	l.calls = append(l.calls, strings.Join(append([]string{name}, args...), " "))
-	if slices.Contains(args, l.fail) {
+	switch {
+	case slices.Contains(args, l.fail):
 		return nil, []byte("Failed to enable unit\n"), errors.New("exit status 1")
+	case slices.Contains(args, "UnitPath"):
+		return []byte(l.unitPath + "\n"), nil, nil
+	case slices.Contains(args, "ActiveState"):
+		return []byte(l.state + "\n"), nil, nil
+	case name == "launchctl" && args[0] == "print":
+		return nil, []byte("Could not find service\n"), errors.New("exit status 113")
 	}
 	return nil, nil, nil
 }
@@ -49,7 +59,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Expect(os.MkdirAll(filepath.Dir(config), 0o755)).To(Succeed())
 		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
 		env = map[string]string{"HOME": home, "LG_GH": gh}
-		runner = &loggingRunner{}
+		runner = &loggingRunner{unitPath: filepath.Join(home, ".config", "systemd", "user"), state: "inactive"}
 		stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 		exe, file = "/opt/lg/bin/lg", "/opt/lg/libexec/lg"
 	})
@@ -148,7 +158,14 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	It("says when nothing is installed to uninstall", func() {
 		Expect(run("linux", "daemon", "uninstall")).To(Equal(0))
 		Expect(stdout.String()).To(Equal("no service named lg is installed\n"))
-		Expect(runner.calls).To(BeEmpty())
+	})
+
+	It("says when it stopped a service whose unit file was missing", func() {
+		runner.state = "active"
+
+		Expect(run("linux", "daemon", "uninstall")).To(Equal(0), stderr.String())
+
+		Expect(stdout.String()).To(Equal(fmt.Sprintf("stopped the service named lg, whose unit file %s was missing\n", filepath.Join(home, ".config", "systemd", "user", "lg.service"))))
 	})
 
 	It("exits 2 before installing anything when config.yaml is missing", func() {
