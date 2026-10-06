@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,11 +188,57 @@ func (s systemd) prepare(ctx context.Context, _ Unit) (bool, error) {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return false, err
 	}
-	if !slices.ContainsFunc(strings.Fields(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
+	if !slices.ContainsFunc(splitQuoted(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
 		return false, fmt.Errorf("the systemd user manager does not load units from %s; give lg the XDG_CONFIG_HOME the manager has", s.dir)
 	}
 	state, err := s.activeState(ctx)
 	return running(state), err
+}
+
+// splitQuoted splits a list as systemctl show prints one: on whitespace,
+// except inside double quotes, where a backslash escapes the next byte or
+// starts a C escape such as \t or \001.
+func splitQuoted(s string) []string {
+	var words []string
+	var word []byte
+	inWord, quoted := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quoted && c == '\\' && i+1 < len(s):
+			i++
+			var n int
+			c, n = unescape(s[i:])
+			i += n - 1
+		case c == '"':
+			quoted, inWord = !quoted, true
+			continue
+		case !quoted && strings.IndexByte(" \t\n", c) >= 0:
+			if inWord {
+				words, word, inWord = append(words, string(word)), nil, false
+			}
+			continue
+		}
+		word, inWord = append(word, c), true
+	}
+	if inWord {
+		words = append(words, string(word))
+	}
+	return words
+}
+
+// unescape decodes the escape after a backslash at the start of s, and
+// says how many bytes it took.
+func unescape(s string) (byte, int) {
+	if c, ok := map[byte]byte{'a': '\a', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v'}[s[0]]; ok {
+		return c, 1
+	}
+	if len(s) >= 3 {
+		if v, err := strconv.ParseUint(s[:3], 8, 8); err == nil {
+			return byte(v), 3
+		}
+	}
+	return s[0], 1
 }
 
 func (systemd) unload(context.Context) error { return nil }

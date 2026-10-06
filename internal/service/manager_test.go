@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -121,6 +122,15 @@ var _ = Describe("Manager", Label("install"), func() {
 			link := filepath.Join(GinkgoT().TempDir(), "user")
 			Expect(os.Symlink(systemd, link)).To(Succeed())
 			runner.UnitPath = link
+
+			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(filepath.Join(systemd, "lg.service")))
+		})
+
+		It("accepts a dir that UnitPath quotes, as systemd does one holding a space, quote, backslash, dollar or tab", func() {
+			home = filepath.Join(home, "sp ace\"q\\b$d\tt")
+			systemd = filepath.Join(home, ".config", "systemd", "user")
+			quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "\t", `\t`).Replace(systemd) + `"`
+			runner.UnitPath = "/etc/systemd/user " + quoted + " /run/systemd/user"
 
 			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(filepath.Join(systemd, "lg.service")))
 		})
@@ -438,3 +448,16 @@ var _ = Describe("Manager", Label("install"), func() {
 		Expect(runner.Calls()).To(BeEmpty())
 	})
 })
+
+var _ = DescribeTable("SplitQuoted splits a list as systemctl show prints one", Label("install"),
+	func(list string, words []string) {
+		Expect(service.SplitQuoted(list)).To(Equal(words))
+	},
+	Entry("bare words", "/a  /b\n", []string{"/a", "/b"}),
+	Entry("a quoted space", `"/s p" /b`, []string{"/s p", "/b"}),
+	Entry("shell escapes", `"/q\"b\\s\$d\`+"`e\"", []string{"/q\"b\\s$d`e"}),
+	Entry("C escapes", `"\a\b\f\n\r\t\v\001\177"`, []string{"\a\b\f\n\r\t\v\001\177"}),
+	Entry("a backslash ending the list", `"/a\`, []string{`/a\`}),
+	Entry("an empty quoted word", `"" /b`, []string{"", "/b"}),
+	Entry("nothing", "\n", nil),
+)
