@@ -34,6 +34,13 @@ var _ = Describe("mirror.Cycle", Label("retention"), func() {
 		Expect(old).To(BeADirectory())
 	}, cycleTimeout)
 
+	It("reports a cycle whose retention fails as not completed", Label("status"), func(ctx SpecContext) {
+		report, err := env.Mirror.Cycle(ctx)
+
+		Expect(err).To(BeBlocked(failure.LocalIO))
+		Expect(report.Completed).To(BeFalse())
+	}, cycleTimeout)
+
 	It("returns retention's error beside the cycle's", func(ctx SpecContext) {
 		env.Fake.Fail("api", "/repos/rosenhouse/lg", fakegithub.Fault{Status: http.StatusInternalServerError})
 
@@ -64,5 +71,19 @@ var _ = Describe("mirror.Cycle after its context is cancelled", Label("retention
 
 		Expect(env.Sync(cancelled)).To(MatchError(context.Canceled))
 		Expect(empty).To(BeADirectory())
+	}, cycleTimeout)
+})
+
+var _ = Describe("mirror.Cycle whose ctx ends after its last request", Label("status"), func() {
+	It("reports the cycle as not completed, since retention did not run", func(ctx SpecContext) {
+		env := harness.InProcess()
+		cancelled, cancel := context.WithCancel(ctx)
+		DeferCleanup(cancel)
+		env.FS.Before("rename", filepath.Join(env.State(), "rescan.json"), cancel)
+
+		report, err := env.Mirror.Cycle(cancelled)
+
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(report.Completed).To(BeFalse())
 	}, cycleTimeout)
 })

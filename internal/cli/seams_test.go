@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"bytes"
-	"context"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
+	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
 var _ = Describe("lg sync", Label("failures"), func() {
@@ -35,7 +35,7 @@ var _ = Describe("lg sync", Label("failures"), func() {
 				Stdout: &bytes.Buffer{},
 				Stderr: &stderr,
 				Clock:  clock.Real{},
-				Runner: tokenRunner{},
+				Runner: harness.TokenRunner{},
 				NewGitHub: func(api *url.URL, repo, token string, clk clock.Clock) github.Client {
 					return github.NewHTTP(github.NewTransport(short), api, repo, token, clk)
 				},
@@ -57,9 +57,3 @@ var _ = Describe("RealDeps", Label("failures"), func() {
 		Expect(cli.RealDeps().StoreFS).To(Equal(store.OSFS{}))
 	})
 })
-
-type tokenRunner struct{}
-
-func (tokenRunner) Run(context.Context, string, []string, map[string]string) (stdout, stderr []byte, err error) {
-	return []byte("lg-test-token\n"), nil, nil
-}

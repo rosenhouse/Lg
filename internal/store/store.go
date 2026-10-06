@@ -588,12 +588,15 @@ func (u *Unit) WriteJSON(name string, raw []byte) error {
 
 // ReplaceFile replaces path with data, so that a crash leaves the old file
 // or the new one. Callers hold state/write.lock.
-func (s *Store) ReplaceFile(path string, data []byte) error {
+func (s *Store) ReplaceFile(path string, data []byte) error { return ReplaceFileFS(s.fs, path, data) }
+
+// ReplaceFileFS is ReplaceFile through fsys, for callers with no open Store.
+func ReplaceFileFS(fsys FS, path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := s.fs.RemoveAll(tmp); err != nil {
+	if err := fsys.RemoveAll(tmp); err != nil {
 		return err
 	}
-	f, err := s.fs.Create(tmp)
+	f, err := fsys.Create(tmp)
 	if err != nil {
 		return err
 	}
@@ -605,12 +608,13 @@ func (s *Store) ReplaceFile(path string, data []byte) error {
 		err = closeErr
 	}
 	if err == nil {
-		err = s.fs.Rename(tmp, path)
+		err = fsys.Rename(tmp, path)
 	}
 	if err != nil {
+		_ = fsys.RemoveAll(tmp)
 		return err
 	}
-	return s.fs.SyncDir(filepath.Dir(path))
+	return fsys.SyncDir(filepath.Dir(path))
 }
 
 // Rename renames oldpath to newpath and makes it durable. Callers hold

@@ -57,12 +57,12 @@ var _ = DescribeTable("mirror.Cycle when a ran job's log 404s publishes no attem
 		env.Fake.Fail(host, match, fakegithub.Fault{Status: http.StatusNotFound})
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour))
-		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+		Expect(cycleErr(ctx, env.Mirror)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).NotTo(ContainElement(HaveSuffix("attempt-1")))
 		Expect(env.Tombstones()).NotTo(ContainElement(ContainSubstring("attempt-1")))
 
 		env.Clock.Set(attempt1Updated.Add(time.Hour + time.Second))
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		var attempt1 string
 		Expect(env.AttemptDirs(runID)).To(ContainElement(HaveSuffix("attempt-1"), &attempt1))
 		Expect(readTombstone(attempt1, ranJob)).To(SatisfyAll(
@@ -82,7 +82,7 @@ var _ = Describe("mirror.Cycle when a log returns 410", Label("failures"), func(
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Fake.Fail("api", ranJobLog, fakegithub.Fault{Status: http.StatusGone})
 
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
 		Expect(readTombstone(env.AttemptDirs(runID)[0], ranJob)).To(SatisfyAll(
 			HaveKeyWithValue("reason", "expired"),
@@ -95,7 +95,7 @@ var _ = Describe("mirror.Cycle when a log returns 410", Label("failures"), func(
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Fake.Fail("api", ranJobLog, fakegithub.Fault{Status: http.StatusGone, Body: `{"message":"Logs for <job> & run expired"}`})
 
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(os.ReadFile(tombstonePath(env.AttemptDirs(runID)[0], ranJob))).To(ContainSubstring(`"Logs for <job> & run expired"`))
 	}, cycleTimeout)
 })
@@ -106,7 +106,7 @@ var _ = DescribeTable("mirror.Cycle on a transient log failure publishes no atte
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Fake.Fail(host, match, fault)
 
-		Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+		Expect(cycleErr(ctx, env.Mirror)).To(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 		Expect(env.Tombstones()).To(BeEmpty())
 		Expect(env.Tmp()).To(BeSwept())
@@ -140,7 +140,7 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
 			env.Fake.Fail("api", fmt.Sprintf("runs/%d/attempts/1/jobs", failing), fakegithub.Fault{Status: http.StatusBadGateway})
 
-			Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+			Expect(cycleErr(ctx, env.Mirror)).To(BeTransient())
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
@@ -150,7 +150,7 @@ var _ = Describe("mirror.Cycle with a transient failure in one run", Label("fail
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
 			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusBadGateway})
 
-			Expect(env.Mirror.Cycle(ctx)).To(BeTransient())
+			Expect(cycleErr(ctx, env.Mirror)).To(BeTransient())
 			Expect(env.ArtifactDirs(other)).To(HaveLen(4))
 			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
@@ -176,7 +176,7 @@ var _ = Describe("mirror.Cycle when attempts/1 of a listed run returns 404", Lab
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
 			env.Fake.Fail("api", fmt.Sprintf("runs/%d/attempts/1", failing), fakegithub.Fault{Status: http.StatusNotFound})
 
-			Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+			Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 			Expect(env.Tombstones()).To(HaveEach(Not(ContainSubstring(strconv.FormatInt(failing, 10)))))
@@ -193,7 +193,7 @@ var _ = Describe("mirror.Cycle when a listed run's artifacts listing returns 404
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
 			env.Fake.Fail("api", fmt.Sprintf("runs/%d/artifacts", failing), fakegithub.Fault{Status: http.StatusNotFound})
 
-			Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+			Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 			Expect(env.ArtifactDirs(other)).NotTo(BeEmpty())
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.ArtifactDirs(failing)).To(BeEmpty())
@@ -210,7 +210,7 @@ var _ = DescribeTable("mirror.Cycle with an unclassified failure in one run stil
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		env.Fake.Fail(host, match, fault)
 
-		err := env.Mirror.Cycle(ctx)
+		err := cycleErr(ctx, env.Mirror)
 		Expect(err).To(MatchError(MatchRegexp(`^run 37129738159 attempt 1: http://\S+: %s$`, failure)))
 		Expect(err).NotTo(BeTransient())
 		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
@@ -235,7 +235,7 @@ var _ = DescribeTable("mirror.Cycle when the API answers a status that blocks th
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		env.Fake.Fail("api", match, fakegithub.Fault{Status: status})
 
-		Expect(env.Mirror.Cycle(ctx)).To(MatchError(ContainSubstring(fmt.Sprintf("%d %s", status, http.StatusText(status)))))
+		Expect(cycleErr(ctx, env.Mirror)).To(MatchError(ContainSubstring(fmt.Sprintf("%d %s", status, http.StatusText(status)))))
 		requests := env.Fake.Requests()
 		Expect(requests[len(requests)-1]).To(SatisfyAll(HaveField("Path", HaveSuffix(match)), HaveField("Status", status)))
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
@@ -255,7 +255,7 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		env.Clock.Set(harness.DefaultNow().Add(500 * time.Millisecond))
 		env.Mirror.Host = "ghe.corp.example"
 
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		attempt1 := env.AttemptDirs(runID)[0]
 		raw, err := os.ReadFile(filepath.Join(attempt1, "fetch.json"))
 		Expect(err).NotTo(HaveOccurred())
@@ -332,7 +332,7 @@ var _ = Describe("mirror.Cycle with a job that has no steps and no runner", Labe
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(readTombstone(env.AttemptDirs(runID)[0], "111221290616")).To(Equal(map[string]any{
 			"lg_format":     1.0,
 			"tombstoned_at": "2026-10-03T18:00:00Z",
@@ -350,7 +350,7 @@ var _ = Describe("mirror.Cycle when the jobs of a listed run's attempt return 40
 		bothRuns(func(env *harness.InProcessEnv, failing, other int64) {
 			env.Fake.Fail("api", fmt.Sprintf("runs/%d/attempts/1/jobs", failing), fakegithub.Fault{Status: http.StatusNotFound})
 
-			Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+			Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 			Expect(env.AttemptDirs(other)).To(HaveLen(1))
 			Expect(env.AttemptDirs(failing)).To(BeEmpty())
 		})
@@ -367,7 +367,7 @@ var _ = Describe("mirror.Cycle when an attempt has no updated_at", Label("failur
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
 		env.Fake.Fail("api", "runs/37129738159/attempts/1", fakegithub.Fault{Status: http.StatusOK, Body: `{"status":"completed","run_attempt":1}`})
 
-		Expect(env.Mirror.Cycle(ctx)).To(MatchError(ContainSubstring("no updated_at")))
+		Expect(cycleErr(ctx, env.Mirror)).To(MatchError(ContainSubstring("no updated_at")))
 		Expect(env.AttemptDirs(deletedRun)).To(BeEmpty())
 		Expect(env.Tombstones()).To(BeEmpty())
 	}, cycleTimeout)

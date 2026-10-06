@@ -59,7 +59,7 @@ var _ = Describe("discovery with an eviction horizon", Label("retention"), func(
 		Expect(retention.Horizons{"github.com/rosenhouse/Lg": horizon}.Write(env.Mirror.Store)).To(Succeed())
 		before := len(env.Fake.Requests())
 
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(4)))
 		Expect(env.Fake.Requests()[before:]).NotTo(ContainElement(runRequest(pendingRun)))
 		Expect(os.ReadFile(filepath.Join(env.State(), "pending-artifacts.json"))).To(MatchJSON(`{"github.com":{}}`))
@@ -72,12 +72,12 @@ var _ = Describe("discovery after disk_cap evicts under another repo dir", Label
 		env := harness.InProcess()
 		Expect(env.Fake.Load(runID, "after-attempt-1")).To(Succeed())
 		env.Mirror.DiskCap = 1
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(env.AttemptDirs(runID)).To(BeEmpty())
 
 		env.Mirror.Host = "ghe.example.com"
 		env.Mirror.DiskCap = int64(config.Defaults().DiskCap)
-		Expect(env.Mirror.Cycle(ctx)).To(Succeed())
+		Expect(cycleErr(ctx, env.Mirror)).To(Succeed())
 		Expect(env.AttemptDirs(runID)).To(ConsistOf(HavePrefix(filepath.Join(env.Data(), "ghe.example.com") + "/")))
 	}, cycleTimeout)
 })

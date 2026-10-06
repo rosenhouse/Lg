@@ -13,11 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -29,6 +29,10 @@ type Run struct {
 	Date  string
 	ID    int64
 	Bytes int64
+	// Attempts are the numbers of its attempt dirs.
+	Attempts []int
+	// Artifacts are the ids of its artifact dirs.
+	Artifacts []int64
 	// CreatedAt is the run_created_at in a fetch.json of the run, and zero
 	// when it has none.
 	CreatedAt time.Time
@@ -46,7 +50,7 @@ type Victims struct {
 	// Expired are runs in date dirs before the cutoff.
 	Expired []string
 	// Extracted and then Evicted are removed while the runs are over disk_cap.
-	// Evicted also holds the kept runs that Horizon passes.
+	// Evicted also holds the kept runs that Horizons pass.
 	Extracted []string
 	Evicted   []string
 	// Horizons is what Execute writes to state/horizon.json, and nil when it
@@ -183,9 +187,19 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 		// within any run is within the last run found.
 		run := last(runs)
 		if d.IsDir() {
-			if r, ok := runAt(path, parts); ok {
+			switch r, ok := runAt(path, parts); {
+			case ok:
 				runs = append(runs, r)
-			} else if isExtracted(parts) && run != nil && within(path, run.Dir) {
+			case run == nil || !within(path, run.Dir):
+			case len(parts) == runDepth+1:
+				if n, ok := layout.AttemptNumber(parts[runDepth]); ok {
+					run.Attempts = append(run.Attempts, n)
+				}
+			case len(parts) == runDepth+2 && parts[runDepth] == "artifacts":
+				if id, ok := layout.DirID(parts[runDepth+1]); ok {
+					run.Artifacts = append(run.Artifacts, id)
+				}
+			case isExtracted(parts):
 				run.Extracted = append(run.Extracted, Tree{Dir: path})
 			}
 			return nil
@@ -212,27 +226,30 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 	return runs, err
 }
 
-// dateDepth is the depth below data/ of <host>/<owner>/<repo>/runs/<date>.
-const dateDepth = 5
+// dateDepth is the depth below data/ of <host>/<owner>/<repo>/runs/<date>,
+// and runDepth of the run dirs in it.
+const (
+	dateDepth = 5
+	runDepth  = dateDepth + 1
+)
 
 // runAt gives the run at path, when parts, its path below data/, are
 // <host>/<owner>/<repo>/runs/<date>/<run>.
 func runAt(path string, parts []string) (Run, bool) {
-	if len(parts) != 6 || parts[3] != "runs" {
+	if len(parts) != runDepth || parts[3] != "runs" {
 		return Run{}, false
 	}
-	date := parts[4]
+	date := parts[dateDepth-1]
 	if _, err := time.Parse(time.DateOnly, date); err != nil {
 		return Run{}, false
 	}
-	idPart, _, _ := strings.Cut(parts[5], "_")
-	id, _ := strconv.ParseInt(idPart, 10, 64)
+	id, _ := layout.DirID(parts[runDepth-1])
 	return Run{Dir: path, Repo: strings.Join(parts[:3], "/"), Date: date, ID: id}, true
 }
 
 // isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
 func isExtracted(parts []string) bool {
-	return len(parts) == 9 && parts[6] == "artifacts" && parts[8] == "extracted"
+	return len(parts) == runDepth+3 && parts[runDepth] == "artifacts" && parts[runDepth+2] == "extracted"
 }
 
 func within(path, dir string) bool { return strings.HasPrefix(path, dir+string(filepath.Separator)) }

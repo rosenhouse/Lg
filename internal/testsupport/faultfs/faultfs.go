@@ -32,12 +32,15 @@ type FS struct {
 	failFrom int
 	err      error
 	failOn   map[string]scopedErr
+	before   map[string]scopedHook
 	journal  []Op
 	mounts   map[string]store.Mount
 	nonRoot  bool
 }
 
-func New() *FS { return &FS{mounts: map[string]store.Mount{}, failOn: map[string]scopedErr{}} }
+func New() *FS {
+	return &FS{mounts: map[string]store.Mount{}, failOn: map[string]scopedErr{}, before: map[string]scopedHook{}}
+}
 
 // FailFrom makes the k-th journaled op, counting from 1, and every op after it return err.
 func (f *FS) FailFrom(k int, err error) {
@@ -70,8 +73,12 @@ func (f *FS) do(op Op, run func() error) error {
 		f.mu.Unlock()
 		return &fs.PathError{Op: op.Name, Path: op.Path, Err: scoped.err}
 	}
+	hook, hooked := f.before[op.Name]
 	f.journal = append(f.journal, op)
 	f.mu.Unlock()
+	if hooked && (under(op.Path, hook.dir) || under(op.To, hook.dir)) {
+		hook.run()
+	}
 	return run()
 }
 
@@ -189,6 +196,19 @@ func (f *FS) FailOnUnder(name, dir string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failOn[name] = scopedErr{dir: dir, err: err}
+}
+
+// Before runs hook before every later op named name whose path or rename
+// target is under dir.
+func (f *FS) Before(name, dir string, hook func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.before[name] = scopedHook{dir: dir, run: hook}
+}
+
+type scopedHook struct {
+	dir string
+	run func()
 }
 
 type scopedErr struct {

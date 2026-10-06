@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/mirror"
+	"github.com/rosenhouse/lg/internal/status"
+	"github.com/rosenhouse/lg/internal/store"
 )
 
 type syncCmd struct{}
@@ -29,11 +34,32 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openForWriting(roots, deps, writeLockWait, nil)
+	held, err := lockWrites(roots, deps, writeLockWait)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
-	defer release()
+	defer func() { _ = held.Release() }()
+	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	started := deps.Clock.Now()
+	report, err := runCycle(ctx, roots, cfg, api, deps)
+	return errors.Join(err, writeStatus(deps.StoreFS, roots, cfg, status.Cycle{
+		Started:       started,
+		Finished:      deps.Clock.Now(),
+		Err:           err,
+		Completed:     report.Completed,
+		Pending:       pending(report.Pending),
+		DefaultBranch: report.DefaultBranch,
+	}))
+}
+
+// runCycle opens the store and runs one cycle. Callers hold state/write.lock.
+func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *url.URL, deps *Deps) (mirror.Report, error) {
+	s, err := initAndSweep(deps.StoreFS, roots.Store)
+	if err != nil {
+		return mirror.Report{}, failure.FromErrno(err)
+	}
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
@@ -49,8 +75,43 @@ func (syncCmd) Run(deps *Deps) error {
 		Retention:        time.Duration(cfg.Retention),
 		DiskCap:          int64(cfg.DiskCap),
 	}
-	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
 	return m.Cycle(ctx)
 }
+
+func pending(units []mirror.UnitError) []status.Pending {
+	found := make([]status.Pending, len(units))
+	for i, u := range units {
+		found[i] = status.Pending{Unit: u.Unit, Error: u.Err.Error()}
+	}
+	return found
+}
+
+// writeStatus completes c from cfg and the disk, and writes it over
+// state/status.json. Callers hold state/write.lock.
+func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
+	path := filepath.Join(roots.State, "status.json")
+	// Main already warned about an unparsable status.json; Next starts over without it.
+	prev, _ := status.Read(path)
+	c.Repo = repoKey(cfg)
+	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
+	var err error
+	c.Disk, err = status.Measure(roots.Data, roots.State, c.Repo)
+	return failure.FromErrno(errors.Join(err, status.Write(fsys, path, status.Next(prev, c))))
+}
+
+// remeasureStatus rewrites the disk fields in state/status.json, if a sync
+// wrote one Read can parse. Callers hold state/write.lock.
+func remeasureStatus(fsys store.FS, roots config.Roots, cfg config.Config) error {
+	path := filepath.Join(roots.State, "status.json")
+	st, err := status.Read(path)
+	if st == nil || err != nil {
+		return nil
+	}
+	d, err := status.Measure(roots.Data, roots.State, repoKey(cfg))
+	if err != nil {
+		return err
+	}
+	return status.Write(fsys, path, status.Remeasured(*st, repoKey(cfg), d, time.Duration(cfg.Retention), int64(cfg.DiskCap)))
+}
+
+func repoKey(cfg config.Config) string { return cfg.Host + "/" + cfg.Repo }

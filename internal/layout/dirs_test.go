@@ -62,3 +62,19 @@ var _ = DescribeTable("AttemptNumber gives n for a dir named as AttemptDir names
 	Entry("no number", "attempt-", 0, false),
 	Entry("another name", "fetch.json", 0, false),
 )
+
+var _ = DescribeTable("DirID gives the id of a dir named as RunDir, JobDir or ArtifactDir names it", Label("status"),
+	func(name string, id int64, ok bool) {
+		got, gotOK := layout.DirID(name)
+		Expect(gotOK).To(Equal(ok))
+		Expect(got).To(Equal(id))
+	},
+	Entry("an artifact", "11276401837_flaky-report-x", int64(11276401837), true),
+	Entry("a run", "37129390741_ci_main", int64(37129390741), true),
+	Entry("an empty slug", "7_", int64(7), true),
+	Entry("a leading zero", "07_x", int64(0), false),
+	Entry("a sign", "+7_x", int64(0), false),
+	Entry("no underscore", "7", int64(0), false),
+	Entry("no number", "_x", int64(0), false),
+	Entry("another name", "fetch.json", int64(0), false),
+)

@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/cli"
+	"github.com/rosenhouse/lg/internal/clock"
 )
 
 var _ = Describe("lg paths", Label("sync"), func() {
@@ -23,7 +24,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 	})
 
 	paths := func() int {
-		return cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": home}, Stdout: stdout, Stderr: stderr})
+		return cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": home}, Stdout: stdout, Stderr: stderr, Clock: clock.Real{}})
 	}
 
 	writeFormat := func() {
@@ -53,7 +54,7 @@ var _ = Describe("lg paths", Label("sync"), func() {
 	It("prints nothing and exits 0 before the first sync creates data/", func() {
 		Expect(paths()).To(Equal(0))
 		Expect(stdout.String()).To(BeEmpty())
-		Expect(stderr.String()).To(BeEmpty())
+		Expect(stderr.String()).To(Equal("lg: warning: never synced; run `lg sync`\n"))
 	})
 
 	It("exits 1 naming data/ when data/ is a dangling symlink", func() {

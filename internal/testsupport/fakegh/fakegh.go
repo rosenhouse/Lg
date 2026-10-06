@@ -80,6 +80,12 @@ func (g *GH) Fail(stderr string) {
 	gomega.Expect(os.WriteFile(g.file("stderr"), []byte(stderr+"\n"), 0o644)).To(gomega.Succeed())
 }
 
+// Restore undoes Fail, so the script prints the token again.
+func (g *GH) Restore() {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(os.Remove(g.file("stderr"))).To(gomega.Succeed())
+}
+
 // Hang makes the script wait until it is killed.
 func (g *GH) Hang() {
 	ginkgo.GinkgoHelper()

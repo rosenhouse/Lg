@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -17,6 +18,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -43,6 +45,7 @@ type commands struct {
 	Init    initCmd    `cmd:"" help:"Write config.yaml for one repository and initialize the store."`
 	Root    rootCmd    `cmd:"" help:"Print the data directory."`
 	Version versionCmd `cmd:"" help:"Print lg's version."`
+	Status  statusCmd  `cmd:"" help:"Print when lg last synced, how far behind it is, and why it is blocked."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
@@ -102,13 +105,16 @@ func Main(args []string, deps Deps) (code int) {
 		err = config.Error(err.Error())
 	}
 	if err == nil {
+		warn(&deps, ctx.Command())
 		err = checkStore(ctx.Command(), deps.Env)
 	}
 	if err == nil {
 		err = ctx.Run(&deps)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+		if !errors.As(err, new(warned)) {
+			_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+		}
 		var configErr config.Error
 		var blocked failure.Blocked
 		switch {
@@ -123,6 +129,31 @@ func Main(args []string, deps Deps) (code int) {
 	}
 	return 0
 }
+
+// warn prints the line status.Warning gives for the store's status.json, if any.
+func warn(deps *Deps, command string) {
+	roots, err := config.Locations(deps.Env)
+	if err != nil {
+		return
+	}
+	st, err := status.Read(filepath.Join(roots.State, "status.json"))
+	if err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", err)
+		return
+	}
+	warning := status.Warning(deps.Clock.Now(), st)
+	if st == nil && command != "sync" {
+		warning += "; run `lg sync`"
+	}
+	if warning != "" {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)
+	}
+}
+
+// warned is an error that warn has already printed.
+type warned struct{ error }
+
+func (w warned) Unwrap() error { return w.error }
 
 // checkStore refuses a store that lg cannot own before any command but version runs.
 func checkStore(command string, env map[string]string) error {

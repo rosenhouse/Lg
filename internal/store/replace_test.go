@@ -45,13 +45,20 @@ var _ = Describe("ReplaceFile", Label("store"), func() {
 		Expect(path + ".tmp").NotTo(BeAnExistingFile())
 	})
 
-	It("keeps the old file when the write fails", func() {
-		fsys := faultfs.New()
-		fsys.FailOn("fsync", syscall.EIO)
+	DescribeTable("keeps the old file, and removes the temp file, when a step fails",
+		func(op string) {
+			fsys := faultfs.New()
+			fsys.FailOn(op, syscall.ENOSPC)
 
-		Expect(openFS(fsys, newStore()).ReplaceFile(path, []byte("new"))).To(MatchError(syscall.EIO))
-		Expect(os.ReadFile(path)).To(Equal([]byte("old")))
-	})
+			Expect(openFS(fsys, newStore()).ReplaceFile(path, []byte("new"))).To(MatchError(syscall.ENOSPC))
+			Expect(os.ReadFile(path)).To(Equal([]byte("old")))
+			Expect(path + ".tmp").NotTo(BeAnExistingFile())
+		},
+		Entry("write", "write"),
+		Entry("fsync", "fsync"),
+		Entry("close", "close"),
+		Entry("rename", "rename"),
+	)
 })
 
 var _ = Describe("Rename", Label("store"), func() {

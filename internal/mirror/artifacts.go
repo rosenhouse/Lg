@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
 )
@@ -41,7 +42,7 @@ type candidate struct {
 // when ListArtifacts fails, and publishes its retry set. A run complete on
 // disk with nothing to retry needs no listing. It returns the errors that
 // runScoped accepts, and stops at any other.
-func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]error, error) {
+func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *listedRun, p *pending) ([]UnitError, error) {
 	onDisk, err := m.attemptsOnDisk(run.dir)
 	if err != nil {
 		return nil, err
@@ -57,21 +58,21 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 		}
 	}
 	listing, err := m.listArtifacts(ctx, gh, run)
-	var failed []error
+	var failed []UnitError
 	switch {
 	case errors.Is(err, github.ErrNotFound):
 		// The run is deleted, but its artifacts that lg saw still need dirs.
 	case runScoped(err) && listing != nil:
-		failed = append(failed, fmt.Errorf("run %d: %w", run.ID, err))
+		failed = append(failed, UnitError{Unit: status.Unit{Run: run.ID}, Err: err})
 	case runScoped(err):
-		return []error{fmt.Errorf("run %d artifacts: %w", run.ID, err)}, nil
+		return []UnitError{{Unit: status.Unit{Run: run.ID}, Err: fmt.Errorf("artifacts: %w", err)}}, nil
 	case err != nil:
 		return nil, err
 	}
 	run.artifacts = listing
 	retry, unreadable, err := m.retrySet(run.dir, onDisk, listing, p.runs[run.ID].Artifacts)
 	if unreadable != nil {
-		failed = append(failed, fmt.Errorf("run %d artifacts: %w", run.ID, unreadable))
+		failed = append(failed, UnitError{Unit: status.Unit{Run: run.ID}, Err: fmt.Errorf("artifacts: %w", unreadable)})
 	}
 	if err == nil {
 		err = p.set(run.Run, retry)
@@ -84,10 +85,10 @@ func (m *Mirror) syncArtifacts(ctx context.Context, gh github.Client, run *liste
 		err := m.publishArtifact(ctx, gh, run.Run, c, layout.ArtifactDir(run.dir, c.Artifact.ID, c.Artifact.Name))
 		switch {
 		case runScoped(err):
-			failed = append(failed, fmt.Errorf("run %d artifact %d: %w", run.ID, c.Artifact.ID, err))
+			failed = append(failed, UnitError{Unit: status.Unit{Run: run.ID, Artifact: c.Artifact.ID}, Err: err})
 			unpublished = append(unpublished, c)
 		case err != nil:
-			return nil, err
+			return failed, err
 		}
 	}
 	return failed, p.set(run.Run, unpublished)

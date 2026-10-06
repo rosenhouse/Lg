@@ -62,7 +62,7 @@ var _ = Describe("lg sync with a loopback api_url", Label("transport"), func() {
 		})
 
 		Expect(code).To(Equal(2))
-		Expect(stderr.String()).To(Equal("lg: api_url may be on a loopback address only when LG_GH is set: \"http://127.0.0.1:1\"\n"))
+		Expect(stderr.String()).To(Equal("lg: warning: never synced\nlg: api_url may be on a loopback address only when LG_GH is set: \"http://127.0.0.1:1\"\n"))
 		Expect(runner.runs).To(BeZero())
 	})
 })

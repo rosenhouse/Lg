@@ -2,6 +2,7 @@
 package harness
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
@@ -104,6 +106,36 @@ func (e *Env) Data() string { return e.roots().Data }
 func (e *Env) State() string { return e.roots().State }
 
 func (e *Env) Tmp() string { return e.roots().Tmp }
+
+// Status decodes state/status.json.
+func (e *Env) Status() map[string]any {
+	ginkgo.GinkgoHelper()
+	return ReadStatus(filepath.Join(e.State(), "status.json"))
+}
+
+// ReadStatus decodes the status.json at path.
+func ReadStatus(path string) map[string]any {
+	ginkgo.GinkgoHelper()
+	raw, err := os.ReadFile(path)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	var st map[string]any
+	gomega.Expect(json.Unmarshal(raw, &st)).To(gomega.Succeed())
+	return st
+}
+
+// WriteStatus initializes the store and replaces its state/status.json with raw.
+func (e *Env) WriteStatus(raw string) {
+	ginkgo.GinkgoHelper()
+	writeStatus(e.Store(), filepath.Join(e.State(), "status.json"), raw)
+}
+
+// writeStatus initializes the store at root and replaces the status.json at path with raw.
+func writeStatus(root, path, raw string) {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(store.Init(root)).To(gomega.Succeed())
+	gomega.Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(gomega.Succeed())
+	gomega.Expect(os.WriteFile(path, []byte(raw), 0o644)).To(gomega.Succeed())
+}
 
 func (e *Env) roots() config.Roots {
 	ginkgo.GinkgoHelper()

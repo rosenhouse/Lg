@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"syscall"
@@ -71,4 +72,26 @@ func holder(path string) string {
 func (l *Lock) Release() error {
 	_ = l.file.Truncate(0)
 	return l.file.Close()
+}
+
+// Held reports whether a holder has the lock on path. It takes a shared
+// lock for a moment, so a Wait that overlaps it needs a timeout longer than
+// one poll.
+func Held(path string) (bool, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return true, nil
+	}
+	if err != nil {
+		return false, &os.PathError{Op: "flock", Path: path, Err: err}
+	}
+	return false, nil
 }

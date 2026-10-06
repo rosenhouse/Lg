@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,7 +63,39 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		},
 		Entry("with stderr", "not logged in\n", "gh auth token --hostname ghe.corp.example: exit status 1: not logged in"),
 		Entry("without stderr", " \n", "gh auth token --hostname ghe.corp.example: exit status 1"),
+		Entry("with stderr cut to 512 bytes at a rune", "x"+strings.Repeat("é", 300), "gh auth token --hostname ghe.corp.example: exit status 1: x"+strings.Repeat("é", 255)+"…"),
 	)
+
+	It("blocks as auth suggesting `--insecure-storage` when gh's stderr mentions the keyring", Label("status"), func() {
+		runner := &fakeRunner{stderr: "failed to get token from the Keyring: dbus: no session bus\n", err: errors.New("exit status 1")}
+
+		_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+
+		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "gh auth token --hostname github.com: exit status 1: failed to get token from the Keyring: dbus: no session bus; run `gh auth login --hostname github.com --insecure-storage`"}))
+	})
+
+	DescribeTable("blocks as auth suggesting `--insecure-storage` when gh's stderr names a keyring service", Label("status"),
+		func(stderr string) {
+			runner := &fakeRunner{stderr: stderr, err: errors.New("exit status 1")}
+
+			_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+
+			Expect(err).To(MatchError(HaveSuffix("; run `gh auth login --hostname github.com --insecure-storage`")))
+		},
+		Entry("D-Bus", `failed to migrate config: couldn't find oauth token for "github.com": exec: "dbus-launch": executable file not found in $PATH`),
+		Entry("Secret Service", "The name org.freedesktop.secrets was not provided by any .service files"),
+		Entry("Secret Service by name", "secret service unavailable"),
+		Entry("Keychain", "could not read from the macOS Keychain"),
+	)
+
+	It("blocks as auth suggesting `--insecure-storage` if gh works in a shell, when gh finds no token", Label("status"), func() {
+		runner := &fakeRunner{stderr: "no oauth token found for github.com\n", err: errors.New("exit status 1")}
+
+		_, err := auth.GhTokenSource{Runner: runner}.Token(context.Background(), "github.com")
+
+		Expect(err).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "gh auth token --hostname github.com: exit status 1: no oauth token found for github.com; " +
+			"run `gh auth login --hostname github.com`, adding `--insecure-storage` if `gh auth token` works in your shell, since then gh's token is in a keyring that lg cannot reach"}))
+	})
 
 	DescribeTable("blocks as auth, saying to install gh or set LG_GH, when gh cannot be started", Label("blocked"),
 		func(startErr error) {

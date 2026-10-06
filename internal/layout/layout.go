@@ -91,3 +91,13 @@ func AttemptNumber(name string) (int, bool) {
 	}
 	return n, true
 }
+
+// DirID gives id for the base name of RunDir, JobDir or ArtifactDir of id.
+func DirID(name string) (int64, bool) {
+	digits, _, ok := strings.Cut(name, "_")
+	id, err := strconv.ParseInt(digits, 10, 64)
+	if !ok || err != nil || strconv.FormatInt(id, 10) != digits {
+		return 0, false
+	}
+	return id, true
+}
