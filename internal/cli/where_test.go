@@ -114,6 +114,16 @@ var _ = Describe("lg where", Label("where"), func() {
 		))
 	})
 
+	It("reads a context line rg printed without a line number", func() {
+		file := filepath.Join(attempt, "attempt.json")
+
+		Expect(c.Main("where", file+`-  "head_branch": "main",`)).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveExactElements(SatisfyAll(
+			HaveKeyWithValue("path", file),
+			HaveKeyWithValue("text", `  "head_branch": "main",`),
+		)))
+	})
+
 	It("keeps a hit's .. in its text, not its path", func() {
 		log := filepath.Join(job, "log.txt")
 		Expect(os.WriteFile(log, []byte("a\nb\nc\nd\n$ cd ../..\n"), 0o644)).To(Succeed())

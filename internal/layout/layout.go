@@ -166,7 +166,8 @@ const maxPath = 4095
 
 // ParseHit splits hit at the longest prefix that exists, since a path may
 // hold colons, and gives false when no prefix exists. It reads a match as
-// path:line:text, path:line or path:text, and a context line as path-line-text.
+// path:line:text, path:line or path:text, and a context line as path-line-text
+// or path-text.
 func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
 	for end := len(hit); end > 0; end = strings.LastIndexAny(hit[:end], ":-") {
 		if end > maxPath || !exists(hit[:end]) {
@@ -180,13 +181,10 @@ func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
 		digits, text, found := strings.Cut(rest, string(sep))
 		n, err := strconv.Atoi(digits)
 		isLine := err == nil && n > 0 && strconv.Itoa(n) == digits
-		switch {
-		case isLine && (found || sep == ':'):
+		if isLine && (found || sep == ':') {
 			h.Line, h.Text = n, text
-		case sep == ':':
+		} else {
 			h.Text = rest
-		default:
-			continue
 		}
 		return h, true
 	}
