@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/rosenhouse/lg/internal/execx"
-	"github.com/rosenhouse/lg/internal/store"
 )
 
 // Manager installs a Unit as a systemd user unit on linux, or as a launchd
@@ -45,10 +44,28 @@ func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	if err := os.MkdirAll(filepath.Dir(b.path()), 0o755); err != nil {
 		return "", err
 	}
-	if err := store.ReplaceFileFS(store.OSFS{}, b.path(), content); err != nil {
+	if err := replaceFile(b.path(), content); err != nil {
 		return "", err
 	}
 	return b.path(), b.start(ctx, replacing)
+}
+
+// replaceFile writes path through a temp file of its own, so concurrent
+// installs never share one.
+func replaceFile(path string, content []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(content)
+	err = errors.Join(err, f.Sync(), f.Close())
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		return errors.Join(err, os.Remove(f.Name()))
+	}
+	return nil
 }
 
 // Uninstall stops the service named name and removes its unit file. It

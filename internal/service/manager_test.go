@@ -62,6 +62,13 @@ func (f *fakeRunner) Run(_ context.Context, name string, args []string, env map[
 	return nil, nil, nil
 }
 
+// okRunner succeeds at every call.
+type okRunner struct{}
+
+func (okRunner) Run(context.Context, string, []string, map[string]string) (stdout, stderr []byte, err error) {
+	return nil, nil, nil
+}
+
 var _ = Describe("Manager", Label("install"), func() {
 	var (
 		home    string
@@ -294,6 +301,21 @@ var _ = Describe("Manager", Label("install"), func() {
 		Expect(manager("linux").Uninstall(context.Background(), "lg")).To(BeEmpty())
 		Expect(manager("darwin").Uninstall(context.Background(), "lg")).To(BeEmpty())
 		Expect(runner.calls).To(BeEmpty())
+	})
+
+	It("installs the same unit from concurrent calls", func() {
+		m := service.Manager{GOOS: "linux", Runner: okRunner{}, Env: map[string]string{"HOME": home}}
+		errs := make(chan error, 8)
+		for range cap(errs) {
+			go func() {
+				_, err := m.Install(context.Background(), unit)
+				errs <- err
+			}()
+		}
+		for range cap(errs) {
+			Expect(<-errs).NotTo(HaveOccurred())
+		}
+		Expect(os.ReadDir(systemd)).To(HaveLen(1))
 	})
 
 	It("refuses a relative HOME", func() {
