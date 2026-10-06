@@ -120,16 +120,17 @@ var _ = Describe("lg where", Label("where"), func() {
 
 	It("gives a line only when the file has that line and it holds the text", func() {
 		log := filepath.Join(job, "log.txt")
-		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR disk full"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR <nil> disk full"), 0o644)).To(Succeed())
 
-		Expect(c.Main("where", log+":10:15:00 ERROR disk full", log+":2:ERROR disk", log+":2", log+":3", log+":1:15:00")).To(Equal(0), c.Stderr.String())
+		Expect(c.Main("where", log+":10:15:00 ERROR <nil> disk full", log+":2:ERROR <nil>", log+":2", log+":3", log+":1:15:00")).To(Equal(0), c.Stderr.String())
 		Expect(decoded()).To(HaveExactElements(
-			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "10:15:00 ERROR disk full")),
-			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "ERROR disk")),
+			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "10:15:00 ERROR <nil> disk full")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "ERROR <nil>")),
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), Not(HaveKey("text"))),
 			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "3")),
 			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "1:15:00")),
 		))
+		Expect(c.Stdout.String()).To(ContainSubstring(`"text":"ERROR <nil>"`))
 	})
 
 	It("reads a context line rg printed without a line number", func() {

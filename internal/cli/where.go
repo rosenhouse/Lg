@@ -277,7 +277,7 @@ func (f *placeFinder) describeWith(loc layout.Location, facts runFacts) (place, 
 		return place{}, unread("the run")
 	}
 	if loc.JobDir != "" {
-		i := slices.IndexFunc(rows.Jobs, func(j index.Job) bool { return j.JobID == loc.JobID && j.Attempt == loc.Attempt })
+		i := slices.IndexFunc(rows.Jobs, func(j index.Job) bool { return j.JobID == loc.JobID })
 		if i < 0 {
 			return place{}, unread("its job " + filepath.Base(loc.JobDir))
 		}
