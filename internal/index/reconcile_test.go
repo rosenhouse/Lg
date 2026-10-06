@@ -22,7 +22,7 @@ var _ = Describe("index.Reconcile failing", Label("index"), func() {
 		content, err := os.ReadFile(attemptJSON)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(attemptJSON, []byte("<"), 0o644)).To(Succeed())
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -41,7 +41,7 @@ var _ = Describe("index.Reconcile failing", Label("index"), func() {
 		reconcile(ctx, dbPath(env), env.Data())
 		_, err := openDB(dbPath(env)).ExecContext(ctx, "DROP TABLE units")
 		Expect(err).NotTo(HaveOccurred())
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -66,7 +66,7 @@ var _ = Describe("index.Reconcile", Label("index"), func() {
 
 		reconcile(ctx, dbPath(env), env.Data())
 		rebuilt := filepath.Join(GinkgoT().TempDir(), "lg.db")
-		Expect(index.Rebuild(ctx, rebuilt, env.Data())).To(Succeed())
+		Expect(index.Rebuild(ctx, rebuilt, env.Data(), nil)).To(Succeed())
 		Expect(contents(openDB(dbPath(env)), env.Data())).To(Equal(contents(openDB(rebuilt), env.Data())))
 	}, syncTimeout)
 })

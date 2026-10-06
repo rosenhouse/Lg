@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -64,9 +65,20 @@ func lockWrites(ctx context.Context, roots config.Roots, deps *Deps, timeout tim
 		return nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")
-	return lock.WaitContext(ctx, writeLock, timeout, deps.Clock, func(holder string) {
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
-	})
+	return lock.WaitContext(ctx, writeLock, timeout, deps.Clock, waitingFor(deps, writeLock))
+}
+
+// waitingFor says on stderr that lg waits for the lock file, held by holder.
+func waitingFor(deps *Deps, lockFile string) func(holder string) {
+	return func(holder string) {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", lockFile, holder)
+	}
+}
+
+// openIndex opens state/lg.db over data/, saying when it waits for lg.db.lock.
+func openIndex(ctx context.Context, roots config.Roots, deps *Deps) (*index.Index, error) {
+	db := filepath.Join(roots.State, "lg.db")
+	return index.Open(ctx, db, roots.Data, waitingFor(deps, db+".lock"))
 }
 
 func initAndSweep(fsys store.FS, root string) (*store.Store, error) {

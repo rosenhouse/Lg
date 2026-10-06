@@ -13,7 +13,6 @@ import (
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/failure"
-	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/status"
@@ -59,7 +58,7 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		Cycle:     d.run,
 		Requested: func() (int64, error) { return daemon.Requested(state) },
 		Lost:      instance.Lost,
-		Reconcile: func(ctx context.Context) error { return reconcileIndex(ctx, t.roots) },
+		Reconcile: func(ctx context.Context) error { return reconcileIndex(ctx, t.roots, deps) },
 		Log:       deps.Stderr,
 	}
 	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil && st.Blocked != nil && st.Blocked.RetryAt != nil {
@@ -73,8 +72,8 @@ func (daemonRunCmd) Run(deps *Deps) error {
 }
 
 // reconcileIndex brings state/lg.db up to date with data/.
-func reconcileIndex(ctx context.Context, roots config.Roots) error {
-	ix, err := index.Open(ctx, filepath.Join(roots.State, "lg.db"), roots.Data)
+func reconcileIndex(ctx context.Context, roots config.Roots, deps *Deps) error {
+	ix, err := openIndex(ctx, roots, deps)
 	if err != nil {
 		return err
 	}

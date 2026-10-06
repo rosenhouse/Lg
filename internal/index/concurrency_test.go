@@ -37,7 +37,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 
 		opened := make(chan error, 1)
 		go func() {
-			ix, err := index.Open(ctx, dbPath(env), env.Data())
+			ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 			if err == nil {
 				err = ix.Close()
 			}
@@ -48,7 +48,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 
 	It("reconcile an unchanged store while another connection holds the write lock", func(ctx SpecContext) {
 		reconcile(ctx, dbPath(env), env.Data())
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		tx, err := impatientWriter(dbPath(env)).BeginTx(ctx, nil)
@@ -68,7 +68,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		DeferCleanup(func() { _ = tx.Rollback() })
 		opened := make(chan error, 1)
 		go func() {
-			ix, err := index.Open(ctx, path, env.Data())
+			ix, err := index.Open(ctx, path, env.Data(), nil)
 			if err == nil {
 				err = ix.Close()
 			}
@@ -103,13 +103,13 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 
 	It("stop waiting in Open for lg.db.lock when ctx is done", func(ctx SpecContext) {
 		stopsWhenCancelled(ctx, func(ctx context.Context) error {
-			_, err := index.Open(ctx, dbPath(env), env.Data())
+			_, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 			return err
 		})
 	})
 
 	It("stop waiting in Reconcile for lg.db.lock when ctx is done", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -121,7 +121,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		notADB(dbPath(env))
 		rebuilt := make(chan error, 1)
-		go func() { rebuilt <- index.Rebuild(ctx, dbPath(env), env.Data()) }()
+		go func() { rebuilt <- index.Rebuild(ctx, dbPath(env), env.Data(), nil) }()
 		Consistently(rebuilt, "200ms").ShouldNot(Receive())
 
 		made := filepath.Join(GinkgoT().TempDir(), "lg.db")
@@ -140,7 +140,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	It("keep the db another made while Reconcile waited to start over from a corrupt page", func(ctx SpecContext) {
 		reconcile(ctx, dbPath(env), env.Data())
 		corruptRootPage("units_path")(dbPath(env))
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		opening, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
@@ -163,7 +163,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	}, syncTimeout)
 
 	It("let another writer commit while Reconcile reads data/", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "attempt.json"))
@@ -184,7 +184,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		for range 8 {
 			wg.Go(func() {
 				defer GinkgoRecover()
-				ix, err := index.Open(ctx, dbPath(env), env.Data())
+				ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 				Expect(err).NotTo(HaveOccurred())
 				errs <- ix.Reconcile(ctx)
 				Expect(ix.Close()).To(Succeed())
@@ -231,7 +231,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	}, syncTimeout)
 
 	It("drop a run that retention evicts while Reconcile reads data/", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		Expect(ix.Reconcile(ctx)).To(Succeed())
@@ -252,7 +252,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 	}, syncTimeout)
 
 	It("drop a run that retention evicts after Reconcile starts reading it", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		evicted := runDir(env.Data(), deletedRun)
@@ -275,7 +275,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		attempt2 := layout.AttemptDir(runDir(env.Data(), runID), 2)
 		staged := filepath.Join(env.Tmp(), "staged")
 		Expect(os.Rename(attempt2, staged)).To(Succeed())
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		waiting, release := stall(filepath.Join(layout.AttemptDir(runDir(env.Data(), runID), 1), "fetch.json"))
@@ -296,7 +296,7 @@ func openIndexes(ctx context.Context, env *harness.InProcessEnv, n int) []*index
 	GinkgoHelper()
 	var indexes []*index.Index
 	for range n {
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		indexes = append(indexes, ix)

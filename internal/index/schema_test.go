@@ -14,7 +14,7 @@ import (
 var _ = Describe("the schema", Label("index"), func() {
 	It("sets WAL, busy_timeout and meta.format 1", func(ctx SpecContext) {
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
-		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -32,7 +32,7 @@ var _ = Describe("index.Open", Label("index"), func() {
 		dir := filepath.Join(GinkgoT().TempDir(), "a?b#c%3Fd")
 		Expect(os.Mkdir(dir, 0o755)).To(Succeed())
 		path := filepath.Join(dir, "lg.db")
-		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -49,7 +49,7 @@ var _ = Describe("index.Open", Label("index"), func() {
 			for range 8 {
 				wg.Go(func() {
 					defer GinkgoRecover()
-					ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+					ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(ix.Close()).To(Succeed())
 				})

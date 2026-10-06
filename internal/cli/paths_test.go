@@ -204,8 +204,8 @@ var _ = DescribeTable("lg paths prints the paths it can read, then exits 1 namin
 	}),
 )
 
-var _ = Describe("lg paths", Label("paths"), func() {
-	It("says that it waits for lg.db.lock, and whom for", func() {
+var _ = DescribeTable("lg says that it waits for lg.db.lock, and whom for", Label("paths"),
+	func(args ...string) {
 		c := harness.NewCLI()
 		Expect(c.Main("sync")).To(Equal(0))
 		dbLock := filepath.Join(c.Home, "state", "lg.db.lock")
@@ -214,11 +214,13 @@ var _ = Describe("lg paths", Label("paths"), func() {
 		stderr := gbytes.NewBuffer()
 		code := make(chan int, 1)
 		go func() {
-			code <- cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": c.Home}, Stdout: io.Discard, Stderr: stderr, Clock: clock.Real{}})
+			code <- cli.Main(args, cli.Deps{Env: map[string]string{"LG_HOME": c.Home}, Stdout: io.Discard, Stderr: stderr, Clock: clock.Real{}})
 		}()
 
 		Eventually(stderr, 5*time.Second).Should(gbytes.Say(regexp.QuoteMeta(fmt.Sprintf("lg: waiting for %s (held by pid %d)\n", dbLock, os.Getpid()))))
 		Expect(held.Release()).To(Succeed())
 		Eventually(code, 5*time.Second).Should(Receive(Equal(0)))
-	})
-})
+	},
+	Entry("lg paths", "paths"),
+	Entry("lg index rebuild", "index", "rebuild"),
+)

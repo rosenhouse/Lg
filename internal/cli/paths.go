@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -123,7 +122,7 @@ func (p pathsCmd) Run(deps *Deps) error {
 		unit = index.Unit(*p.Unit)
 	}
 	ctx := context.Background()
-	ix, err := index.Open(ctx, filepath.Join(roots.State, "lg.db"), roots.Data)
+	ix, err := openIndex(ctx, roots, deps)
 	if err != nil {
 		return err
 	}

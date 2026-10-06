@@ -48,7 +48,7 @@ func archaeology(ctx context.Context) (*harness.InProcessEnv, *index.Index) {
 	for _, dir := range artifactDirs(env, scenario.Archaeology().Rerun.ID) {
 		writeExtracted(dir)
 	}
-	ix, err := index.Open(ctx, dbPath(env), env.Data())
+	ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(ix.Close)
 	Expect(ix.Reconcile(ctx)).To(Succeed())
@@ -334,7 +334,7 @@ var _ = Describe("Index.Paths", Label("paths"), func() {
 	}, NodeTimeout(time.Minute))
 
 	It("refuses an unknown unit", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), GinkgoT().TempDir())
+		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 

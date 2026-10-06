@@ -22,5 +22,6 @@ func (indexRebuildCmd) Run(deps *Deps) error {
 	if !exists(filepath.Join(roots.Store, "FORMAT")) {
 		return noStore(roots)
 	}
-	return index.Rebuild(context.Background(), filepath.Join(roots.State, "lg.db"), roots.Data)
+	db := filepath.Join(roots.State, "lg.db")
+	return index.Rebuild(context.Background(), db, roots.Data, waitingFor(deps, db+".lock"))
 }

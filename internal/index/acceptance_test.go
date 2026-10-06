@@ -230,7 +230,7 @@ var _ = Describe("index.Open", Label("index"), func() {
 		_, err := db.Exec("UPDATE meta SET format = 0; INSERT INTO runs (run_id, path, from_fork) VALUES (99, 'stale', 0)")
 		Expect(err).NotTo(HaveOccurred())
 
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		Expect(column[int](db, "SELECT format FROM meta")).To(Equal([]int{1}))
