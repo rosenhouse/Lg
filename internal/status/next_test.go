@@ -183,6 +183,26 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(again.Repos[repo].Pending).To(Equal([]status.Pending{{Unit: unit, Error: "503", Since: finished.Add(30 * time.Minute)}}))
 	})
 
+	It("keeps an attempt's since across a completed cycle that left its run pending at run level", func() {
+		earlier := started.UTC().Add(-time.Hour)
+		prev := status.Next(nil, good(started.Add(-time.Hour)))
+		prev.Repos[repo] = status.Repo{Pending: []status.Pending{
+			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503", Since: earlier},
+			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "503", Since: earlier},
+			{Unit: status.Unit{Run: 2, Attempt: 1}, Error: "503", Since: earlier},
+		}}
+		c := good(started)
+		c.Pending = []status.Pending{{Unit: status.Unit{Run: 1}, Error: "artifacts: 502"}}
+		c.Disk.Published = map[status.Unit]bool{{Run: 1, Artifact: 7}: true}
+
+		r := status.Next(&prev, c).Repos[repo]
+		Expect(r.Pending).To(Equal([]status.Pending{
+			{Unit: status.Unit{Run: 1}, Error: "artifacts: 502", Since: finished},
+			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503", Since: earlier},
+		}))
+		Expect(r.PendingUnits).To(Equal(2))
+	})
+
 	It("records since anew for a unit whose since is after the cycle, as after a clock stepped back", func() {
 		unit := status.Unit{Run: 1, Attempt: 2}
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
