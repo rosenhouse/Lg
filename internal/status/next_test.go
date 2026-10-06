@@ -91,19 +91,19 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(status.Next(&status.Status{Cycle: 41}, good(started)).Cycle).To(Equal(int64(42)))
 	})
 
-	It("gives pending units with their last error, on one line", func() {
+	It("gives pending units with their last error, on one line without terminal controls", func() {
 		c := good(started)
 		c.Err = errors.New("pending units and a discarded hint file")
 		c.Pending = []status.Pending{
 			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "502 Bad Gateway"},
-			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest mismatch"},
+			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest\x1b]0;x\amismatch"},
 			{Unit: status.Unit{Run: 3}, Error: errors.Join(errors.New("a"), errors.New("b")).Error()},
 		}
 
 		r := status.Next(nil, c).Repos[repo]
 		Expect(r.Pending).To(Equal([]status.Pending{
 			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "502 Bad Gateway"},
-			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest mismatch"},
+			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest ]0;x mismatch"},
 			{Unit: status.Unit{Run: 3}, Error: "a b"},
 		}))
 		Expect(r.PendingUnits).To(Equal(3))

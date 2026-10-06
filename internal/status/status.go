@@ -68,13 +68,18 @@ func (b Blocked) String() string {
 	if b.RetryAt != nil {
 		s += ", retry_at " + b.RetryAt.Format(time.RFC3339)
 	}
-	detail := strings.Map(func(r rune) rune {
+	return s + ": " + oneLine(b.Detail)
+}
+
+// oneLine gives s on one line, without terminal controls.
+func oneLine(s string) string {
+	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
-	}, b.Detail)
-	return s + ": " + strings.Join(strings.Fields(detail), " ")
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 type Repo struct {
@@ -176,7 +181,7 @@ func Next(prev *Status, c Cycle) Status {
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
-	repo.Pending = oneLine(c.Pending)
+	repo.Pending = oneLineErrors(c.Pending)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
@@ -218,11 +223,11 @@ func timeOrNil(t time.Time) *time.Time {
 	return &t
 }
 
-// oneLine gives pending with each error on one line.
-func oneLine(pending []Pending) []Pending {
+// oneLineErrors gives pending with each error passed through oneLine.
+func oneLineErrors(pending []Pending) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
-		found = append(found, Pending{Unit: p.Unit, Error: strings.Join(strings.Fields(p.Error), " ")})
+		found = append(found, Pending{Unit: p.Unit, Error: oneLine(p.Error)})
 	}
 	return found
 }
