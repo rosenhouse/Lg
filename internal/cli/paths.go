@@ -15,18 +15,23 @@ import (
 	"github.com/rosenhouse/lg/internal/index"
 )
 
+// pathsCmd's repeatable flags take commas literally, as names and globs may hold them.
 type pathsCmd struct {
-	Branch     []string `help:"Only runs on this branch of the repository itself. Repeat for any of several."`
-	SHA        []string `name:"sha" help:"Only runs of a commit whose SHA starts with this."`
-	PR         []int    `name:"pr" help:"Only runs of this pull request from the repository itself."`
-	Workflow   []string `help:"Only runs of the workflow of this name."`
-	Job        []string `help:"Only jobs whose name matches this glob, or units holding one."`
-	Event      []string `help:"Only runs triggered by this event."`
-	Conclusion []string `help:"Only jobs, attempts, or runs whose latest attempt, of this conclusion."`
-	Since      moment   `help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
-	Until      moment   `help:"Only units until this time, inclusive."`
+	Branch     []string `sep:"none" help:"Only runs on this branch, and not from a fork."`
+	SHA        []string `sep:"none" name:"sha" help:"Only runs whose head SHA starts with this."`
+	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request. Runs from a fork list none."`
+	Workflow   []string `sep:"none" help:"Only runs of this workflow name."`
+	Job        []string `sep:"none" help:"Only jobs whose name matches this glob, and the attempts and runs holding one."`
+	Event      []string `sep:"none" help:"Only runs triggered by this event."`
+	Conclusion []string `sep:"none" help:"Only units that concluded so: the job, the attempt, or else the run's latest attempt."`
+	Since      moment   `placeholder:"TIME" help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
+	Until      moment   `placeholder:"TIME" help:"Only units until this time, inclusive."`
 	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit (${enum}) instead of logs and extracted files."`
 	Null       bool     `short:"0" help:"Separate paths with NUL instead of newline."`
+}
+
+func (pathsCmd) Help() string {
+	return "A unit must match every flag given, and any value of a flag given more than once."
 }
 
 // moment is a --since or --until: a duration before now, or a time.
