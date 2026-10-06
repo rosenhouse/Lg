@@ -2,13 +2,9 @@ package cli_test
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,38 +12,15 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/store"
+	"github.com/rosenhouse/lg/internal/testsupport/fakeservice"
 )
-
-// loggingRunner logs each command it runs, and fails one whose arguments
-// include fail. systemctl show prints unitPath as the manager's UnitPath,
-// and state as a unit's ActiveState. launchctl print finds no agent loaded.
-type loggingRunner struct {
-	calls           []string
-	fail            string
-	unitPath, state string
-}
-
-func (l *loggingRunner) Run(_ context.Context, name string, args []string, _ map[string]string) (stdout, stderr []byte, err error) {
-	l.calls = append(l.calls, strings.Join(append([]string{name}, args...), " "))
-	switch {
-	case slices.Contains(args, l.fail):
-		return nil, []byte("Failed to enable unit\n"), errors.New("exit status 1")
-	case slices.Contains(args, "UnitPath"):
-		return []byte(l.unitPath + "\n"), nil, nil
-	case slices.Contains(args, "ActiveState"):
-		return []byte(l.state + "\n"), nil, nil
-	case name == "launchctl" && args[0] == "print":
-		return nil, []byte("Could not find service\n"), errors.New("exit status 113")
-	}
-	return nil, nil, nil
-}
 
 var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	var (
 		home, gh       string
 		exe, file      string
 		env            map[string]string
-		runner         *loggingRunner
+		runner         *fakeservice.Runner
 		stdout, stderr *bytes.Buffer
 	)
 
@@ -59,7 +32,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Expect(os.MkdirAll(filepath.Dir(config), 0o755)).To(Succeed())
 		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
 		env = map[string]string{"HOME": home, "LG_GH": gh}
-		runner = &loggingRunner{unitPath: filepath.Join(home, ".config", "systemd", "user"), state: "inactive"}
+		runner = &fakeservice.Runner{UnitPath: filepath.Join(home, ".config", "systemd", "user"), Fail: map[string]string{}}
 		stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 		exe, file = "/opt/lg/bin/lg", "/opt/lg/libexec/lg"
 	})
@@ -104,7 +77,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 			Expect(run("linux", "daemon", "install")).To(Equal(1))
 
 			Expect(stderr.String()).To(ContainSubstring("/tmp/go-build1/b001/exe/lg was built by go run"))
-			Expect(runner.calls).To(BeEmpty())
+			Expect(runner.Calls()).To(BeEmpty())
 		},
 		Entry(nil, "/tmp/go-build1/b001/exe/lg", "/opt/lg/libexec/lg"),
 		Entry(nil, "/opt/lg/bin/lg", "/tmp/go-build1/b001/exe/lg"),
@@ -147,7 +120,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	})
 
 	It("prints installed only when the service starts", func() {
-		runner.fail = "enable"
+		runner.Fail["enable"] = "Failed to enable unit"
 
 		Expect(run("linux", "daemon", "install")).To(Equal(1))
 
@@ -161,7 +134,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	})
 
 	It("says when it stopped a service whose unit file was missing", func() {
-		runner.state = "active"
+		runner.Active = true
 
 		Expect(run("linux", "daemon", "uninstall")).To(Equal(0), stderr.String())
 
@@ -174,6 +147,6 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Expect(run("linux", "daemon", "install")).To(Equal(2))
 		Expect(stderr.String()).To(ContainSubstring("config.yaml"))
 		Expect(filepath.Join(home, ".config", "systemd")).NotTo(BeADirectory())
-		Expect(runner.calls).To(BeEmpty())
+		Expect(runner.Calls()).To(BeEmpty())
 	})
 })

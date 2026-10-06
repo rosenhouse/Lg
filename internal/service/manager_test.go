@@ -2,125 +2,23 @@ package service_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/service"
+	"github.com/rosenhouse/lg/internal/testsupport/fakeservice"
 )
-
-// fakeRunner logs each call, and the files then in dir. A call whose
-// arguments include a key of fail prints its value and fails; one whose
-// arguments include a key of out prints its value to stdout. With missing
-// set, every command is not found. It models systemd's one service, which
-// enable --now and restart start, and disable and stop stop, and whose
-// manager searches unitPath. It models launchctl's one service: bootstrap
-// loads it, bootout unloads it after lingering more prints, and print fails
-// while it is not loaded.
-type fakeRunner struct {
-	dir       string
-	calls     []string
-	files     [][]string
-	fail      map[string]string
-	out       map[string]string
-	missing   bool
-	unitPath  string
-	active    bool
-	loaded    bool
-	lingering int
-	unloading int
-}
-
-func (f *fakeRunner) Run(_ context.Context, name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
-	f.calls = append(f.calls, strings.Join(append([]string{name}, args...), " "))
-	entries, _ := os.ReadDir(f.dir)
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	f.files = append(f.files, names)
-	if f.missing {
-		return nil, nil, &exec.Error{Name: name, Err: exec.ErrNotFound}
-	}
-	for _, a := range args {
-		if msg, ok := f.fail[a]; ok {
-			return nil, []byte(msg + "\n"), errors.New("exit status 1")
-		}
-	}
-	for _, a := range args {
-		if out, ok := f.out[a]; ok {
-			return []byte(out + "\n"), nil, nil
-		}
-	}
-	switch name {
-	case "systemctl":
-		return f.systemctl(args[1:])
-	case "launchctl":
-		return f.launchctl(args)
-	}
-	return nil, nil, nil
-}
-
-func (f *fakeRunner) systemctl(args []string) (stdout, stderr []byte, err error) {
-	switch args[0] {
-	case "show":
-		if slices.Contains(args, "UnitPath") {
-			return []byte(f.unitPath + "\n"), nil, nil
-		}
-		if f.active {
-			return []byte("active\n"), nil, nil
-		}
-		return []byte("inactive\n"), nil, nil
-	case "enable":
-		f.active = f.active || args[1] == "--now"
-	case "restart":
-		f.active = true
-	case "disable", "stop":
-		f.active = false
-	}
-	return nil, nil, nil
-}
-
-func (f *fakeRunner) launchctl(args []string) (stdout, stderr []byte, err error) {
-	switch args[0] {
-	case "bootstrap":
-		f.loaded = true
-	case "bootout":
-		f.loaded, f.unloading = false, f.lingering
-	case "print":
-		if f.unloading > 0 {
-			f.unloading--
-			return nil, nil, nil
-		}
-		if !f.loaded {
-			return nil, []byte("Could not find service\n"), errors.New("exit status 113")
-		}
-	}
-	return nil, nil, nil
-}
-
-// okRunner succeeds at every call, and prints unitPath for systemctl show -p UnitPath.
-type okRunner struct{ unitPath string }
-
-func (o okRunner) Run(_ context.Context, _ string, args []string, _ map[string]string) (stdout, stderr []byte, err error) {
-	if slices.Contains(args, "UnitPath") {
-		return []byte(o.unitPath), nil, nil
-	}
-	return nil, nil, nil
-}
 
 var _ = Describe("Manager", Label("install"), func() {
 	var (
 		home    string
-		runner  *fakeRunner
+		runner  *fakeservice.Runner
 		unit    service.Unit
 		systemd string
 		agents  string
@@ -136,7 +34,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		home = GinkgoT().TempDir()
 		systemd = filepath.Join(home, ".config", "systemd", "user")
 		agents = filepath.Join(home, "Library", "LaunchAgents")
-		runner = &fakeRunner{fail: map[string]string{}, out: map[string]string{}, unitPath: "/etc/systemd/user " + systemd}
+		runner = &fakeservice.Runner{Fail: map[string]string{}, Out: map[string]string{}, UnitPath: "/etc/systemd/user " + systemd}
 		unit = service.Unit{Name: "lg", Exe: "/opt/lg/bin/lg", Env: map[string]string{"LG_GH": "/opt/gh/bin/gh"}, Log: filepath.Join(home, "lg", "state", "daemon.log")}
 	})
 
@@ -144,7 +42,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		var unitPath, activeState string
 
 		BeforeEach(func() {
-			runner.dir = systemd
+			runner.Dir = systemd
 			unitPath, activeState = "systemctl --user show -p UnitPath --value", "systemctl --user show -p ActiveState --value lg.service"
 		})
 
@@ -156,8 +54,8 @@ var _ = Describe("Manager", Label("install"), func() {
 			want, err := service.RenderSystemd(unit)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.ReadFile(path)).To(Equal(want))
-			Expect(runner.calls).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
-			Expect(runner.files).To(Equal([][]string{nil, nil, {"lg.service"}, {"lg.service"}}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
+			Expect(runner.Files()).To(Equal([][]string{nil, nil, {"lg.service"}, {"lg.service"}}))
 		})
 
 		It("restarts a running service whose unit it rewrites", func() {
@@ -169,35 +67,35 @@ var _ = Describe("Manager", Label("install"), func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.ReadFile(path)).To(ContainSubstring("/opt/lg2/bin/lg"))
-			Expect(runner.calls[4:]).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
+			Expect(runner.Calls()[4:]).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
 		})
 
 		It("restarts a running service whose unit file is missing", func() {
 			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.Remove(path)).To(Succeed())
-			runner.calls = nil
+			runner.Reset()
 
 			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(path))
 
-			Expect(runner.calls).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service", "systemctl --user restart lg.service"}))
 		})
 
 		It("starts, without restarting, a stopped service whose unit it rewrites", func() {
 			_, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.active = false
-			runner.calls = nil
+			runner.Active = false
+			runner.Reset()
 
 			_, err = manager("linux").Install(context.Background(), unit)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(runner.calls).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
 		})
 
 		It("puts the unit under an absolute XDG_CONFIG_HOME, and ignores a relative one", func() {
 			xdg := GinkgoT().TempDir()
-			runner.unitPath += " " + filepath.Join(xdg, "systemd", "user")
+			runner.UnitPath += " " + filepath.Join(xdg, "systemd", "user")
 			m := manager("linux")
 
 			m.Env["XDG_CONFIG_HOME"] = xdg
@@ -207,20 +105,20 @@ var _ = Describe("Manager", Label("install"), func() {
 		})
 
 		It("refuses, before writing the unit, a dir the user manager does not load units from", func() {
-			runner.unitPath = "/etc/systemd/user /elsewhere/.config/systemd/user"
+			runner.UnitPath = "/etc/systemd/user /elsewhere/.config/systemd/user"
 
 			_, err := manager("linux").Install(context.Background(), unit)
 
 			Expect(err).To(MatchError(ContainSubstring("the systemd user manager does not load units from " + systemd)))
 			Expect(filepath.Join(systemd, "lg.service")).NotTo(BeAnExistingFile())
-			Expect(runner.calls).To(Equal([]string{unitPath}))
+			Expect(runner.Calls()).To(Equal([]string{unitPath}))
 		})
 
 		It("accepts a dir the user manager loads units from through a symlink", func() {
 			Expect(os.MkdirAll(systemd, 0o755)).To(Succeed())
 			link := filepath.Join(GinkgoT().TempDir(), "user")
 			Expect(os.Symlink(systemd, link)).To(Succeed())
-			runner.unitPath = link
+			runner.UnitPath = link
 
 			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(filepath.Join(systemd, "lg.service")))
 		})
@@ -233,28 +131,28 @@ var _ = Describe("Manager", Label("install"), func() {
 
 				Expect(err).To(MatchError(ContainSubstring("no systemd user manager is reachable")))
 				Expect(filepath.Join(systemd, "lg.service")).NotTo(BeAnExistingFile())
-				Expect(runner.calls).To(Equal([]string{unitPath}))
+				Expect(runner.Calls()).To(Equal([]string{unitPath}))
 			},
-			Entry("when systemctl is missing", func() { runner.missing = true }),
-			Entry("when systemctl cannot reach the user bus", func() { runner.fail["UnitPath"] = "Failed to connect to bus: No medium found" }),
+			Entry("when systemctl is missing", func() { runner.Missing = true }),
+			Entry("when systemctl cannot reach the user bus", func() { runner.Fail["UnitPath"] = "Failed to connect to bus: No medium found" }),
 		)
 
 		It("stops and disables the service, removes the unit, then reloads", func() {
 			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.calls, runner.files = nil, nil
+			runner.Reset()
 
 			Expect(manager("linux").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Removed: true}))
 
 			Expect(path).NotTo(BeAnExistingFile())
-			Expect(runner.calls).To(Equal([]string{"systemctl --user disable --now lg.service", "systemctl --user daemon-reload"}))
-			Expect(runner.files).To(Equal([][]string{{"lg.service"}, nil}))
+			Expect(runner.Calls()).To(Equal([]string{"systemctl --user disable --now lg.service", "systemctl --user daemon-reload"}))
+			Expect(runner.Files()).To(Equal([][]string{{"lg.service"}, nil}))
 		})
 
 		It("removes the unit when systemctl is missing, since no user manager can run it", func() {
 			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.missing = true
+			runner.Missing = true
 
 			Expect(manager("linux").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Removed: true}))
 
@@ -268,11 +166,11 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(os.MkdirAll(filepath.Dir(wants), 0o755)).To(Succeed())
 			Expect(os.Symlink(path, wants)).To(Succeed())
 			Expect(os.Remove(path)).To(Succeed())
-			runner.calls = nil
+			runner.Reset()
 
 			Expect(manager("linux").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Stopped: true}))
 
-			Expect(runner.calls).To(Equal([]string{activeState, "systemctl --user stop lg.service", "systemctl --user daemon-reload"}))
+			Expect(runner.Calls()).To(Equal([]string{activeState, "systemctl --user stop lg.service", "systemctl --user daemon-reload"}))
 			_, err = os.Lstat(wants)
 			Expect(err).To(MatchError(os.ErrNotExist))
 		})
@@ -280,7 +178,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		It("keeps the unit when it cannot stop the service, and says why", func() {
 			path, err := manager("linux").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.fail["disable"] = "Failed to connect to bus"
+			runner.Fail["disable"] = "Failed to connect to bus"
 
 			_, err = manager("linux").Uninstall(context.Background(), "lg")
 
@@ -292,21 +190,21 @@ var _ = Describe("Manager", Label("install"), func() {
 			func(state string, removed bool) {
 				path, err := manager("linux").Install(context.Background(), unit)
 				Expect(err).NotTo(HaveOccurred())
-				runner.fail["disable"] = "Unit file lg.service does not exist"
+				runner.Fail["disable"] = "Unit file lg.service does not exist"
 				if state == "" {
-					runner.fail["ActiveState"] = "Failed to connect to bus"
+					runner.Fail["ActiveState"] = "Failed to connect to bus"
 				} else {
-					runner.out["ActiveState"] = state
+					runner.Out["ActiveState"] = state
 				}
-				runner.calls = nil
+				runner.Reset()
 
 				_, err = manager("linux").Uninstall(context.Background(), "lg")
 
-				Expect(runner.calls[1]).To(Equal(activeState))
+				Expect(runner.Calls()[1]).To(Equal(activeState))
 				if removed {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(path).NotTo(BeAnExistingFile())
-					Expect(runner.calls[2:]).To(Equal([]string{"systemctl --user daemon-reload"}))
+					Expect(runner.Calls()[2:]).To(Equal([]string{"systemctl --user daemon-reload"}))
 				} else {
 					Expect(err).To(MatchError(ContainSubstring("Unit file lg.service does not exist")))
 					Expect(path).To(BeAnExistingFile())
@@ -320,7 +218,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		)
 
 		It("says why systemctl failed to start the unit, which it leaves in place", func() {
-			runner.fail["enable"] = "Failed to enable unit"
+			runner.Fail["enable"] = "Failed to enable unit"
 
 			_, err := manager("linux").Install(context.Background(), unit)
 
@@ -333,7 +231,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		var print, bootout string
 
 		BeforeEach(func() {
-			runner.dir = agents
+			runner.Dir = agents
 			print, bootout = fmt.Sprintf("launchctl print gui/%d/%s", uid, label), fmt.Sprintf("launchctl bootout gui/%d/%s", uid, label)
 		})
 
@@ -346,20 +244,20 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.ReadFile(path)).To(Equal(want))
 			Expect(filepath.Dir(unit.Log)).To(BeADirectory())
-			Expect(runner.calls).To(Equal([]string{print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
+			Expect(runner.Calls()).To(Equal([]string{print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
 		})
 
 		It("boots out a loaded agent, and waits for it to unload, before it rewrites and bootstraps it", func() {
 			path, err := manager("darwin").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.calls, runner.files = nil, nil
-			runner.lingering = 1
+			runner.Reset()
+			runner.Lingering = 1
 			unit.Exe = "/opt/lg2/bin/lg"
 
 			Expect(manager("darwin").Install(context.Background(), unit)).To(Equal(path))
 
-			Expect(runner.calls).To(Equal([]string{print, bootout, print, print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
-			Expect(runner.files[4]).To(Equal([]string{label + ".plist"}))
+			Expect(runner.Calls()).To(Equal([]string{print, bootout, print, print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
+			Expect(runner.Files()[4]).To(Equal([]string{label + ".plist"}))
 			Expect(os.ReadFile(path)).To(ContainSubstring("/opt/lg2/bin/lg"))
 		})
 
@@ -368,7 +266,7 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(err).NotTo(HaveOccurred())
 			old, err := os.ReadFile(path)
 			Expect(err).NotTo(HaveOccurred())
-			runner.lingering = 1 << 30
+			runner.Lingering = 1 << 30
 			unit.Exe = "/opt/lg2/bin/lg"
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancel()
@@ -386,17 +284,17 @@ var _ = Describe("Manager", Label("install"), func() {
 			blocker := filepath.Join(home, "blocker")
 			Expect(os.WriteFile(blocker, nil, 0o644)).To(Succeed())
 			unit.Log = filepath.Join(blocker, "state", "daemon.log")
-			runner.calls = nil
+			runner.Reset()
 
 			_, err = manager("darwin").Install(context.Background(), unit)
 
 			Expect(err).To(MatchError(ContainSubstring("not a directory")))
-			Expect(runner.calls).To(BeEmpty())
-			Expect(runner.loaded).To(BeTrue())
+			Expect(runner.Calls()).To(BeEmpty())
+			Expect(runner.Loaded).To(BeTrue())
 		})
 
 		It("says the agent is not loaded when bootstrap fails", func() {
-			runner.fail["bootstrap"] = "Bootstrap failed: 5: Input/output error"
+			runner.Fail["bootstrap"] = "Bootstrap failed: 5: Input/output error"
 
 			_, err := manager("darwin").Install(context.Background(), unit)
 
@@ -406,26 +304,26 @@ var _ = Describe("Manager", Label("install"), func() {
 		It("boots out a loaded agent before it removes the plist", func() {
 			path, err := manager("darwin").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.calls, runner.files = nil, nil
+			runner.Reset()
 
 			Expect(manager("darwin").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Removed: true}))
 
 			Expect(path).NotTo(BeAnExistingFile())
-			i := slices.Index(runner.calls, bootout)
+			i := slices.Index(runner.Calls(), bootout)
 			Expect(i).To(BeNumerically(">=", 0))
-			Expect(runner.files[i]).To(ContainElement(label + ".plist"))
+			Expect(runner.Files()[i]).To(ContainElement(label + ".plist"))
 		})
 
 		It("removes the plist of an agent that is not loaded", func() {
 			path, err := manager("darwin").Install(context.Background(), unit)
 			Expect(err).NotTo(HaveOccurred())
-			runner.loaded = false
-			runner.calls = nil
+			runner.Loaded = false
+			runner.Reset()
 
 			Expect(manager("darwin").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Removed: true}))
 
 			Expect(path).NotTo(BeAnExistingFile())
-			Expect(runner.calls).To(Equal([]string{print}))
+			Expect(runner.Calls()).To(Equal([]string{print}))
 		})
 
 		It("boots out a loaded agent whose plist is missing", func() {
@@ -435,8 +333,8 @@ var _ = Describe("Manager", Label("install"), func() {
 
 			Expect(manager("darwin").Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: path, Stopped: true}))
 
-			Expect(runner.calls).To(ContainElement(bootout))
-			Expect(runner.loaded).To(BeFalse())
+			Expect(runner.Calls()).To(ContainElement(bootout))
+			Expect(runner.Loaded).To(BeFalse())
 		})
 	})
 
@@ -446,7 +344,7 @@ var _ = Describe("Manager", Label("install"), func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(path).To(Equal(filepath.Join(home, dir, file)))
-			Expect(runner.calls).To(HaveEach(HavePrefix(command + " ")))
+			Expect(runner.Calls()).To(HaveEach(HavePrefix(command + " ")))
 		},
 		Entry(nil, "linux", ".config/systemd/user", "lg.service", "systemctl"),
 		Entry(nil, "darwin", "Library/LaunchAgents", "com.github.rosenhouse.lg.plist", "launchctl"),
@@ -456,7 +354,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		_, err := manager("windows").Install(context.Background(), unit)
 
 		Expect(err).To(MatchError(ContainSubstring("linux and darwin")))
-		Expect(runner.calls).To(BeEmpty())
+		Expect(runner.Calls()).To(BeEmpty())
 		Expect(os.ReadDir(home)).To(BeEmpty())
 	})
 
@@ -464,7 +362,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		unit.Name = "lg-test-1"
 
 		Expect(manager("linux").Install(context.Background(), unit)).To(Equal(filepath.Join(systemd, "lg-test-1.service")))
-		Expect(runner.calls).To(ContainElement("systemctl --user enable --now lg-test-1.service"))
+		Expect(runner.Calls()).To(ContainElement("systemctl --user enable --now lg-test-1.service"))
 		Expect(manager("darwin").Install(context.Background(), unit)).To(Equal(filepath.Join(agents, "com.github.rosenhouse.lg-test-1.plist")))
 	})
 
@@ -476,7 +374,7 @@ var _ = Describe("Manager", Label("install"), func() {
 
 			Expect(installErr).To(MatchError(ContainSubstring("invalid service name")))
 			Expect(uninstallErr).To(MatchError(ContainSubstring("invalid service name")))
-			Expect(runner.calls).To(BeEmpty())
+			Expect(runner.Calls()).To(BeEmpty())
 		},
 		Entry(nil, ""),
 		Entry(nil, "../lg"),
@@ -488,11 +386,11 @@ var _ = Describe("Manager", Label("install"), func() {
 
 	DescribeTable("does nothing to uninstall when nothing is installed or running",
 		func(goos, file string, missing bool) {
-			runner.missing = missing
+			runner.Missing = missing
 
 			Expect(manager(goos).Uninstall(context.Background(), "lg")).To(Equal(service.Removal{Path: filepath.Join(home, file)}))
 
-			Expect(runner.calls).To(HaveLen(1))
+			Expect(runner.Calls()).To(HaveLen(1))
 		},
 		Entry(nil, "linux", ".config/systemd/user/lg.service", false),
 		Entry("when systemctl is missing", "linux", ".config/systemd/user/lg.service", true),
@@ -500,7 +398,7 @@ var _ = Describe("Manager", Label("install"), func() {
 	)
 
 	It("installs the same unit from concurrent calls", func() {
-		m := service.Manager{GOOS: "linux", Runner: okRunner{unitPath: systemd}, Env: map[string]string{"HOME": home}}
+		m := service.Manager{GOOS: "linux", Runner: &fakeservice.Runner{UnitPath: systemd}, Env: map[string]string{"HOME": home}}
 		errs := make(chan error, 8)
 		for range cap(errs) {
 			go func() {
@@ -533,6 +431,6 @@ var _ = Describe("Manager", Label("install"), func() {
 		_, err := m.Install(context.Background(), unit)
 
 		Expect(err).To(MatchError(`HOME must be an absolute path: "home"`))
-		Expect(runner.calls).To(BeEmpty())
+		Expect(runner.Calls()).To(BeEmpty())
 	})
 })

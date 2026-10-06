@@ -1,4 +1,4 @@
-// Package fakeservice writes fake systemctl and launchctl scripts for specs.
+// Package fakeservice fakes systemctl and launchctl for specs, as scripts or in process.
 package fakeservice
 
 import (
