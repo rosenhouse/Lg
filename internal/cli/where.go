@@ -36,7 +36,7 @@ func (w whereCmd) Run(deps *Deps) error {
 	out := json.NewEncoder(deps.Stdout)
 	out.SetEscapeHTML(false)
 	finder := newPlaceFinder(roots.Data)
-	defer finder.lines.close()
+	defer finder.close()
 	var failed error
 	err = eachInput(w.Hits, deps.Stdin, func(hit string) error {
 		p, err := finder.find(hit)
@@ -252,17 +252,22 @@ func (f *placeFinder) existing(path string) (string, bool) {
 func (f *placeFinder) describe(loc layout.Location) (place, error) {
 	runDir := filepath.Join(f.data, loc.RunDir)
 	if f.run.dir == runDir {
-		if p, err := f.describeWith(loc, f.run); err == nil {
+		if p, err := describeRun(f.data, loc, f.run); err == nil {
 			return p, nil
 		}
 	}
 	f.run = runFacts{dir: runDir}
 	f.run.rows, f.run.err = index.IndexRun(runDir)
-	return f.describeWith(loc, f.run)
+	return describeRun(f.data, loc, f.run)
 }
 
-func (f *placeFinder) describeWith(loc layout.Location, facts runFacts) (place, error) {
-	runDir := filepath.Join(f.data, loc.RunDir)
+func (f *placeFinder) close() {
+	f.lines.close()
+}
+
+// describeRun describes loc, in the run at facts.dir, from facts.
+func describeRun(data string, loc layout.Location, facts runFacts) (place, error) {
+	runDir := facts.dir
 	rows := facts.rows
 	run := rows.Run
 	p := place{
@@ -296,9 +301,9 @@ func (f *placeFinder) describeWith(loc layout.Location, facts runFacts) (place, 
 	var htmlFrom string
 	switch {
 	case loc.JobDir != "":
-		htmlFrom = filepath.Join(f.data, loc.JobDir, "job.json")
+		htmlFrom = filepath.Join(data, loc.JobDir, "job.json")
 	case loc.AttemptDir != "":
-		htmlFrom = filepath.Join(f.data, loc.AttemptDir, "attempt.json")
+		htmlFrom = filepath.Join(data, loc.AttemptDir, "attempt.json")
 	case run.LatestAttempt > 0:
 		htmlFrom = filepath.Join(runDir, layout.AttemptDir("", run.LatestAttempt), "attempt.json")
 	default:
