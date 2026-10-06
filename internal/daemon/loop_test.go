@@ -41,8 +41,8 @@ func newLoopEnv(outcomes ...daemon.Outcome) *loopEnv {
 	e := &loopEnv{clk: clock.NewFake(t0), outcomes: outcomes, cycles: make(chan started, 100), during: func(context.Context) {}}
 	e.loop = daemon.Loop{
 		Clock: e.clk,
-		Cycle: func(ctx context.Context, served int64) daemon.Outcome {
-			e.cycles <- started{At: e.clk.Now(), Served: served}
+		Cycle: func(ctx context.Context, serving func() int64) daemon.Outcome {
+			e.cycles <- started{At: e.clk.Now(), Served: serving()}
 			e.during(ctx)
 			out := e.outcomes[0]
 			if len(e.outcomes) > 1 {
@@ -161,6 +161,20 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(5*time.Minute), 1)
 	})
 
+	It("serves a request made in a cycle before it asks which it serves, as while it waits for write.lock", func() {
+		e := newLoopEnv(outcomeAt(t0))
+		cycle := e.loop.Cycle
+		e.loop.Cycle = func(ctx context.Context, serving func() int64) daemon.Outcome {
+			e.requested.Store(1)
+			return cycle(ctx, serving)
+		}
+		e.run()
+
+		e.expectCycle(t0, 1)
+		e.set(t0.Add(time.Second))
+		e.expectNoCycle()
+	})
+
 	It("starts a cycle at once for a request during the wait, which serves it", func() {
 		e := newLoopEnv(outcomeAt(t0))
 		e.run()
@@ -187,6 +201,24 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.set(t0.Add(5 * time.Minute))
 
 		e.expectCycle(t0.Add(5*time.Minute), 1)
+	})
+
+	It("retries a request a second after a cycle that did not run, as when its wait for write.lock timed out", func() {
+		skipped := outcomeAt(t0.Add(time.Second))
+		skipped.Skipped = true
+		e := newLoopEnv(outcomeAt(t0), skipped, outcomeAt(t0.Add(2*time.Second)))
+		e.run()
+		e.expectCycle(t0, 0)
+		e.waiting()
+		e.requested.Store(1)
+		e.set(t0.Add(time.Second))
+		e.expectCycle(t0.Add(time.Second), 1)
+
+		e.waiting()
+		e.expectNoCycle()
+		e.set(t0.Add(2 * time.Second))
+
+		e.expectCycle(t0.Add(2*time.Second), 1)
 	})
 
 	It("coalesces requests during a cycle into one follow-up, which serves them all", func() {

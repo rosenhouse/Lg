@@ -33,6 +33,7 @@ type Status struct {
 	DaemonVersion       *string         `json:"daemon_version"`
 	ServedRequest       int64           `json:"served_request"`
 	ConfigError         *string         `json:"config_error"`
+	LastSyncErrors      []string        `json:"last_sync_errors"`
 	Repos               map[string]Repo `json:"repos"`
 }
 
@@ -69,6 +70,27 @@ func (b Blocked) String() string {
 		s += ", retry_at " + b.RetryAt.Format(time.RFC3339)
 	}
 	return s + ": " + OneLine(b.Detail)
+}
+
+// Failure is the error that blocked the cycle.
+func (b Blocked) Failure() failure.Blocked {
+	retryAt := time.Time{}
+	if b.RetryAt != nil {
+		retryAt = *b.RetryAt
+	}
+	return failure.Blocked{Kind: b.Kind, Detail: b.Detail, RetryAt: retryAt}
+}
+
+// Err is the error a one-shot sync gave for the cycle st records.
+func (st Status) Err() error {
+	if st.Blocked != nil {
+		return st.Blocked.Failure()
+	}
+	errs := make([]error, len(st.LastSyncErrors))
+	for i, line := range st.LastSyncErrors {
+		errs[i] = errors.New(line)
+	}
+	return errors.Join(errs...)
 }
 
 // OneLine gives s on one line, without terminal controls.
@@ -166,6 +188,7 @@ func Next(prev *Status, c Cycle) Status {
 		LastSyncStartedAt:   c.Started.UTC().Truncate(time.Second),
 		LastSyncFinishedAt:  finished,
 		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
+		LastSyncErrors:      lines(c.Err),
 	}
 	if !errors.Is(c.Err, context.Canceled) {
 		st.NextSyncAt = timeOrNil(c.NextSyncAt)
@@ -256,6 +279,18 @@ func timeOrNil(t time.Time) *time.Time {
 	}
 	t = t.UTC()
 	return &t
+}
+
+// lines gives each line of err passed through OneLine.
+func lines(err error) []string {
+	found := []string{}
+	if err == nil {
+		return found
+	}
+	for _, line := range strings.Split(err.Error(), "\n") {
+		found = append(found, OneLine(line))
+	}
+	return found
 }
 
 // oneLineErrors gives pending with each error passed through OneLine.

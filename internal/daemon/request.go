@@ -20,10 +20,11 @@ import (
 const requestWait = 10 * time.Second
 
 // Request adds a sync request to state/sync-request under state/request.lock,
-// and gives its number. The number follows status.json's served_request too,
-// so a removed or garbled state/sync-request never makes a request look served.
-func Request(fsys store.FS, state string, clk clock.Clock) (int64, error) {
-	held, err := lock.Wait(filepath.Join(state, "request.lock"), requestWait, clk, func(string) {})
+// waiting up to wait, and at most 10s, for that lock, and gives its number.
+// The number follows status.json's served_request too, so a removed or
+// garbled state/sync-request never makes a request look served.
+func Request(fsys store.FS, state string, wait time.Duration, clk clock.Clock) (int64, error) {
+	held, err := lock.Wait(filepath.Join(state, "request.lock"), min(wait, requestWait), clk, func(string) {})
 	if err != nil {
 		return 0, err
 	}

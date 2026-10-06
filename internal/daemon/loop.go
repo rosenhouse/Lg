@@ -24,6 +24,8 @@ type Outcome struct {
 	Interval time.Duration
 	RetryAt  time.Time
 	Err      error
+	// Skipped is whether the cycle did not run, so it served no request.
+	Skipped bool
 }
 
 // Loop runs Cycle at once, and then when each Outcome says the next is due, or when
@@ -33,8 +35,10 @@ type Loop struct {
 	Clock clock.Clock
 	// RetryAt defers the first cycle, as a restarted daemon's blocked.retry_at does.
 	RetryAt time.Time
-	// Cycle runs one cycle that serves sync requests up to served.
-	Cycle func(ctx context.Context, served int64) Outcome
+	// Cycle runs one cycle. Just before a cycle starts, it calls serving,
+	// which gives the latest sync request, and then serves the requests up
+	// to that one.
+	Cycle func(ctx context.Context, serving func() int64) Outcome
 	// Requested gives the number of the latest sync request.
 	Requested func() (int64, error)
 	// Lost gives an error once this daemon no longer holds the instance lock.
@@ -52,13 +56,16 @@ func (l *Loop) Run(ctx context.Context) error {
 	}
 	var served int64
 	for ctx.Err() == nil {
-		if n, err := l.Requested(); err != nil {
-			l.logf("%s", err)
-		} else {
-			served = n
-		}
 		l.truncateLog()
-		out := l.Cycle(ctx, served)
+		serving := served
+		out := l.Cycle(ctx, func() int64 {
+			if n, err := l.Requested(); err != nil {
+				l.logf("%s", err)
+			} else {
+				serving = n
+			}
+			return serving
+		})
 		if ctx.Err() != nil {
 			l.logf("stopped")
 			return nil
@@ -72,7 +79,13 @@ func (l *Loop) Run(ctx context.Context) error {
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
-		if err := l.wait(ctx, served, next, out.RetryAt); err != nil {
+		retryAt := out.RetryAt
+		if !out.Skipped {
+			served = serving
+		} else if soonest := l.Clock.Now().Add(pollInterval); soonest.After(retryAt) {
+			retryAt = soonest
+		}
+		if err := l.wait(ctx, served, next, retryAt); err != nil {
 			return err
 		}
 	}

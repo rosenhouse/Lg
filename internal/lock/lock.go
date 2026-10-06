@@ -86,6 +86,15 @@ func (l *Lock) Release() error {
 	return l.file.Close()
 }
 
+// Holder names the holder of the lock on path, or gives "" when it is free.
+func Holder(path string) (string, error) {
+	held, err := Held(path)
+	if !held || err != nil {
+		return "", err
+	}
+	return holder(path), nil
+}
+
 // Held reports whether a holder has the lock on path. It takes a shared
 // lock for a moment, so a Wait that overlaps it needs a timeout longer than
 // one poll.

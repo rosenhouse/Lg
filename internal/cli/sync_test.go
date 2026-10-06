@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,11 +16,12 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
 var _ = Describe("lg sync", Label("store"), func() {
-	It("exits 4 after waiting 5m for a busy state/write.lock", func() {
+	It("exits 4 after waiting 5m for a busy state/write.lock", Label("sync"), func() {
 		home := GinkgoT().TempDir()
 		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
 		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
@@ -111,3 +113,109 @@ func (c *firedClock) requested() []time.Duration {
 	defer c.mu.Unlock()
 	return append([]time.Duration(nil), c.durations...)
 }
+
+var _ = DescribeTable("lg sync --timeout", Label("sync"),
+	func(args []string, want time.Duration, busy ...string) {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(home, "state"), 0o755)).To(Succeed())
+		for _, name := range busy {
+			held, err := lock.Wait(filepath.Join(home, "state", name), time.Second, clock.Real{}, func(string) {})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(held.Release)
+		}
+
+		var stderr bytes.Buffer
+		clk := &firedClock{}
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main(append([]string{"sync"}, args...), cli.Deps{
+				Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+				Stdout:  &bytes.Buffer{},
+				Stderr:  &stderr,
+				Clock:   clk,
+				StoreFS: store.OSFS{},
+			})
+		}()
+
+		Eventually(code, 5*time.Second).Should(Receive(Equal(4)))
+		Expect(clk.requested()).To(ContainElement(BeNumerically("~", want, time.Second)))
+		Expect(stderr.String()).To(HaveSuffix(fmt.Sprintf("gave up after %s\n", want)))
+	},
+	Entry("defaults to 15m for a --wait served by the daemon", []string{"--wait"}, 15*time.Minute, "daemon.lock"),
+	Entry("defaults to 5m for the write-lock wait of a --wait with no daemon", []string{"--wait"}, 5*time.Minute, "write.lock"),
+	Entry("bounds the wait for state/request.lock", []string{"--wait", "--timeout", "1s"}, time.Second, "daemon.lock", "request.lock"),
+)
+
+var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
+	It("waits for the cycle even when it cannot write that it sent the request", func() {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(home, "state"), 0o755)).To(Succeed())
+		held, err := lock.Wait(filepath.Join(home, "state", "daemon.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+
+		code := cli.Main([]string{"sync", "--wait"}, cli.Deps{
+			Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+			Stdout:  &bytes.Buffer{},
+			Stderr:  fullWriter{},
+			Clock:   &firedClock{},
+			StoreFS: store.OSFS{},
+		})
+
+		Expect(code).To(Equal(4))
+	})
+
+	It("counts --timeout from before its wait for state/request.lock", func() {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		state := filepath.Join(home, "state")
+		Expect(os.Mkdir(state, 0o755)).To(Succeed())
+		held, err := lock.Wait(filepath.Join(state, "daemon.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+		request, err := lock.Wait(filepath.Join(state, "request.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		t0 := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+		clk := clock.NewFake(t0)
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main([]string{"sync", "--wait", "--timeout", "1m"}, cli.Deps{
+				Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+				Stdout:  &bytes.Buffer{},
+				Stderr:  &bytes.Buffer{},
+				Clock:   clk,
+				StoreFS: store.OSFS{},
+			})
+		}()
+		Eventually(clk.Waiting, time.Second).Should(Equal(2))
+		Expect(request.Release()).To(Succeed())
+		clk.Set(t0.Add(5 * time.Second))
+		// The request's stale lock deadline, and WaitForCycle's deadline and poll.
+		Eventually(clk.Waiting, time.Second).Should(Equal(3))
+
+		clk.Set(t0.Add(time.Minute))
+
+		Eventually(code, time.Second).Should(Receive(Equal(4)))
+	})
+})
+
+// fullWriter fails every write, as a full disk does.
+type fullWriter struct{}
+
+func (fullWriter) Write([]byte) (int, error) { return 0, syscall.ENOSPC }
+
+var _ = DescribeTable("a negative --timeout", Label("sync"),
+	func(args ...string) {
+		s := harness.NewCLI()
+
+		Expect(s.Main(args...)).To(Equal(2))
+		Expect(s.Stderr.String()).To(HavePrefix(fmt.Sprintf("lg: %s: --timeout must not be negative: -5s\n", args[0])))
+	},
+	Entry("is a usage error for sync", "sync", "--timeout=-5s"),
+	Entry("is a usage error for gc", "gc", "--timeout=-5s"),
+)
