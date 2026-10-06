@@ -77,6 +77,9 @@ func holder(path string) string {
 	return "pid " + pid
 }
 
+// Stat describes the file l locks, which may no longer have a name.
+func (l *Lock) Stat() (fs.FileInfo, error) { return l.file.Stat() }
+
 // Release clears the pid, so no waiter names a holder that has let go.
 func (l *Lock) Release() error {
 	_ = l.file.Truncate(0)

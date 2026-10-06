@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,9 +22,9 @@ const instanceWait = time.Second
 // InstanceLock is state/daemon.lock, which one daemon holds for its life,
 // and state/daemon.pid, which names it.
 type InstanceLock struct {
-	held *lock.Lock
-	fsys store.FS
-	pid  string
+	held  *lock.Lock
+	fsys  store.FS
+	state string
 }
 
 // LockInstance takes state/daemon.lock and writes state/daemon.pid. It
@@ -41,7 +42,7 @@ func LockInstance(fsys store.FS, state string, clk clock.Clock, warn func(error)
 	if err := store.ReplaceFileFS(fsys, pid, fmt.Appendf(nil, "%d\n", os.Getpid())); err != nil {
 		warn(errors.Join(err, fsys.RemoveAll(pid)))
 	}
-	return &InstanceLock{held: held, fsys: fsys, pid: pid}, nil
+	return &InstanceLock{held: held, fsys: fsys, state: state}, nil
 }
 
 // Running reports whether a daemon holds state/daemon.lock.
@@ -61,6 +62,21 @@ func runningPID(state string) string {
 	return "pid unknown"
 }
 
+// Lost gives an error once state/daemon.lock is no longer the file l holds,
+// as after state/ is removed, since another daemon could then lock it.
+func (l *InstanceLock) Lost() error {
+	held, err := l.held.Stat()
+	if err != nil {
+		return err
+	}
+	path := instanceFile(l.state)
+	named, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) || err == nil && !os.SameFile(held, named) {
+		return fmt.Errorf("%s was removed", path)
+	}
+	return err
+}
+
 func (l *InstanceLock) Release() error {
-	return errors.Join(l.fsys.RemoveAll(l.pid), l.held.Release())
+	return errors.Join(l.fsys.RemoveAll(filepath.Join(l.state, "daemon.pid")), l.held.Release())
 }

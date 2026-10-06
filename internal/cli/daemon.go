@@ -54,6 +54,7 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		Clock:     deps.Clock,
 		Cycle:     d.run,
 		Requested: func() (int64, error) { return daemon.Requested(state) },
+		Lost:      instance.Lost,
 		Reconcile: func(ctx context.Context) error {
 			ix, err := index.Open(ctx, filepath.Join(state, "lg.db"), t.roots.Data)
 			if err != nil {
@@ -70,8 +71,7 @@ func (daemonRunCmd) Run(deps *Deps) error {
 			_, _ = fmt.Fprintf(deps.Stderr, "lg: blocked until %s; first sync then\n", until.UTC().Format(time.RFC3339))
 		}
 	}
-	loop.Run(ctx)
-	return nil
+	return loop.Run(ctx)
 }
 
 // initOnStart initializes the store and sweeps what dead writers left in

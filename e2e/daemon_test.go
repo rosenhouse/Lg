@@ -85,6 +85,16 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(second).NotTo(gexec.Exit())
 	}, daemonTimeout)
 
+	It("exits 1 once state/ is removed, so no second daemon runs on the store it recreates", func(ctx SpecContext) {
+		running := env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+
+		Expect(os.RemoveAll(env.State())).To(Succeed())
+
+		Eventually(running, cycleWait).WithContext(ctx).Should(gexec.Exit(1))
+		Expect(running.Err).To(gbytes.Say(`lg: \S+/state/daemon.lock was removed\n`))
+	}, daemonTimeout)
+
 	It("sweeps tmp/ on start while holding the write lock", func(ctx SpecContext) {
 		Expect(store.Init(env.Store())).To(Succeed())
 		dead := filepath.Join(env.Tmp(), "dead-writer")

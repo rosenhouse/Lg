@@ -94,6 +94,25 @@ var _ = Describe("LockInstance", Label("daemon"), func() {
 		Expect(held.Release()).To(Succeed())
 	})
 
+	DescribeTable("reports Lost once state/daemon.lock is no longer the file it holds",
+		func(change func()) {
+			held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(held.Release)
+			Expect(held.Lost()).To(Succeed())
+
+			change()
+
+			Expect(held.Lost()).To(MatchError(filepath.Join(state, "daemon.lock") + " was removed"))
+		},
+		Entry("after state/ is removed", func() { Expect(os.RemoveAll(state)).To(Succeed()) }),
+		Entry("after it is replaced", func() {
+			path := filepath.Join(state, "daemon.lock")
+			Expect(os.Remove(path)).To(Succeed())
+			Expect(os.WriteFile(path, nil, 0o644)).To(Succeed())
+		}),
+	)
+
 	It("makes Running report true while held", func() {
 		Expect(daemon.Running(state)).To(BeFalse())
 		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)

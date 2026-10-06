@@ -34,6 +34,7 @@ type loopEnv struct {
 	during func(ctx context.Context)
 	log    syncBuffer
 	loop   daemon.Loop
+	err    error
 }
 
 func newLoopEnv(outcomes ...daemon.Outcome) *loopEnv {
@@ -50,20 +51,22 @@ func newLoopEnv(outcomes ...daemon.Outcome) *loopEnv {
 			return out
 		},
 		Requested: func() (int64, error) { return e.requested.Load(), nil },
+		Lost:      func() error { return nil },
 		Reconcile: func(context.Context) error { return nil },
 		Log:       &e.log,
 	}
 	return e
 }
 
-// run runs the loop until the spec ends, and closes the returned channel when it returns.
+// run runs the loop until the spec ends, and closes the returned channel
+// when it returns, after setting e.err.
 func (e *loopEnv) run() (cancel func(), returned <-chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer GinkgoRecover()
 		defer close(done)
-		e.loop.Run(ctx)
+		e.err = e.loop.Run(ctx)
 	}()
 	DeferCleanup(func() {
 		cancel()
@@ -252,6 +255,27 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0, 0)
 
 		Eventually(returned, time.Second).Should(BeClosed())
+		Expect(e.cycles).NotTo(Receive())
+	})
+
+	It("returns Lost's error while it waits, starting no further cycle", func() {
+		e := newLoopEnv(outcomeAt(t0))
+		var lost atomic.Bool
+		e.loop.Lost = func() error {
+			if lost.Load() {
+				return errors.New("state/daemon.lock was removed")
+			}
+			return nil
+		}
+		_, returned := e.run()
+		e.expectCycle(t0, 0)
+		e.waiting()
+
+		lost.Store(true)
+		e.set(t0.Add(time.Second))
+
+		Eventually(returned, time.Second).Should(BeClosed())
+		Expect(e.err).To(MatchError("state/daemon.lock was removed"))
 		Expect(e.cycles).NotTo(Receive())
 	})
 
