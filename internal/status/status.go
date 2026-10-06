@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -339,12 +338,20 @@ func lines(err error) []string {
 // through OneLine. A unit keeps its since from last, unless a clock step put
 // that after finished. Any other unit is pending since finished.
 func withSince(pending, last []Pending, finished time.Time) []Pending {
+	lastSince := map[Unit]time.Time{}
+	for _, p := range last {
+		if !p.Since.IsZero() {
+			lastSince[p.Unit] = p.Since
+		}
+	}
 	found := []Pending{}
+	seen := map[Unit]bool{}
 	for _, p := range pending {
-		if pendingIn(found, p.Unit) {
+		if seen[p.Unit] {
 			continue
 		}
-		since, ok := sinceIn(last, p.Unit)
+		seen[p.Unit] = true
+		since, ok := lastSince[p.Unit]
 		if !ok || since.After(finished) {
 			since = finished
 		}
@@ -353,32 +360,23 @@ func withSince(pending, last []Pending, finished time.Time) []Pending {
 	return found
 }
 
-// sinceIn gives u's since in ps, if ps has u with a since.
-func sinceIn(ps []Pending, u Unit) (time.Time, bool) {
-	i := slices.IndexFunc(ps, func(p Pending) bool { return p.Unit == u })
-	if i < 0 || ps[i].Since.IsZero() {
-		return time.Time{}, false
-	}
-	return ps[i].Since, true
-}
-
-// carried gives the units of last that a cycle did not retry, and neither
-// left again, in now, nor published. A cycle that stopped early retried
-// none. One that completed skipped the attempts and artifacts of each run
-// it left pending as a whole.
+// carried gives the units of last that the cycle may have skipped and
+// neither left again, in now, nor published: any unit after a cycle that
+// stopped early, and the attempts and artifacts of each run that a completed
+// cycle left pending as a whole.
 func carried(last, now []Pending, published map[Unit]bool, completed bool) []Pending {
+	inNow := map[Unit]bool{}
+	for _, p := range now {
+		inNow[p.Unit] = true
+	}
 	var kept []Pending
 	for _, p := range last {
-		skipped := !completed || pendingIn(now, Unit{Run: p.Run})
-		if skipped && !published[p.Unit] && !pendingIn(now, p.Unit) {
+		maybeSkipped := !completed || inNow[Unit{Run: p.Run}]
+		if maybeSkipped && !published[p.Unit] && !inNow[p.Unit] {
 			kept = append(kept, p)
 		}
 	}
 	return kept
-}
-
-func pendingIn(ps []Pending, u Unit) bool {
-	return slices.ContainsFunc(ps, func(p Pending) bool { return p.Unit == u })
 }
 
 // Read gives nil when path does not exist.
