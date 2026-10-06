@@ -37,7 +37,7 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	env, err := service.Env(deps.Env, gh)
+	env, err := service.Env(deps.GOOS, deps.Env, gh)
 	if err != nil {
 		return err
 	}

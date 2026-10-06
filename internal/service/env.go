@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -49,12 +50,29 @@ var baked = []string{
 	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy",
 }
 
-// Env gives the environment a unit bakes in: LG_GH as gh, and those of
-// baked that env sets. It never holds a token. A service runs in another
-// dir, so Env makes a relative path absolute, or drops a relative XDG dir,
-// which the XDG spec says to ignore.
-func Env(env map[string]string, gh string) (map[string]string, error) {
-	out := map[string]string{"LG_GH": gh}
+// systemDirs are the dirs a unit's PATH holds after gh's.
+var systemDirs = map[string][]string{
+	"linux":  {"/usr/local/bin", "/usr/bin", "/bin"},
+	"darwin": {"/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"},
+}
+
+// Env gives the environment a unit on goos bakes in: PATH with gh's dir
+// first, LG_GH as gh only when env sets it, and those of baked that env
+// sets. A set LG_GH permits a loopback api_url, so baking it unasked would
+// let a real token reach a local port. Env never holds a token. A service
+// runs in another dir, so Env makes a relative path absolute, or drops a
+// relative XDG dir, which the XDG spec says to ignore.
+func Env(goos string, env map[string]string, gh string) (map[string]string, error) {
+	path := []string{filepath.Dir(gh)}
+	for _, dir := range systemDirs[goos] {
+		if !slices.Contains(path, dir) {
+			path = append(path, dir)
+		}
+	}
+	out := map[string]string{"PATH": strings.Join(path, string(os.PathListSeparator))}
+	if env["LG_GH"] != "" {
+		out["LG_GH"] = gh
+	}
 	for _, k := range baked {
 		v := env[k]
 		switch {
