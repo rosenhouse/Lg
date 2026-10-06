@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -51,6 +52,11 @@ var _ = Describe("lg sync", Label("failures"), func() {
 var _ = Describe("RealDeps", Label("failures"), func() {
 	It("builds GitHub clients with github.NewDefault", func() {
 		Expect(reflect.ValueOf(cli.RealDeps().NewGitHub).Pointer()).To(Equal(reflect.ValueOf(github.NewDefault).Pointer()))
+	})
+
+	It("installs a service for the OS lg runs on, and for lg's own executable", Label("install"), func() {
+		Expect(cli.RealDeps().GOOS).To(Equal(runtime.GOOS))
+		Expect(reflect.ValueOf(cli.RealDeps().Executable).Pointer()).To(Equal(reflect.ValueOf(os.Executable).Pointer()))
 	})
 
 	It("opens the store on the OS filesystem", Label("blocked"), func() {

@@ -1,6 +1,9 @@
 package harness_test
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -34,5 +37,20 @@ var _ = Describe("ScrubLive", Label("cli"), func() {
 			"SSL_CERT_FILE": "/ca", "GH_TOKEN": "t", "GITHUB_TOKEN": "T", "GH_CONFIG_DIR": "/gh", "HOME": "/h",
 			"LANG": "C", "PATH": "/bin/lg:/usr/bin",
 		}))
+	})
+})
+
+var _ = Describe("Env PATH helpers", Label("install"), func() {
+	It("puts a dir first with PrependPath, and drops every dir that holds a name with PathWithout", func() {
+		env := harness.New("/no/lg")
+		with, without := GinkgoT().TempDir(), GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(with, "gh"), nil, 0o755)).To(Succeed())
+		env.Setenv("PATH", with+":"+without+":"+with)
+
+		env.PrependPath("/first")
+		Expect(env.Getenv("PATH")).To(Equal("/first:" + with + ":" + without + ":" + with))
+
+		env.PathWithout("gh")
+		Expect(env.Getenv("PATH")).To(Equal("/first:" + without))
 	})
 })

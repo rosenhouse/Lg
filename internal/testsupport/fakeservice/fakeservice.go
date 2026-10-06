@@ -47,7 +47,7 @@ func write(binDir, name, unitDir string, model func(*Fake) string) *Fake {
 printf '%%s\n' "$*" >> '%s'
 printf '%%s\n' "$(ls -A '%s' 2>/dev/null | tr '\n' ' ')" >> '%s'
 for a in "$@"; do
-	[ -e "%s/fail-$a" ] && { cat "%[4]s/fail-$a" >&2; exit 1; }
+	if [ -e "%s/fail-$a" ]; then cat "%[4]s/fail-$a" >&2; exit 1; fi
 done
 `, f.file("calls"), unitDir, f.file("units"), f.dir) + model(f)
 	gomega.Expect(os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755)).To(gomega.Succeed())
@@ -77,7 +77,8 @@ func (f *Fake) Units() [][]string {
 	ginkgo.GinkgoHelper()
 	var units [][]string
 	for _, line := range f.lines("units") {
-		units = append(units, strings.Fields(line))
+		var names []string
+		units = append(units, append(names, strings.Fields(line)...))
 	}
 	return units
 }

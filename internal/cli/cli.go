@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -41,7 +42,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: os.Executable}
 }
 
 type commands struct {
