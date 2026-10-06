@@ -14,6 +14,7 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/retention"
+	"github.com/rosenhouse/lg/internal/status"
 )
 
 // Discover lists the runs created in [from, to], newest first, halving the
@@ -263,7 +264,7 @@ func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, l
 		case errors.Is(err, github.ErrNotFound):
 			delete(w.runs, id)
 		case runScoped(err):
-			failed = append(failed, UnitError{Run: id, Err: err})
+			failed = append(failed, UnitError{Unit: status.Unit{Run: id}, Err: err})
 		case err != nil:
 			return nil, nil, err
 		default:

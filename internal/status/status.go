@@ -9,15 +9,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/rosenhouse/lg/internal/failure"
-	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -244,30 +241,6 @@ func carried(last, now []Pending, published map[Unit]bool) []Pending {
 	return kept
 }
 
-// addPublished adds the attempts and artifacts of run r on disk to published.
-func addPublished(published map[Unit]bool, r retention.Run) error {
-	attempts, err := os.ReadDir(r.Dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range attempts {
-		if n, ok := layout.AttemptNumber(e.Name()); ok {
-			published[Unit{Run: r.ID, Attempt: n}] = true
-		}
-	}
-	artifacts, err := os.ReadDir(filepath.Join(r.Dir, "artifacts"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	for _, e := range artifacts {
-		idPart, _, _ := strings.Cut(e.Name(), "_")
-		if id, err := strconv.ParseInt(idPart, 10, 64); err == nil {
-			published[Unit{Run: r.ID, Artifact: id}] = true
-		}
-	}
-	return err
-}
-
 // Read gives nil when path does not exist.
 func Read(path string) (*Status, error) {
 	raw, err := os.ReadFile(path)
@@ -314,8 +287,11 @@ func Measure(data, state, repo string) (Disk, error) {
 		if !strings.EqualFold(r.Repo, repo) {
 			continue
 		}
-		if err := addPublished(d.Published, r); err != nil {
-			return Disk{}, err
+		for _, n := range r.Attempts {
+			d.Published[Unit{Run: r.ID, Attempt: n}] = true
+		}
+		for _, id := range r.Artifacts {
+			d.Published[Unit{Run: r.ID, Artifact: id}] = true
 		}
 		d.Runs++
 		d.Attempts += len(r.Attempts)

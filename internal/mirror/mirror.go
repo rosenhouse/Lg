@@ -20,6 +20,7 @@ import (
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/retention"
+	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/tombstone"
 	"github.com/rosenhouse/lg/internal/version"
@@ -52,21 +53,11 @@ type Report struct {
 // UnitError is an error that runScoped accepts, in the unit it left
 // unpublished: an attempt, an artifact, or else the run.
 type UnitError struct {
-	Run      int64
-	Attempt  int
-	Artifact int64
-	Err      error
+	status.Unit
+	Err error
 }
 
-func (u UnitError) Error() string {
-	switch {
-	case u.Attempt != 0:
-		return fmt.Sprintf("run %d attempt %d: %v", u.Run, u.Attempt, u.Err)
-	case u.Artifact != 0:
-		return fmt.Sprintf("run %d artifact %d: %v", u.Run, u.Artifact, u.Err)
-	}
-	return fmt.Sprintf("run %d: %v", u.Run, u.Err)
-}
+func (u UnitError) Error() string { return u.Unit.String() + ": " + u.Err.Error() }
 
 func (u UnitError) Unwrap() error { return u.Err }
 
@@ -259,7 +250,7 @@ func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listed
 			run.gone = true
 			return failed, nil
 		case runScoped(err):
-			failed = append(failed, UnitError{Run: run.ID, Attempt: n, Err: err})
+			failed = append(failed, UnitError{Unit: status.Unit{Run: run.ID, Attempt: n}, Err: err})
 		case err != nil:
 			return failed, err
 		}

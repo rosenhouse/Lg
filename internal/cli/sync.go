@@ -81,7 +81,7 @@ func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *u
 func pending(units []mirror.UnitError) []status.Pending {
 	found := make([]status.Pending, len(units))
 	for i, u := range units {
-		found[i] = status.Pending{Unit: status.Unit{Run: u.Run, Attempt: u.Attempt, Artifact: u.Artifact}, Error: u.Err.Error()}
+		found[i] = status.Pending{Unit: u.Unit, Error: u.Err.Error()}
 	}
 	return found
 }
