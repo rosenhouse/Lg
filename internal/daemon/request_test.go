@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/daemon"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 )
@@ -25,8 +27,8 @@ var _ = Describe("Request", Label("daemon"), func() {
 	It("counts up from 1 in state/sync-request", func() {
 		Expect(daemon.Requested(state)).To(Equal(int64(0)))
 
-		Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(1)))
-		Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(2)))
+		Expect(daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})).To(Equal(int64(2)))
 
 		Expect(os.ReadFile(filepath.Join(state, "sync-request"))).To(Equal([]byte("2\n")))
 		Expect(daemon.Requested(state)).To(Equal(int64(2)))
@@ -39,7 +41,7 @@ var _ = Describe("Request", Label("daemon"), func() {
 		for range n {
 			wg.Go(func() {
 				defer GinkgoRecover()
-				number, err := daemon.Request(store.OSFS{}, state, clock.Real{})
+				number, err := daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})
 				Expect(err).NotTo(HaveOccurred())
 				got <- number
 			})
@@ -59,11 +61,32 @@ var _ = Describe("Request", Label("daemon"), func() {
 		Expect(daemon.Requested(state)).To(Equal(int64(n)))
 	})
 
+	DescribeTable("waits for a busy state/request.lock up to wait, and 10s at most",
+		func(wait, want time.Duration) {
+			held, err := lock.Wait(filepath.Join(state, "request.lock"), time.Second, clock.Real{}, func(string) {})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(held.Release)
+			clk := clock.NewFake(t0)
+			done := make(chan error, 1)
+			go func() {
+				_, err := daemon.Request(store.OSFS{}, state, wait, clk)
+				done <- err
+			}()
+			Eventually(clk.Waiting, time.Second).Should(Equal(2))
+
+			clk.Set(t0.Add(want))
+
+			Eventually(done, time.Second).Should(Receive(MatchError(HaveSuffix("gave up after %s", want))))
+		},
+		Entry("under 10s", time.Second, time.Second),
+		Entry("over 10s", time.Hour, 10*time.Second),
+	)
+
 	It("writes state/sync-request through its FS", func() {
 		fsys := faultfs.New()
 		fsys.FailOnUnder("create", state, syscall.ENOSPC)
 
-		_, err := daemon.Request(fsys, state, clock.Real{})
+		_, err := daemon.Request(fsys, state, time.Minute, clock.Real{})
 		Expect(err).To(MatchError(syscall.ENOSPC))
 	})
 
@@ -87,7 +110,7 @@ var _ = Describe("Request", Label("daemon"), func() {
 				Expect(os.WriteFile(filepath.Join(state, "sync-request"), []byte(content), 0o644)).To(Succeed())
 			}
 
-			Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(8)))
+			Expect(daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})).To(Equal(int64(8)))
 			Expect(daemon.Requested(state)).To(Equal(int64(8)))
 		},
 		Entry("nothing, after a reset", ""),
@@ -99,13 +122,13 @@ var _ = Describe("Request", Label("daemon"), func() {
 	It("numbers a request 1 when status.json's served_request is the largest number", func() {
 		Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 9223372036854775807}`), 0o644)).To(Succeed())
 
-		Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})).To(Equal(int64(1)))
 	})
 
 	It("numbers a request after a higher state/sync-request than status.json's served_request", func() {
 		Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 7}`), 0o644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(state, "sync-request"), []byte("9\n"), 0o644)).To(Succeed())
 
-		Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(10)))
+		Expect(daemon.Request(store.OSFS{}, state, time.Minute, clock.Real{})).To(Equal(int64(10)))
 	})
 })

@@ -161,7 +161,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		DeferCleanup(syscall.Kill, int(env.Status()["daemon_pid"].(float64)), syscall.SIGKILL)
 		Eventually(piped.Out, cycleWait).WithContext(ctx).Should(gbytes.Say("\n"))
 
-		Expect(daemon.Request(store.OSFS{}, env.State(), clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, env.State(), time.Minute, clock.Real{})).To(Equal(int64(1)))
 
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Consistently(held(env, "daemon.lock"), 2*time.Second).WithContext(ctx).Should(BeTrue())
@@ -174,7 +174,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(os.Remove(writeLock)).To(Succeed())
 		Expect(os.Mkdir(writeLock, 0o755)).To(Succeed())
 
-		Expect(daemon.Request(store.OSFS{}, env.State(), clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, env.State(), time.Minute, clock.Real{})).To(Equal(int64(1)))
 
 		failed := regexp.MustCompile(`lg: sync at (\S+): open \S+/write.lock: is a directory; next sync at (\S+)\n`)
 		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say(failed.String()))
@@ -193,7 +193,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(running).NotTo(gexec.Exit())
 
 		Expect(os.Remove(writeLock)).To(Succeed())
-		Expect(daemon.Request(store.OSFS{}, env.State(), clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, env.State(), time.Minute, clock.Real{})).To(Equal(int64(1)))
 
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(env.Status()).To(HaveKeyWithValue("served_request", 1.0))
@@ -283,7 +283,7 @@ var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemo
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m", "colour: blue")
 		// lg sync refuses an invalid config.yaml, so the spec requests the cycle itself.
-		Expect(daemon.Request(store.OSFS{}, env.State(), clock.Real{})).To(Equal(int64(1)))
+		Expect(daemon.Request(store.OSFS{}, env.State(), time.Minute, clock.Real{})).To(Equal(int64(1)))
 
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(untilNext(env.Status())).To(Equal(time.Hour))

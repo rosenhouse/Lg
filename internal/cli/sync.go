@@ -63,7 +63,7 @@ func (c syncCmd) timeout(fallback time.Duration) time.Duration {
 
 // requestSync asks the running daemon for a cycle, and gives the request's number.
 func requestSync(roots config.Roots, deps *Deps) (int64, error) {
-	n, err := daemon.Request(deps.StoreFS, roots.State, deps.Clock)
+	n, err := daemon.Request(deps.StoreFS, roots.State, time.Hour, deps.Clock)
 	if err != nil {
 		return 0, failure.FromErrno(err)
 	}
