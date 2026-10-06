@@ -3,8 +3,10 @@ package e2e_test
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -208,8 +210,8 @@ var _ = Describe("lg paths", Label("paths"), func() {
 				flags[replaced[i]] = strings.Fields(replaced[i+1])
 			}
 			args := []string{"paths", "--unit", "job"}
-			for flag, values := range flags {
-				for _, v := range values {
+			for _, flag := range slices.Sorted(maps.Keys(flags)) {
+				for _, v := range flags[flag] {
 					args = append(args, flag, v)
 				}
 			}
