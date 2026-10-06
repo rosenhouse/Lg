@@ -19,7 +19,7 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 		return err
 	}
 	if service.BuiltByGoRun(exe) {
-		return fmt.Errorf("%s was built by go run, which removes it; install from a go build or go install binary", exe)
+		return fmt.Errorf("%s was built by go run; install from go build or go install", exe)
 	}
 	gh, err := service.FindGH(deps.Env)
 	if err != nil {
