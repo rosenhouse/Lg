@@ -19,11 +19,11 @@ type filters struct {
 	SHA        []string `sep:"none" name:"sha" help:"Only runs whose head SHA starts with this."`
 	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request. Runs from a fork list none."`
 	Workflow   []string `sep:"none" help:"Only runs of the workflow that has, or had, this name."`
-	Job        []string `sep:"none" help:"Only jobs whose name matches this glob, and other units whose attempt, or else run, holds one."`
+	Job        []string `sep:"none" help:"Only jobs whose name matches this glob."`
 	Event      []string `sep:"none" help:"Only runs triggered by this event."`
-	Conclusion []string `sep:"none" help:"Only units that concluded so: the job, the attempt, or else the run's latest attempt."`
-	Since      moment   `placeholder:"TIME" help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
-	Until      moment   `placeholder:"TIME" help:"Only units until this time, inclusive. A date means its 00:00 UTC."`
+	Conclusion []string `sep:"none" help:"Only this conclusion."`
+	Since      moment   `placeholder:"TIME" help:"Only since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
+	Until      moment   `placeholder:"TIME" help:"Only until this time, inclusive. A date means its 00:00 UTC."`
 }
 
 // validate refuses an empty value, which a filter would take as matching every

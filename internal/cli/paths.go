@@ -20,7 +20,9 @@ type pathsCmd struct {
 }
 
 func (pathsCmd) Help() string {
-	return "A unit must match every flag given, and any value of a flag given more than once."
+	return "A unit must match every flag given, and any value of a flag given more than once. " +
+		"--job also selects the attempts holding a matching job, and the runs, artifacts and extracted files of runs holding one. " +
+		"--conclusion is of the job, the attempt, or else the run's latest attempt. --since and --until bound each unit's time."
 }
 
 // Validate refuses more than one --unit.

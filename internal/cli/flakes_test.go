@@ -88,6 +88,14 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(stderr.String()).To(ContainSubstring(syscall.ENOSPC.Error()))
 	})
 
+	It("says in --help that its filters select runs and job names, not units", func() {
+		c := harness.NewCLI()
+
+		Expect(c.Main("flakes", "--help")).To(Equal(0))
+		Expect(c.Stdout.String()).To(ContainSubstring("The other filters select runs"))
+		Expect(c.Stdout.String()).NotTo(ContainSubstring("unit"))
+	})
+
 	DescribeTable("exits 2",
 		func(args []string, message string) {
 			c := harness.NewCLI()
