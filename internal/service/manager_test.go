@@ -318,6 +318,18 @@ var _ = Describe("Manager", Label("install"), func() {
 		Expect(os.ReadDir(systemd)).To(HaveLen(1))
 	})
 
+	It("leaves the unit readable only by its owner, since it may hold proxy credentials", func() {
+		path := filepath.Join(systemd, "lg.service")
+		Expect(os.MkdirAll(systemd, 0o755)).To(Succeed())
+		Expect(os.WriteFile(path, nil, 0o644)).To(Succeed())
+
+		Expect(manager("linux").Install(context.Background(), unit)).To(Equal(path))
+
+		info, err := os.Stat(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+	})
+
 	It("refuses a relative HOME", func() {
 		m := manager("linux")
 		m.Env["HOME"] = "home"

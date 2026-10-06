@@ -50,8 +50,8 @@ func (m Manager) Install(ctx context.Context, u Unit) (path string, err error) {
 	return b.path(), b.start(ctx, replacing)
 }
 
-// replaceFile writes path through a temp file of its own, so concurrent
-// installs never share one.
+// replaceFile writes path through a private temp file of its own, since a
+// unit may carry proxy credentials and concurrent installs must not share one.
 func replaceFile(path string, content []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
