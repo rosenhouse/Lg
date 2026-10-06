@@ -192,6 +192,8 @@ func RenumberJob(r Run, attempt int, name string, id int64) Run {
 			log := attemptFile(attempt, fmt.Sprintf("logs/%s.txt", job["id"]))
 			out.Files[attemptFile(attempt, fmt.Sprintf("logs/%d.txt", id))] = out.Files[log]
 			delete(out.Files, log)
+			status := out.Files["status.txt"]
+			status.Data = bytes.ReplaceAll(status.Data, fmt.Appendf(nil, " jobs/%s/logs\n", job["id"]), fmt.Appendf(nil, " jobs/%d/logs\n", id))
 			job["id"] = id
 		}
 		return jobs

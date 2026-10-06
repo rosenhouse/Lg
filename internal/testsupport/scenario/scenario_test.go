@@ -242,6 +242,7 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(jobs(renumbered, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("id", BeEquivalentTo(8)))))
 			Expect(renumbered.Files["attempt-2/logs/8.txt"].Data).To(Equal(run.Files["attempt-2/logs/7111221661475.txt"].Data))
 			Expect(renumbered.Files).NotTo(HaveKey("attempt-2/logs/7111221661475.txt"))
+			Expect(string(renumbered.Files["status.txt"].Data)).To(SatisfyAll(ContainSubstring(" jobs/8/logs\n"), Not(ContainSubstring("/7111221661475/"))))
 			Expect(jobs(renumbered, "attempt-1")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("id", BeEquivalentTo(7111221289888)))))
 		})
 	})
