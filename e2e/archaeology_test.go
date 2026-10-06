@@ -248,20 +248,20 @@ var _ = Describe("lg paths", Label("paths"), func() {
 	})
 
 	It("reconciles before answering, so a unit published a moment ago is listed and a deleted lg.db is rebuilt", func() {
-		env, fake := archaeologyEnv()
-		before := lines(env, "paths", "--unit", "log")
-		Expect(filepath.Join(env.State(), "lg.db")).To(BeARegularFile())
+		env, _ := archaeologyEnv()
+		logs := lines(env, "paths", "--unit", "log")
+		run := runDirOf(env, scenario.Archaeology().Release3.ID)
+		aside := filepath.Join(env.Tmp(), filepath.Base(run))
+		Expect(os.Rename(run, aside)).To(Succeed())
+		Expect(env.Lg("index", "rebuild").Wait(harness.ExitTimeout)).To(gexec.Exit(0))
 
-		Expect(fake.AddRun(scenario.CloneAt(9, "after-attempt-1", harness.DefaultNow().Add(-time.Hour)))).To(Succeed())
-		Expect(env.Sync()).To(gexec.Exit(0))
-		published := glob(runDirOf(env, 9), "attempt-1", "jobs", "*", "log.txt")
-		after := lines(env, "paths", "--unit", "log")
-		Expect(after).To(ConsistOf(append(before, published...)))
+		Expect(os.Rename(aside, run)).To(Succeed())
+		Expect(lines(env, "paths", "--unit", "log")).To(ConsistOf(logs))
 
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			Expect(os.RemoveAll(filepath.Join(env.State(), "lg.db"+suffix))).To(Succeed())
 		}
-		Expect(lines(env, "paths", "--unit", "log")).To(ConsistOf(after))
+		Expect(lines(env, "paths", "--unit", "log")).To(ConsistOf(logs))
 		Expect(filepath.Join(env.State(), "lg.db")).To(BeARegularFile())
 	})
 })
