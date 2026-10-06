@@ -322,6 +322,16 @@ var _ = Describe("lg status with several repos", Label("status"), func() {
 	})
 })
 
+var _ = Describe("lg status after a daemon rejected config.yaml", Label("status"), func() {
+	It("prints the config error", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(`{"lg_format": 1, "sync_interval_seconds": 600, "config_error": "config.yaml: sync_interval must be at least 1m: 30s; kept the last good config"}`)
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(ContainSubstring("\nblocked: no\nconfig error: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config\ndaemon: not running\n"))
+	})
+})
+
 var _ = Describe("lg status with a status.json it cannot parse", Label("status"), func() {
 	It("exits 1, naming the file once", func() {
 		s := harness.NewCLI()

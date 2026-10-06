@@ -68,8 +68,11 @@ func statusLines(st *status.Status, daemon bool) []string {
 		"last ok sync: " + orNone(st.LastSyncOKAt, "never"),
 		"next sync: " + orNone(st.NextSyncAt, "none scheduled"),
 		"blocked: " + blocked,
-		daemonLine,
 	}
+	if st.ConfigError != nil {
+		lines = append(lines, "config error: "+*st.ConfigError)
+	}
+	lines = append(lines, daemonLine)
 	for _, name := range slices.Sorted(maps.Keys(st.Repos)) {
 		r := st.Repos[name]
 		lag := "none"
