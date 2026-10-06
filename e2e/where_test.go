@@ -53,7 +53,7 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 
 	It("decodes 'path:line:text' into JSON with host, repo, run_id, attempt, job_id, job, workflow, branch, sha, event, prs, created_at, job_conclusion, line and html_url", func() {
 		log := glob(runDirOf(env, a.PR42.ID), "attempt-1", "jobs", "*_flaky", "log.txt")[0]
-		grep := env.Sh("grep -Hn 'LG_MARKER flaky failure' '" + log + "'")
+		grep := env.Sh("grep -Hn 'LG_MARKER flaky failure attempt=1' '" + log + "'")
 		Eventually(grep, harness.ExitTimeout).Should(gexec.Exit(0))
 		hit := outputLines(grep)[0]
 

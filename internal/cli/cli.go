@@ -27,6 +27,7 @@ type Deps struct {
 	Env       map[string]string
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Stdin     io.Reader
 	Clock     clock.Clock
 	Runner    execx.Runner
 	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
@@ -42,7 +43,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: func() (string, string, error) { return executable(env["PATH"]) }}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: func() (string, string, error) { return executable(env["PATH"]) }}
 }
 
 type commands struct {
