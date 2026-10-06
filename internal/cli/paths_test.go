@@ -132,6 +132,6 @@ var _ = DescribeTable("lg paths exits 2", Label("paths"),
 	},
 	Entry("for an unknown --unit", []string{"--unit", "step"}, `--unit must be one of "run","attempt","job","log","artifact","extracted" but got "step"`),
 	Entry("for a --since that is no time", []string{"--since", "yesterday"}, `--since: want 30d, 12h, 2026-09-01 or an RFC 3339 time, not "yesterday"`),
-	Entry("for an --until in the future", []string{"--until", "-1h"}, `--until: want 30d, 12h, 2026-09-01 or an RFC 3339 time, not "-1h"`),
+	Entry("for an --until in the future", []string{"--until=-1h"}, `--until: want 30d, 12h, 2026-09-01 or an RFC 3339 time, not "-1h"`),
 	Entry("for a --pr that is no number", []string{"--pr", "x"}, `--pr`),
 )

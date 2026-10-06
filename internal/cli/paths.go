@@ -1,27 +1,82 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/alecthomas/kong"
 
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/index"
 )
 
 type pathsCmd struct {
-	Branch     []string `help:"Only runs on this branch of the repository, not of a fork."`
+	Branch     []string `help:"Only runs on this branch of the repository itself. Repeat for any of several."`
 	SHA        []string `name:"sha" help:"Only runs of a commit whose SHA starts with this."`
-	PR         []int    `name:"pr" help:"Only runs of this pull request."`
-	Workflow   []string `help:"Only runs of this workflow."`
-	Job        []string `help:"Only jobs whose name matches this glob."`
+	PR         []int    `name:"pr" help:"Only runs of this pull request from the repository itself."`
+	Workflow   []string `help:"Only runs of the workflow of this name."`
+	Job        []string `help:"Only jobs whose name matches this glob, or units holding one."`
 	Event      []string `help:"Only runs triggered by this event."`
-	Conclusion []string `help:"Only units with this conclusion."`
-	Since      string   `help:"Only units since this time."`
-	Until      string   `help:"Only units until this time."`
-	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit."`
+	Conclusion []string `help:"Only jobs, attempts, or runs whose latest attempt, of this conclusion."`
+	Since      moment   `help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
+	Until      moment   `help:"Only units until this time, inclusive."`
+	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit (${enum}) instead of logs and extracted files."`
 	Null       bool     `short:"0" help:"Separate paths with NUL instead of newline."`
+}
+
+// moment is a --since or --until: a duration before now, or a time.
+type moment struct {
+	set bool
+	ago time.Duration
+	at  time.Time
+}
+
+func (m *moment) Decode(ctx *kong.DecodeContext) error {
+	var s string
+	if err := ctx.Scan.PopValueInto("time", &s); err != nil {
+		return err
+	}
+	parsed, err := parseMoment(s)
+	if err != nil {
+		return err
+	}
+	*m = parsed
+	return nil
+}
+
+func parseMoment(s string) (moment, error) {
+	if ago, err := config.ParseDuration(s); err == nil && ago >= 0 {
+		return moment{set: true, ago: ago}, nil
+	}
+	for _, layout := range []string{time.DateOnly, time.RFC3339} {
+		if at, err := time.Parse(layout, s); err == nil {
+			return moment{set: true, at: at}, nil
+		}
+	}
+	return moment{}, fmt.Errorf("want 30d, 12h, 2026-09-01 or an RFC 3339 time, not %q", s)
+}
+
+// time gives the moment as of now, or the zero time when it is not set.
+func (m moment) time(now time.Time) time.Time {
+	switch {
+	case !m.set:
+		return time.Time{}
+	case m.at.IsZero():
+		return now.Add(-m.ago)
+	}
+	return m.at
+}
+
+func (p pathsCmd) filter(now time.Time) index.Filter {
+	return index.Filter{
+		Branches: p.Branch, SHAs: p.SHA, PRs: p.PR, Workflows: p.Workflow, Jobs: p.Job, Events: p.Event,
+		Conclusions: p.Conclusion, Since: p.Since.time(now), Until: p.Until.time(now),
+	}
 }
 
 func (p pathsCmd) Run(deps *Deps) error {
@@ -36,12 +91,29 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	// The trailing separator makes WalkDir follow a symlinked data/.
-	return filepath.WalkDir(roots.Data+string(filepath.Separator), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.Type().IsRegular() || d.Name() != "log.txt" {
+	if _, err := os.Stat(roots.Data); err != nil {
+		return err
+	}
+	var unit index.Unit
+	if p.Unit != nil {
+		unit = index.Unit(*p.Unit)
+	}
+	ctx := context.Background()
+	ix, err := index.Open(ctx, filepath.Join(roots.State, "lg.db"), roots.Data)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ix.Close() }()
+	// A run whose files do not parse leaves the others answerable.
+	reconciled := ix.Reconcile(ctx)
+	paths, err := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
+	if err != nil {
+		return errors.Join(reconciled, err)
+	}
+	for _, path := range paths {
+		if _, err := fmt.Fprint(deps.Stdout, path, sep); err != nil {
 			return err
 		}
-		_, err = fmt.Fprint(deps.Stdout, path, sep)
-		return err
-	})
+	}
+	return reconciled
 }

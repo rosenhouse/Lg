@@ -52,7 +52,7 @@ type commands struct {
 	Status  statusCmd  `cmd:"" help:"Print when lg last synced, how far behind it is, and why it is blocked."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
-	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
+	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
