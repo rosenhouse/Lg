@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
@@ -41,7 +43,9 @@ func (c syncCmd) Run(deps *Deps) error {
 		if err != nil {
 			return failure.FromErrno(err)
 		}
-		// Like the daemon's log, this line must not decide the outcome.
+		// Like the daemon's log, this line must not decide the outcome, so a
+		// broken pipe gives EPIPE, which it ignores.
+		signal.Ignore(syscall.SIGPIPE)
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: sent sync request %d to the running daemon\n", n)
 		if !c.Wait {
 			return nil
