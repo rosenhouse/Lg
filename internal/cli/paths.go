@@ -106,16 +106,13 @@ func (p pathsCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer func() { _ = ix.Close() }()
-	// A run whose files do not parse leaves the others answerable.
+	// A run or unit lg cannot read leaves the others answerable.
 	reconciled := ix.Reconcile(ctx)
-	paths, err := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
-	if err != nil {
-		return errors.Join(reconciled, err)
-	}
+	paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
 	for _, path := range paths {
 		if _, err := fmt.Fprint(deps.Stdout, path, sep); err != nil {
 			return err
 		}
 	}
-	return reconciled
+	return errors.Join(reconciled, unread)
 }
