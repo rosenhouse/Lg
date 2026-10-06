@@ -142,6 +142,28 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(c.Stderr.String()).To(ContainSubstring(fifo + " is outside the store"))
 	}, SpecTimeout(10*time.Second))
 
+	It("keeps the line of a hit rg printed with --column or --max-columns", func() {
+		log := filepath.Join(job, "log.txt")
+		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR disk full "+strings.Repeat("y", 200)+"\n"), 0o644)).To(Succeed())
+
+		Expect(c.Main("where",
+			log+":2:10:10:15:00 ERROR disk full",
+			log+":2:10:15:00 ERROR disk full yyy [... omitted end of long line]",
+			log+":2:10:10:15:00 ERROR disk full yyy [... 1 more match]",
+			log+":2:[Omitted long matching line]",
+			log+":2:10:[Omitted long line with 1 matches]",
+			log+":2:ERROR x [... omitted end of long line]",
+		)).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveExactElements(
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "10:15:00 ERROR disk full")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "10:15:00 ERROR disk full yyy [... omitted end of long line]")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "10:15:00 ERROR disk full yyy [... 1 more match]")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "[Omitted long matching line]")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "[Omitted long line with 1 matches]")),
+			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "2:ERROR x [... omitted end of long line]")),
+		))
+	})
+
 	It("keeps a hit's .. in its text, not its path", func() {
 		log := filepath.Join(job, "log.txt")
 		Expect(os.WriteFile(log, []byte("a\nb\nc\nd\n$ cd ../..\n"), 0o644)).To(Succeed())

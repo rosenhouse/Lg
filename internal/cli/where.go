@@ -188,8 +188,11 @@ func (f placeFinder) find(hit string) (place, error) {
 	if err != nil {
 		return place{}, err
 	}
-	if h.Line > 0 && !f.lines.has(path, h.Line, h.Text) {
-		h.Line, h.Text = 0, hit[len(h.Path)+1:]
+	if h.Line > 0 {
+		var holds bool
+		if h.Text, holds = f.holding(path, h.Line, h.Text); !holds {
+			h.Line, h.Text = 0, hit[len(h.Path)+1:]
+		}
 	}
 	p, err := f.describe(loc)
 	if err == nil && (loc.File == "log.txt.tombstone" || loc.File == "artifact.zip.tombstone") {
@@ -197,6 +200,28 @@ func (f placeFinder) find(hit string) (place, error) {
 	}
 	p.Path, p.Line, p.Text = path, h.Line, h.Text
 	return p, err
+}
+
+// rgOmission is what rg --max-columns prints in place of a line or its end.
+var rgOmission = regexp.MustCompile(`^\[Omitted long (matching line|line with [0-9]+ matches)\]$| \[\.\.\. (omitted end of long line|[0-9]+ more match(es)?)\]$`)
+
+// holding gives text, without the column rg --column printed before it, when
+// line n of path holds it but for rg's omissions.
+func (f placeFinder) holding(path string, n int, text string) (string, bool) {
+	line, ok := f.lines.line(path, n)
+	if !ok {
+		return "", false
+	}
+	texts := []string{text}
+	if column := leadingLine.FindString(text); column != "" {
+		texts = append(texts, text[len(column):])
+	}
+	for _, t := range texts {
+		if strings.Contains(line, rgOmission.ReplaceAllString(t, "")) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 // existing gives the file path names: path itself when absolute, else path
@@ -327,29 +352,29 @@ type lineReader struct {
 	path string
 	file *os.File
 	r    *bufio.Reader
-	// n is the number of lines read, and line is the last of them.
+	// n is the number of lines read, and last is the last of them.
 	n    int
-	line string
+	last string
 }
 
-// has reports whether line n of the file at path holds text.
-func (l *lineReader) has(path string, n int, text string) bool {
+// line gives line n of the file at path.
+func (l *lineReader) line(path string, n int) (string, bool) {
 	if path != l.path || n < l.n {
 		l.close()
 		file, err := os.Open(path)
 		if err != nil {
-			return false
+			return "", false
 		}
 		l.path, l.file, l.r = path, file, bufio.NewReader(file)
 	}
 	for l.n < n {
 		line, err := l.r.ReadString('\n')
 		if line == "" && err != nil {
-			return false
+			return "", false
 		}
-		l.n, l.line = l.n+1, strings.TrimSuffix(line, "\n")
+		l.n, l.last = l.n+1, strings.TrimSuffix(line, "\n")
 	}
-	return strings.Contains(l.line, text)
+	return l.last, true
 }
 
 func (l *lineReader) close() {
