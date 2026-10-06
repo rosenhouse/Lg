@@ -27,6 +27,10 @@ var _ = DescribeTable("ParseHit splits an rg or grep hit at the longest prefix t
 		layout.Hit{Path: "a:b", Line: 12, Text: "x"}, true),
 	Entry("a line that is not a number", "a:12x:y", []string{"a"},
 		layout.Hit{Path: "a", Text: "12x:y"}, true),
+	Entry("a line 0, which is no line", "a:0:x", []string{"a"},
+		layout.Hit{Path: "a", Text: "0:x"}, true),
+	Entry("an empty path", ":1:x", []string{""},
+		layout.Hit{}, false),
 	Entry("no existing prefix", "a:1:b", []string{"b"},
 		layout.Hit{}, false),
 )

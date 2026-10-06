@@ -39,6 +39,8 @@ var _ = Describe("Parse", Label("where"), func() {
 		Entry("a run dir", run, inRun),
 		Entry("an attempt dir", attempt, inAttempt),
 		Entry("an attempt's file", attempt+"/fetch.json", with(inAttempt, "fetch.json")),
+		Entry("an attempt's jobs dir", attempt+"/jobs", with(inAttempt, "jobs")),
+		Entry("the artifacts dir", run+"/artifacts", with(inRun, "artifacts")),
 		Entry("a job dir", job, inJob),
 		Entry("a log", job+"/log.txt", with(inJob, "log.txt")),
 		Entry("a tombstone", job+"/log.txt.tombstone", with(inJob, "log.txt.tombstone")),
