@@ -64,7 +64,14 @@ type daemonCycle struct {
 	target target
 }
 
+// run reads config.yaml after it takes write.lock, so it syncs with an edit
+// made while it waited.
 func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
+	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
+	if err != nil {
+		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err}
+	}
+	defer func() { _ = held.Release() }()
 	fresh, configErr := loadTarget(d.deps.Env)
 	if configErr == nil {
 		d.target = fresh
@@ -72,11 +79,6 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 		configErr = fmt.Errorf("%w; kept the last good config", configErr)
 	}
 	interval := time.Duration(d.target.cfg.SyncInterval)
-	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
-	if err != nil {
-		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: interval, Err: errors.Join(configErr, err)}
-	}
-	defer func() { _ = held.Release() }()
 	c, err := recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
 		c.NextSyncAt = daemon.Next(c.Started, interval, retryAt(c.Err))

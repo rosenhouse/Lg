@@ -160,6 +160,25 @@ var _ = Describe("lg daemon run after config.yaml changes sync_interval from 1h 
 	}, daemonTimeout)
 })
 
+var _ = Describe("lg daemon run after config.yaml changes while it waits for write.lock", Label("daemon"), func() {
+	It("syncs with the changed config", func(SpecContext) {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL(), "sync_interval: 1h")
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
+		writer, err := lock.Wait(filepath.Join(env.State(), "write.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		daemon := env.Start("daemon", "run")
+		Eventually(daemon.Err, cycleWait).Should(gbytes.Say("waiting for .*write.lock"))
+
+		env.WriteConfig(fake.URL(), "sync_interval: 2m")
+		Expect(writer.Release()).To(Succeed())
+
+		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
+		Expect(untilNext(env.Status())).To(BeNumerically("~", 2*time.Minute, time.Second))
+	}, daemonTimeout)
+})
+
 var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemon"), func() {
 	It("keeps the last good config and records the error in status.json", func(SpecContext) {
 		env := harness.New(lgPath)
