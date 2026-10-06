@@ -192,3 +192,40 @@ var _ = DescribeTable("Pending names its unit before its error", Label("status")
 	Entry("an artifact", status.Unit{Run: 1, Artifact: 7}, "run 1 artifact 7: 502"),
 	Entry("a run", status.Unit{Run: 1}, "run 1: 502"),
 )
+
+var _ = Describe("Remeasured", Label("status"), func() {
+	It("replaces repo's disk fields, with lag as at the last sync, and keeps the rest", func() {
+		prev := status.Next(nil, good(time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)))
+		prev.Repos[repo] = func(r status.Repo) status.Repo {
+			r.Pending = []status.Pending{{Unit: status.Unit{Run: 9}, Error: "502"}}
+			r.PendingUnits = 1
+			return r
+		}(prev.Repos[repo])
+		prev.Repos["github.com/o/other"] = status.Repo{Runs: 5}
+		before := prev.Repos[repo]
+		later := newest.Add(time.Hour)
+		horizon := newest.Add(-time.Hour)
+
+		st := status.Remeasured(prev, repo, status.Disk{Runs: 1, Attempts: 2, Bytes: 10, NewestCompleted: later, Horizon: horizon}, 30*24*time.Hour, 1e6)
+
+		want := before
+		want.Runs, want.Attempts, want.BytesData = 1, 2, 10
+		want.NewestCompletedRunCreatedAt = &later
+		want.LagSeconds = ptr(int64(prev.LastSyncFinishedAt.Sub(later) / time.Second))
+		want.Horizon = &horizon
+		want.RetentionDays, want.DiskCapBytes = 30, 1e6
+		Expect(st.Repos).To(Equal(map[string]status.Repo{repo: want, "github.com/o/other": {Runs: 5}}))
+		Expect(prev.Repos[repo]).To(Equal(before))
+		st.Repos = prev.Repos
+		Expect(st).To(Equal(prev))
+	})
+
+	It("clears the newest run and lag when no completed run is left", func() {
+		prev := status.Next(nil, good(time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)))
+
+		r := status.Remeasured(prev, repo, status.Disk{}, 24*time.Hour, 1).Repos[repo]
+		Expect(r.NewestCompletedRunCreatedAt).To(BeNil())
+		Expect(r.LagSeconds).To(BeNil())
+		Expect(r.Horizon).To(BeNil())
+	})
+})

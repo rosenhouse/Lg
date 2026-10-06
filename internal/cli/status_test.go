@@ -332,3 +332,39 @@ var _ = Describe("lg status with a status.json it cannot parse", Label("status")
 		Expect(s.Stderr.String()).To(Equal("lg: warning: " + s.StatusFile() + ": unexpected end of JSON input\n"))
 	})
 })
+
+var _ = Describe("lg gc", Label("status"), func() {
+	It("updates status.json's horizon and counts", func() {
+		s := harness.NewCLI()
+		s.WriteConfig("repo: rosenhouse/lg\napi_url: " + s.Fake.URL() + "\ndisk_cap: 120KB\n")
+		Expect(s.Main("sync")).To(Equal(0))
+		before := s.Status()
+		Expect(before["repos"]).To(HaveKeyWithValue("github.com/rosenhouse/lg", HaveKeyWithValue("runs", 1.0)))
+
+		s.WriteConfig("repo: rosenhouse/lg\napi_url: " + s.Fake.URL() + "\ndisk_cap: 50KB\n")
+		Expect(s.Main("gc")).To(Equal(0), s.Stderr.String())
+
+		after := s.Status()
+		repo := after["repos"].(map[string]any)["github.com/rosenhouse/lg"]
+		Expect(repo).To(HaveKeyWithValue("runs", 0.0))
+		Expect(repo).To(HaveKeyWithValue("attempts", 0.0))
+		Expect(repo).To(HaveKeyWithValue("bytes_data", 0.0))
+		Expect(repo).To(HaveKeyWithValue("newest_completed_run_created_at", BeNil()))
+		Expect(repo).To(HaveKeyWithValue("lag_seconds", BeNil()))
+		Expect(repo).To(HaveKeyWithValue("horizon", Not(Equal(before["repos"].(map[string]any)["github.com/rosenhouse/lg"].(map[string]any)["horizon"]))))
+		Expect(repo).To(HaveKeyWithValue("disk_cap_bytes", 50000.0))
+		Expect(repo).To(HaveKeyWithValue("default_branch", "main"))
+		delete(before, "repos")
+		delete(after, "repos")
+		Expect(after).To(Equal(before))
+	})
+
+	It("writes no status.json for a store that never synced", func() {
+		s := harness.NewCLI()
+		s.WriteStatus("{}")
+		Expect(os.Remove(s.StatusFile())).To(Succeed())
+
+		Expect(s.Main("gc")).To(Equal(0), s.Stderr.String())
+		Expect(s.StatusFile()).NotTo(BeAnExistingFile())
+	})
+})

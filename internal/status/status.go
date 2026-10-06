@@ -190,6 +190,12 @@ func Next(prev *Status, c Cycle) Status {
 	return st
 }
 
+// Remeasured is st with repo's disk fields from d, retention and diskCap,
+// and its lag as at st's last sync.
+func Remeasured(st Status, repo string, d Disk, retention time.Duration, diskCap int64) Status {
+	return st
+}
+
 // nextBlocked is what err blocks, since prev's blocked.since when prev was
 // blocked too, else since started. A cancelled cycle learned nothing, so it
 // keeps prev's blocked.
