@@ -43,11 +43,9 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer func() { _ = instance.Release() }()
-	if err := initOnStart(ctx, t.roots, deps); err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		return err
+	// A cycle inits and sweeps too, so a failure here only waits for it.
+	if err := initOnStart(ctx, t.roots, deps); err != nil && ctx.Err() == nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 	}
 	d := daemonCycle{deps: deps, target: t}
 	loop := daemon.Loop{

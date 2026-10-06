@@ -156,6 +156,20 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(time.Parse(time.RFC3339, string(times[2]))).To(Equal(started.Add(10 * time.Minute)))
 	}, daemonTimeout)
 
+	It("keeps running when it cannot take write.lock at start, and serves a request once it can", func(ctx SpecContext) {
+		writeLock := filepath.Join(env.State(), "write.lock")
+		Expect(os.MkdirAll(writeLock, 0o755)).To(Succeed())
+		running := env.Start("daemon", "run")
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say(`lg: sync at \S+: open \S+/write.lock: is a directory`))
+		Expect(running).NotTo(gexec.Exit())
+
+		Expect(os.Remove(writeLock)).To(Succeed())
+		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
+
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		Expect(env.Status()).To(HaveKeyWithValue("served_request", 1.0))
+	}, daemonTimeout)
+
 	It("truncates its stderr at cycle start when it is a regular file over 10 MB, as launchd's state/daemon.log on a fresh store", func(ctx SpecContext) {
 		log := filepath.Join(env.State(), "daemon.log")
 		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
