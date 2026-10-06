@@ -161,4 +161,25 @@ type Hit struct {
 	Text string
 }
 
-func ParseHit(hit string, exists func(path string) bool) (Hit, bool) { return Hit{}, false }
+// ParseHit splits hit at the longest prefix that exists, since a path may
+// hold colons, and gives false when no prefix exists.
+func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
+	for end := len(hit); end > 0; end = strings.LastIndexByte(hit[:end], ':') {
+		if !exists(hit[:end]) {
+			continue
+		}
+		h := Hit{Path: hit[:end]}
+		rest, ok := strings.CutPrefix(hit[end:], ":")
+		if !ok {
+			return h, true
+		}
+		digits, text, ok := strings.Cut(rest, ":")
+		if n, err := strconv.Atoi(digits); ok && err == nil && n > 0 && strconv.Itoa(n) == digits {
+			h.Line, h.Text = n, text
+		} else {
+			h.Text = rest
+		}
+		return h, true
+	}
+	return Hit{}, false
+}
