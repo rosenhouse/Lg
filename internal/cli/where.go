@@ -192,7 +192,7 @@ func (f *placeFinder) find(hit string) (place, error) {
 	}
 	if !ok {
 		if leadingLine.MatchString(hit) {
-			return place{}, fmt.Errorf("%q names no file; run rg with -H to print file names", hit)
+			return place{}, fmt.Errorf("%q names no file; run rg with -H --no-heading to print file names", hit)
 		}
 		return place{}, fmt.Errorf("%q names no file", hit)
 	}

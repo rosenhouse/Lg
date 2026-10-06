@@ -96,12 +96,12 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(decoded()).To(HaveLen(1))
 	})
 
-	It("quotes an input it cannot decode, and hints at rg -H when it starts with a line number", func() {
+	It("quotes an input it cannot decode, and hints at rg -H --no-heading when it starts with a line number", func() {
 		Expect(c.Main("where", "x:1:\x1b]0;pwned\a", "12:2026-10-03T14:22:57Z foo bar")).To(Equal(1))
 		Expect(c.Stderr.String()).To(SatisfyAll(
 			ContainSubstring(`"x:1:\x1b]0;pwned\a" names no file`),
 			Not(ContainSubstring("\x1b")),
-			MatchRegexp(`"12:2026-10-03T14:22:57Z foo bar" names no file.*rg with -H`),
+			ContainSubstring(`"12:2026-10-03T14:22:57Z foo bar" names no file; run rg with -H --no-heading`),
 		))
 		Expect(strings.Count(c.Stderr.String(), "-H")).To(Equal(1))
 	})
