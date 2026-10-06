@@ -21,7 +21,7 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a line rg or grep printed. A relative path is resolved against data/, the working directory, or a repo dir. Without any, lg reads lines from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a line rg or grep printed. A relative path is resolved against the working directory, data/, or a repo dir. Without any, lg reads lines from stdin."`
 }
 
 func (whereCmd) Help() string {
@@ -235,12 +235,12 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 }
 
 // existing gives the file path names: path itself when absolute, else path
-// relative to data/, the working directory or a repo dir. It checks each
+// relative to the working directory, data/ or a repo dir. It checks each
 // before cleaning it, so that a .. in a hit's text cannot reach a parent dir.
 func (f *placeFinder) existing(path string) (string, bool) {
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
-		candidates = []string{f.data + string(filepath.Separator) + path, path}
+		candidates = []string{path, f.data + string(filepath.Separator) + path}
 		for _, repo := range f.repos {
 			candidates = append(candidates, repo+string(filepath.Separator)+path)
 		}
