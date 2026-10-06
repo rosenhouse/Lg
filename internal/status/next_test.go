@@ -149,9 +149,9 @@ var _ = Describe("Next", Label("status"), func() {
 
 		r := status.Next(nil, c).Repos[repo]
 		Expect(r.Pending).To(Equal([]status.Pending{
-			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "502 Bad Gateway"},
-			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest ]0;x mismatch"},
-			{Unit: status.Unit{Run: 3}, Error: "a b"},
+			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "502 Bad Gateway", Since: started.UTC()},
+			{Unit: status.Unit{Run: 1, Artifact: 7}, Error: "digest ]0;x mismatch", Since: started.UTC()},
+			{Unit: status.Unit{Run: 3}, Error: "a b", Since: started.UTC()},
 		}))
 		Expect(r.PendingUnits).To(Equal(3))
 	})
@@ -179,7 +179,7 @@ var _ = Describe("Next", Label("status"), func() {
 
 		r := status.Next(&prev, c).Repos[repo]
 		Expect(r.Pending).To(Equal([]status.Pending{
-			{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout"},
+			{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout", Since: started.UTC()},
 			{Unit: status.Unit{Run: 3}, Error: "500"},
 		}))
 		Expect(r.PendingUnits).To(Equal(2))
