@@ -268,7 +268,7 @@ var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemo
 
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(untilNext(env.Status())).To(Equal(time.Hour))
-		Expect(env.Status()).To(HaveKeyWithValue("config_error", ContainSubstring("colour")))
+		Expect(env.Status()).To(HaveKeyWithValue("config_error", And(ContainSubstring("colour"), ContainSubstring("kept the last good config"))))
 	}, daemonTimeout)
 })
 
@@ -331,6 +331,18 @@ var _ = Describe("lg daemon run with a recorded retry_at over a day away", Label
 		running := env.Start("daemon", "run")
 
 		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say(`lg: blocked until 2026-10-04T18:00:\d\dZ; first sync then\n`))
+	}, daemonTimeout)
+})
+
+var _ = Describe("lg daemon run with a recorded retry_at that has passed", Label("daemon"), func() {
+	It("syncs at once without logging that it is blocked", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+		env.WriteStatus(`{"cycle": 1, "blocked": {"since": "2026-10-03T16:00:00Z", "kind": "rate_limit", "detail": "429", "retry_at": "2026-10-03T17:00:00Z"}}`)
+
+		running := env.Start("daemon", "run")
+
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		Expect(string(running.Err.Contents())).NotTo(ContainSubstring("blocked until"))
 	}, daemonTimeout)
 })
 

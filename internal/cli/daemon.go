@@ -65,9 +65,9 @@ func (daemonRunCmd) Run(deps *Deps) error {
 	}
 	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil && st.Blocked != nil && st.Blocked.RetryAt != nil {
 		now := deps.Clock.Now()
-		if retryAt := failure.Capped(*st.Blocked.RetryAt, now); retryAt.After(now) {
-			loop.RetryAt = retryAt
-			_, _ = fmt.Fprintf(deps.Stderr, "lg: blocked until %s; first sync then\n", retryAt.UTC().Format(time.RFC3339))
+		if until := failure.Capped(*st.Blocked.RetryAt, now); until.After(now) {
+			loop.RetryAt = until
+			_, _ = fmt.Fprintf(deps.Stderr, "lg: blocked until %s; first sync then\n", until.UTC().Format(time.RFC3339))
 		}
 	}
 	loop.Run(ctx)
