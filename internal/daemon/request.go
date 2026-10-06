@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,7 +29,7 @@ func Request(fsys store.FS, state string, clk clock.Clock) (int64, error) {
 	}
 	defer func() { _ = held.Release() }()
 	n, _ := Requested(state)
-	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil {
+	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil && st.ServedRequest < math.MaxInt64 {
 		n = max(n, st.ServedRequest)
 	}
 	n++
@@ -46,6 +47,9 @@ func Requested(state string) (int64, error) {
 		return 0, err
 	}
 	n, err := strconv.ParseInt(string(bytes.TrimSpace(content)), 10, 64)
+	if err == nil && (n < 0 || n == math.MaxInt64) {
+		err = fmt.Errorf("%d is no request number", n)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", path, err)
 	}

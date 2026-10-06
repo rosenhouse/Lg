@@ -67,13 +67,18 @@ var _ = Describe("Request", Label("daemon"), func() {
 		Expect(err).To(MatchError(syscall.ENOSPC))
 	})
 
-	It("names state/sync-request in Requested when it does not hold a number", func() {
-		path := filepath.Join(state, "sync-request")
-		Expect(os.WriteFile(path, []byte("many\n"), 0o644)).To(Succeed())
+	DescribeTable("names state/sync-request in Requested when it does not hold a request number",
+		func(content string) {
+			path := filepath.Join(state, "sync-request")
+			Expect(os.WriteFile(path, []byte(content), 0o644)).To(Succeed())
 
-		_, err := daemon.Requested(state)
-		Expect(err).To(MatchError(ContainSubstring(path)))
-	})
+			_, err := daemon.Requested(state)
+			Expect(err).To(MatchError(ContainSubstring(path)))
+		},
+		Entry("no number", "many\n"),
+		Entry("a negative number", "-3\n"),
+		Entry("the largest number, which has no next", "9223372036854775807\n"),
+	)
 
 	DescribeTable("numbers a request after status.json's served_request, whatever state/sync-request holds",
 		func(content string) {
@@ -88,7 +93,14 @@ var _ = Describe("Request", Label("daemon"), func() {
 		Entry("nothing, after a reset", ""),
 		Entry("a lower number", "2\n"),
 		Entry("no number", "many\n"),
+		Entry("the largest number", "9223372036854775807\n"),
 	)
+
+	It("numbers a request 1 when status.json's served_request is the largest number", func() {
+		Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 9223372036854775807}`), 0o644)).To(Succeed())
+
+		Expect(daemon.Request(store.OSFS{}, state, clock.Real{})).To(Equal(int64(1)))
+	})
 
 	It("numbers a request after a higher state/sync-request than status.json's served_request", func() {
 		Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 7}`), 0o644)).To(Succeed())
