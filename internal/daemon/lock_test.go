@@ -87,7 +87,10 @@ var _ = Describe("LockInstance", Label("daemon"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(file.Close)
 		Expect(syscall.Flock(int(file.Fd()), syscall.LOCK_SH)).To(Succeed())
-		time.AfterFunc(100*time.Millisecond, func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN) })
+		go func() {
+			<-clock.Real{}.After(100 * time.Millisecond)
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		}()
 
 		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
 		Expect(err).NotTo(HaveOccurred())
