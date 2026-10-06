@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -79,6 +80,18 @@ var _ = Describe("LockInstance", Label("daemon"), func() {
 		Expect(warnings).To(ConsistOf(MatchError(syscall.ENOSPC)))
 		_, err = daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
 		Expect(err).To(MatchError(fmt.Sprintf("already running (pid %d)", os.Getpid())))
+	})
+
+	It("waits out a shared lock that lg status takes for a moment", func() {
+		file, err := os.Create(filepath.Join(state, "daemon.lock"))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(file.Close)
+		Expect(syscall.Flock(int(file.Fd()), syscall.LOCK_SH)).To(Succeed())
+		time.AfterFunc(100*time.Millisecond, func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN) })
+
+		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(held.Release()).To(Succeed())
 	})
 
 	It("makes Running report true while held", func() {
