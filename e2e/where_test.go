@@ -105,6 +105,7 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 			HaveKeyWithValue("path", log),
 			HaveKeyWithValue("run_id", BeEquivalentTo(a.MainSeptember.ID)),
 			HaveKeyWithValue("job", "pass"),
+			HaveKeyWithValue("prs", Equal([]any{})),
 			Not(HaveKey("line")),
 		)
 		Expect(where(env, log, rel)).To(HaveExactElements(mainSeptember, mainSeptember))

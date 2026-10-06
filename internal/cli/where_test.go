@@ -68,7 +68,39 @@ var _ = Describe("lg where", Label("where"), func() {
 
 		Expect(c.Main("where", filepath.Join(job, "log.txt"))).To(Equal(1))
 		Expect(c.Stdout.String()).To(BeEmpty())
-		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Dir(attempt) + ": cannot read its job 111221289888_flaky"))
+		Expect(c.Stderr.String()).To(SatisfyAll(
+			ContainSubstring(filepath.Dir(attempt)+": cannot read its job 111221289888_flaky"),
+			ContainSubstring("jobs.json"),
+		))
+	})
+
+	It("exits 1 naming the run when no unit of it parses", func() {
+		units, err := filepath.Glob(filepath.Join(filepath.Dir(attempt), "artifacts", "*", "artifact.json"))
+		Expect(err).NotTo(HaveOccurred())
+		for _, file := range append(units, filepath.Join(attempt, "attempt.json")) {
+			Expect(os.WriteFile(file, []byte("{"), 0o644)).To(Succeed())
+		}
+
+		Expect(c.Main("where", filepath.Join(job, "log.txt"))).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Dir(attempt) + ": cannot read the run"))
+	})
+
+	It("decodes an artifact.zip.tombstone", func() {
+		c = harness.NewCLI()
+		c.WriteConfig("repo: rosenhouse/lg\napi_url: " + c.Fake.URL() + "\nartifact_max_bytes: 700\n")
+		Expect(c.Main("sync")).To(Equal(0))
+		tombstone := filepath.Join(c.Home, "data", "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "37129390741_lg-fixture_lg-fixture", "artifacts", "11276272069_pass-artifact", "artifact.zip.tombstone")
+
+		Expect(c.Main("where", tombstone)).To(Equal(0), c.Stderr.String())
+		var p map[string]any
+		Expect(json.Unmarshal(c.Stdout.Bytes(), &p)).To(Succeed())
+		Expect(p).To(SatisfyAll(
+			HaveKeyWithValue("artifact_id", BeEquivalentTo(11276272069)),
+			HaveKeyWithValue("reason", "too_large"),
+			HaveKeyWithValue("http_status", BeNil()),
+			HaveKeyWithValue("message", MatchRegexp(`^size_in_bytes \d+ exceeds artifact_max_bytes 700$`)),
+		))
 	})
 
 	It("gives a carried-forward job's original log only while it exists", func() {
