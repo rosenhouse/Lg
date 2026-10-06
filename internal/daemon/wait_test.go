@@ -52,6 +52,14 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		return done
 	}
 
+	// result waits a second for WaitForCycle to return, so a regression fails instead of hanging.
+	result := func(request int64) error {
+		GinkgoHelper()
+		var err error
+		Eventually(wait(request), time.Second).Should(Receive(&err))
+		return err
+	}
+
 	// polling waits until WaitForCycle waits on clk for its next poll and its deadline.
 	polling := func() {
 		Eventually(clk.Waiting, time.Second).Should(Equal(2))
@@ -90,20 +98,20 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 	It("fails at once when no daemon holds state/daemon.lock", func() {
 		served(2)
 
-		Expect(daemon.WaitForCycle(state, 3, waitTimeout, clk)).To(MatchError("the daemon exited before it served sync request 3"))
+		Expect(result(3)).To(MatchError("the daemon exited before it served sync request 3"))
 	})
 
 	It("gives the served cycle's result after the daemon exited", func() {
 		served(3)
 
-		Expect(daemon.WaitForCycle(state, 3, waitTimeout, clk)).To(Succeed())
+		Expect(result(3)).To(Succeed())
 	})
 
 	It("fails at once with the blocked reason when blocked.retry_at is past its deadline", func() {
 		runDaemon()
 		writeStatus(`{"served_request": 2, "blocked": {"kind": "rate_limit", "detail": "429", "retry_at": "2026-10-03T18:01:01Z"}}`)
 
-		err := daemon.WaitForCycle(state, 3, waitTimeout, clk)
+		err := result(3)
 
 		Expect(err).To(MatchError(failure.Blocked{Kind: failure.RateLimit, Detail: "429", RetryAt: t0.Add(waitTimeout + time.Second)}))
 	})
@@ -123,7 +131,7 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 			runDaemon()
 			writeStatus("%s", content)
 
-			Expect(daemon.WaitForCycle(state, 3, waitTimeout, clk)).To(want)
+			Expect(result(3)).To(want)
 		},
 		Entry("blocked",
 			`{"served_request": 3, "last_sync_started_at": "2026-10-03T18:00:00Z", "blocked": {"kind": "auth", "detail": "401"}}`,
