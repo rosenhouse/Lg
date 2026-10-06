@@ -143,16 +143,16 @@ var _ = Describe("lg sync with no daemon", Label("sync"), func() {
 		env, fake := newDaemonEnv()
 		release := fake.Hold(heldLog)
 		DeferCleanup(release)
-		first := env.Lg("sync")
+		_, firstExit := env.StartSync()
 		Eventually(fake.Requests, cycleWait).WithContext(ctx).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
 
-		second := env.Lg("sync", "--wait")
+		second, secondExit := env.StartSync("--wait")
 		Eventually(second.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("waiting for .*write.lock"))
 		Consistently(second, time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
 		release()
 
-		Eventually(first, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
-		Eventually(second, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		Expect(firstExit()).To(gexec.Exit(0))
+		Expect(secondExit()).To(gexec.Exit(0))
 		Expect(cycle(env)()).To(Equal(2.0))
 		Expect(cycleListings(fake)).To(Equal(2))
 		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
@@ -175,14 +175,14 @@ var _ = Describe("lg sync with no daemon, when a daemon starts while it waits fo
 	It("still completes its own cycle", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
 		release := holdWriteLock(env)
-		oneShot := env.Lg("sync")
+		oneShot, oneShotExit := env.StartSync()
 		Eventually(oneShot.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("waiting for .*write.lock"))
 
 		env.Start("daemon", "run")
 		Eventually(held(env, "daemon.lock"), cycleWait).WithContext(ctx).Should(BeTrue())
 		release()
 
-		Eventually(oneShot, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		Expect(oneShotExit()).To(gexec.Exit(0))
 		Expect(string(oneShot.Err.Contents())).NotTo(ContainSubstring("sent sync request"))
 		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
