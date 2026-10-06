@@ -101,3 +101,21 @@ func DirID(name string) (int64, bool) {
 	}
 	return id, true
 }
+
+// Location is what a path relative to data/ names. Each dir is relative to
+// data/, and empty when the path is not in one.
+type Location struct {
+	Host, Repo  string
+	RunID       int64
+	RunDir      string
+	Attempt     int
+	AttemptDir  string
+	JobID       int64
+	JobDir      string
+	ArtifactID  int64
+	ArtifactDir string
+	// File is the rest of the path, below the deepest of those dirs.
+	File string
+}
+
+func Parse(path string) (Location, error) { return Location{}, nil }
