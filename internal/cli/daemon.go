@@ -35,7 +35,9 @@ func (daemonRunCmd) Run(deps *Deps) error {
 	if err := os.MkdirAll(state, 0o755); err != nil {
 		return failure.FromErrno(err)
 	}
-	instance, err := daemon.LockInstance(state, deps.Clock)
+	instance, err := daemon.LockInstance(deps.StoreFS, state, deps.Clock, func(err error) {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
+	})
 	if err != nil {
 		return err
 	}
