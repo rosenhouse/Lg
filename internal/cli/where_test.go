@@ -349,6 +349,35 @@ var _ = Describe("LineReader", Label("where"), func() {
 		Expect(ok).To(BeFalse())
 		Expect(read).To(BeNumerically("<", 2*len(content)))
 	})
+
+	It("reads each line of a file about once while the file is among the last 16 it read", func() {
+		dir := GinkgoT().TempDir()
+		var files []string
+		content := strings.Repeat(strings.Repeat("x", 1023)+"\n", 100)
+		for n := range 17 {
+			files = append(files, filepath.Join(dir, strconv.Itoa(n)))
+			Expect(os.WriteFile(files[n], []byte(content), 0o644)).To(Succeed())
+		}
+		// readTwice gives how many bytes reading the last line of each file, twice in turn, reads.
+		readTwice := func(files []string) int {
+			var read int
+			l := cli.NewLineReader(func(path string) (io.ReadSeekCloser, error) {
+				file, err := os.Open(path)
+				return countingFile{file, &read}, err
+			})
+			defer l.Close()
+			for range 2 {
+				for _, file := range files {
+					_, ok := l.Line(file, 100)
+					Expect(ok).To(BeTrue())
+				}
+			}
+			return read
+		}
+
+		Expect(readTwice(files[:16])).To(BeNumerically("<", 16*len(content)*11/10))
+		Expect(readTwice(files)).To(BeNumerically(">", 17*len(content)*19/10))
+	})
 })
 
 // countingFile adds the bytes it reads to *read.

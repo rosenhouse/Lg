@@ -378,35 +378,44 @@ func newLineReader(open func(path string) (io.ReadSeekCloser, error)) *lineReade
 	return &lineReader{open: open}
 }
 
+// cachedFiles is how many files a lineReader keeps line starts of.
+const cachedFiles = 16
+
 // lineReader reads one file at a time. It keeps where each line it has read
-// starts, so that it reads each line about once, whatever order hits are in.
+// starts in the last cachedFiles files, so that it reads each line about
+// once, whatever order hits are in.
 type lineReader struct {
 	open func(path string) (io.ReadSeekCloser, error)
-	path string
 	file io.ReadSeekCloser
 	r    *bufio.Reader
-	// at is the offset r reads from, and starts[i] where line i+1 starts.
-	at     int64
+	// at is the offset r reads from.
+	at int64
+	// files are the files last read, the open one last.
+	files []lineStarts
+}
+
+// lineStarts holds where lines of the file at path start: starts[i] is
+// where line i+1 starts.
+type lineStarts struct {
+	path   string
 	starts []int64
 }
 
 // line gives line n of the file at path.
 func (l *lineReader) line(path string, n int) (string, bool) {
-	if path != l.path {
-		l.close()
-		file, err := l.open(path)
-		if err != nil {
+	if l.file == nil || l.files[len(l.files)-1].path != path {
+		if !l.switchTo(path) {
 			return "", false
 		}
-		l.path, l.file, l.r, l.starts = path, file, bufio.NewReader(file), []int64{0}
 	}
-	i := min(n, len(l.starts)) - 1
-	if l.at != l.starts[i] {
-		if _, err := l.file.Seek(l.starts[i], io.SeekStart); err != nil {
+	f := &l.files[len(l.files)-1]
+	i := min(n, len(f.starts)) - 1
+	if l.at != f.starts[i] {
+		if _, err := l.file.Seek(f.starts[i], io.SeekStart); err != nil {
 			return "", false
 		}
 		l.r.Reset(l.file)
-		l.at = l.starts[i]
+		l.at = f.starts[i]
 	}
 	for {
 		line, err := l.r.ReadString('\n')
@@ -415,8 +424,8 @@ func (l *lineReader) line(path string, n int) (string, bool) {
 		}
 		l.at += int64(len(line))
 		i++
-		if i == len(l.starts) {
-			l.starts = append(l.starts, l.at)
+		if i == len(f.starts) {
+			f.starts = append(f.starts, l.at)
 		}
 		if i == n {
 			return strings.TrimSuffix(line, "\n"), true
@@ -424,9 +433,29 @@ func (l *lineReader) line(path string, n int) (string, bool) {
 	}
 }
 
+// switchTo opens path, with the line starts known of it, in place of the open file.
+func (l *lineReader) switchTo(path string) bool {
+	l.close()
+	file, err := l.open(path)
+	if err != nil {
+		return false
+	}
+	l.file, l.r, l.at = file, bufio.NewReader(file), 0
+	known := lineStarts{path: path, starts: []int64{0}}
+	if i := slices.IndexFunc(l.files, func(f lineStarts) bool { return f.path == path }); i >= 0 {
+		known = l.files[i]
+		l.files = slices.Delete(l.files, i, i+1)
+	}
+	if len(l.files) == cachedFiles {
+		l.files = slices.Delete(l.files, 0, 1)
+	}
+	l.files = append(l.files, known)
+	return true
+}
+
 func (l *lineReader) close() {
 	if l.file != nil {
 		_ = l.file.Close()
+		l.file = nil
 	}
-	*l = lineReader{open: l.open}
 }
