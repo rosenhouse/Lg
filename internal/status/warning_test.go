@@ -26,6 +26,11 @@ func blocked(kind failure.Kind, detail string, retryAt *time.Time) *status.Statu
 
 var retryAt = now.Add(5 * time.Minute)
 
+func withConfigError(st *status.Status, err string) *status.Status {
+	st.ConfigError = &err
+	return st
+}
+
 var _ = DescribeTable("Warning", Label("status"),
 	func(st *status.Status, warning string) {
 		Expect(status.Warning(now, st)).To(Equal(warning))
@@ -51,6 +56,12 @@ var _ = DescribeTable("Warning", Label("status"),
 		"last successful sync was 20m1s ago, at 2026-10-03T17:39:59Z, over twice sync_interval 10m0s"),
 	Entry("at twice sync_interval", synced(20*time.Minute), ""),
 	Entry("fresh", synced(time.Minute), ""),
+	Entry("fresh, with an invalid config.yaml the daemon kept the last good one for", withConfigError(synced(time.Minute), "config.yaml: unknown key colour;\nkept the last good config"),
+		"config.yaml is invalid: config.yaml: unknown key colour; kept the last good config"),
+	Entry("stale, with an invalid config.yaml, as stale", withConfigError(synced(time.Hour), "unknown key colour"),
+		"last successful sync was 1h0m0s ago, at 2026-10-03T17:00:00Z, over twice sync_interval 10m0s"),
+	Entry("blocked, with an invalid config.yaml, as blocked", withConfigError(blocked(failure.Auth, "401 Unauthorized", nil), "unknown key colour"),
+		"sync blocked: auth since 2026-10-03T17:00:00Z: 401 Unauthorized"),
 	Entry("fresh, with a sync_interval whose double overflows", func() *status.Status {
 		st := synced(time.Minute)
 		st.SyncIntervalSeconds = 2_000_000 * 3600
