@@ -168,6 +168,40 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 
 		Expect(code).To(Equal(4))
 	})
+
+	It("counts --timeout from before its wait for state/request.lock", func() {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		state := filepath.Join(home, "state")
+		Expect(os.Mkdir(state, 0o755)).To(Succeed())
+		held, err := lock.Wait(filepath.Join(state, "daemon.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+		request, err := lock.Wait(filepath.Join(state, "request.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		t0 := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+		clk := clock.NewFake(t0)
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main([]string{"sync", "--wait", "--timeout", "1m"}, cli.Deps{
+				Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+				Stdout:  &bytes.Buffer{},
+				Stderr:  &bytes.Buffer{},
+				Clock:   clk,
+				StoreFS: store.OSFS{},
+			})
+		}()
+		Eventually(clk.Waiting, time.Second).Should(Equal(2))
+		Expect(request.Release()).To(Succeed())
+		clk.Set(t0.Add(5 * time.Second))
+		// The request's stale lock deadline, and WaitForCycle's deadline and poll.
+		Eventually(clk.Waiting, time.Second).Should(Equal(3))
+
+		clk.Set(t0.Add(time.Minute))
+
+		Eventually(code, time.Second).Should(Receive(Equal(4)))
+	})
 })
 
 // fullWriter fails every write, as a full disk does.
