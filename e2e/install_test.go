@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -144,7 +145,6 @@ var _ = Describe("lg daemon uninstall", Label("install"), func() {
 	It("stops and disables the service before removing the unit or plist", func() {
 		env, service, unit := newInstallEnv()
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
-		installed := len(service.Calls())
 		verb, stop, file := "disable", "--user disable --now lg.service", "lg.service"
 		if runtime.GOOS == "darwin" {
 			verb, stop, file = "bootout", fmt.Sprintf("bootout gui/%d/%s", os.Getuid(), launchdLabel), launchdLabel+".plist"
@@ -155,10 +155,11 @@ var _ = Describe("lg daemon uninstall", Label("install"), func() {
 		Expect(unit).To(BeAnExistingFile())
 
 		service.Unfail(verb)
+		before := len(service.Calls())
 		Eventually(env.Lg("daemon", "uninstall"), harness.ExitTimeout).Should(gexec.Exit(0))
 
 		Expect(unit).NotTo(BeAnExistingFile())
-		calls, units := service.Calls()[installed:], service.Units()[installed:]
+		calls, units := service.Calls()[before:], service.Units()[before:]
 		i := slices.Index(calls, stop)
 		Expect(i).To(BeNumerically(">=", 0), "calls: %q", calls)
 		Expect(units[i]).To(ContainElement(file))
@@ -202,10 +203,15 @@ var _ = Describe("under a real systemd user manager", Label("systemd"), func() {
 		env.Setenv("XDG_RUNTIME_DIR", os.Getenv("XDG_RUNTIME_DIR"))
 		name := fmt.Sprintf("lg-test-%d-%d", GinkgoParallelProcess(), GinkgoRandomSeed())
 
-		Eventually(env.Lg("daemon", "install", "--name", name), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 		DeferCleanup(func() {
-			Eventually(env.Lg("daemon", "uninstall", "--name", name), harness.ExitTimeout).Should(gexec.Exit(0))
+			if CurrentSpecReport().Failed() {
+				journal, _ := exec.CommandContext(context.Background(), "journalctl", "--user", "--no-pager", "-u", name+".service").CombinedOutput()
+				AddReportEntry("journal", string(journal))
+			}
+			Eventually(env.Lg("daemon", "uninstall", "--name", name), harness.ExitTimeout).Should(gexec.Exit())
+			Expect(filepath.Join(home, ".config", "systemd", "user", name+".service")).NotTo(BeAnExistingFile())
 		})
+		Eventually(env.Lg("daemon", "install", "--name", name), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
 		Eventually(cycle(env), time.Minute).WithContext(ctx).Should(BeNumerically(">=", 1))
 		Expect(env.Status()).To(HaveKeyWithValue("last_sync_ok_at", Not(BeNil())))
