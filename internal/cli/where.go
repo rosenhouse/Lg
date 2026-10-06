@@ -212,8 +212,8 @@ func (f *placeFinder) find(hit string) (place, error) {
 		return place{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if h.Line > 0 {
-		text, holds := f.holding(path, h.Line, h.Text)
-		if !holds {
+		text, held := f.holding(path, h.Line, h.Text)
+		if !held {
 			text = hit[len(h.Path)+1:]
 			if !f.anyHolding(path, text) {
 				if h.Text == "" {
