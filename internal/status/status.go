@@ -167,6 +167,7 @@ func Next(prev *Status, c Cycle) Status {
 		LastSyncStartedAt:   c.Started.UTC().Truncate(time.Second),
 		LastSyncFinishedAt:  finished,
 		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
+		LastSyncErrors:      lines(c.Err),
 	}
 	if !errors.Is(c.Err, context.Canceled) {
 		st.NextSyncAt = timeOrNil(c.NextSyncAt)
@@ -257,6 +258,18 @@ func timeOrNil(t time.Time) *time.Time {
 	}
 	t = t.UTC()
 	return &t
+}
+
+// lines gives each line of err passed through OneLine.
+func lines(err error) []string {
+	found := []string{}
+	if err == nil {
+		return found
+	}
+	for _, line := range strings.Split(err.Error(), "\n") {
+		found = append(found, OneLine(line))
+	}
+	return found
 }
 
 // oneLineErrors gives pending with each error passed through OneLine.
