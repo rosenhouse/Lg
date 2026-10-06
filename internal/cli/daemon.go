@@ -111,12 +111,13 @@ func (d *daemonCycle) run(ctx context.Context, serving func() int64) daemon.Outc
 	} else {
 		configErr = fmt.Errorf("%w; kept the last good config", configErr)
 	}
+	served := serving()
 	var out daemon.Outcome
 	_, err = recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
 		out = daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err)}
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
 		c.NextSyncAt = out.Next()
-		c.ServedRequest = serving()
+		c.ServedRequest = served
 		c.ConfigError = configErr
 	})
 	out.Err = errors.Join(configErr, err)
