@@ -57,8 +57,14 @@ type source struct {
 	jobs string
 }
 
+// below selects the rows whose path column child is below the dir in column parent.
+func below(child, parent string) string {
+	// '0' follows '/', so the range holds exactly the paths below parent.
+	return fmt.Sprintf("%[1]s > %[2]s || '/' AND %[1]s < %[2]s || '0'", child, parent)
+}
+
 // within selects the rows of table x below the dir of run r.
-const within = "x.path > r.path || '/' AND x.path < r.path || '0'"
+var within = below("x.path", "r.path")
 
 // latestConclusion is the conclusion of run r's latest attempt.
 const latestConclusion = "(SELECT conclusion FROM attempts WHERE path = r.path || '/attempt-' || r.latest_attempt)"
@@ -112,13 +118,17 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 	if err != nil {
 		return nil, ix.dbError(err)
 	}
-	var dirs [][2]string
+	type unitDir struct {
+		unit Unit
+		dir  string
+	}
+	var dirs []unitDir
 	for rows.Next() {
-		var unit, dir string
-		if err := rows.Scan(&unit, &dir); err != nil {
+		var d unitDir
+		if err := rows.Scan(&d.unit, &d.dir); err != nil {
 			return nil, errors.Join(ix.dbError(err), rows.Close())
 		}
-		dirs = append(dirs, [2]string{unit, dir})
+		dirs = append(dirs, d)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, ix.dbError(err)
@@ -126,7 +136,7 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 	var paths []string
 	var unread []error
 	for _, d := range dirs {
-		files, err := unitFiles(Unit(d[0]), d[1])
+		files, err := unitFiles(d.unit, d.dir)
 		paths = append(paths, files...)
 		unread = append(unread, err)
 	}
@@ -148,7 +158,7 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	if s.jobs == "" {
 		anyOf(&w, "x.name GLOB ?", f.Jobs)
 	} else {
-		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j WHERE j.path > "+s.jobs+" || '/' AND j.path < "+s.jobs+" || '0' AND j.name GLOB ?)", f.Jobs)
+		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j WHERE "+below("j.path", s.jobs)+" AND j.name GLOB ?)", f.Jobs)
 	}
 	if !f.Since.IsZero() {
 		w.add(s.when+" >= ?", timeText(f.Since))
@@ -218,8 +228,10 @@ func unitFiles(u Unit, dir string) ([]string, error) {
 		return regular(dir, "job.json")
 	case UnitLog:
 		return regular(dir, "log.txt")
+	case UnitArtifact:
+		return regular(dir, "artifact.zip")
 	}
-	return regular(dir, "artifact.zip")
+	return nil, errors.New("unknown unit " + string(u))
 }
 
 // walk gives the regular files below root that keep accepts, skipping what is

@@ -87,8 +87,8 @@ func parseMoment(s string) (moment, error) {
 	return moment{}, fmt.Errorf("want 30d, 12h, 2026-09-01 or an RFC 3339 time, not %q", s)
 }
 
-// time gives the moment as of now, or the zero time when it is not set.
-func (m moment) time(now time.Time) time.Time {
+// resolve gives the moment as of now, or the zero time when it is not set.
+func (m moment) resolve(now time.Time) time.Time {
 	switch {
 	case !m.set:
 		return time.Time{}
@@ -101,7 +101,7 @@ func (m moment) time(now time.Time) time.Time {
 func (p pathsCmd) filter(now time.Time) index.Filter {
 	return index.Filter{
 		Branches: p.Branch, SHAs: p.SHA, PRs: p.PR, Workflows: p.Workflow, Jobs: p.Job, Events: p.Event,
-		Conclusions: p.Conclusion, Since: p.Since.time(now), Until: p.Until.time(now),
+		Conclusions: p.Conclusion, Since: p.Since.resolve(now), Until: p.Until.resolve(now),
 	}
 }
 
