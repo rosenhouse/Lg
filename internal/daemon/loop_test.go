@@ -222,6 +222,20 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		Expect(reconciled.Load()).To(BeFalse())
 	})
 
+	It("logs that it stopped, not when the next sync is due, after a cycle that ctx cancelled", func() {
+		e := newLoopEnv(outcomeAt(t0))
+		proceed := make(chan struct{})
+		e.during = func(context.Context) { <-proceed }
+		cancel, returned := e.run()
+		e.expectCycle(t0, 0)
+
+		cancel()
+		close(proceed)
+
+		Eventually(returned, time.Second).Should(BeClosed())
+		Expect(e.log.String()).To(Equal("lg: stopped\n"))
+	})
+
 	It("starts no cycle for a request once ctx is cancelled during the reconcile", func() {
 		e := newLoopEnv(outcomeAt(t0))
 		cancels := make(chan context.CancelFunc, 1)

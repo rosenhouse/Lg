@@ -53,14 +53,15 @@ func (l *Loop) Run(ctx context.Context) {
 		}
 		l.truncateLog()
 		out := l.Cycle(ctx, served)
+		if ctx.Err() != nil {
+			l.logf("stopped")
+			return
+		}
 		result := "ok"
 		if out.Err != nil {
 			result = status.OneLine(out.Err.Error())
 		}
 		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, out.Next.UTC().Format(time.RFC3339))
-		if ctx.Err() != nil {
-			return
-		}
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
