@@ -192,25 +192,32 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(status.Next(&prev, c).Repos[repo].Pending).To(Equal([]status.Pending{{Unit: status.Unit{Run: 1}, Error: "502", Since: started.UTC()}}))
 	})
 
-	It("keeps, after a cycle that stopped early, the units it left and the earlier ones still missing on disk, with their since", func() {
-		prev := status.Next(nil, good(started.Add(-time.Hour)))
-		earlier := started.UTC().Add(-time.Hour)
-		prev.Repos[repo] = status.Repo{Pending: []status.Pending{
-			{Unit: status.Unit{Run: 1, Attempt: 1}, Error: "502", Since: earlier},
-			{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "digest mismatch", Since: earlier},
-			{Unit: status.Unit{Run: 3}, Error: "500", Since: earlier.Add(time.Minute)},
-		}}
-		c := blockedCycle(started, failure.Blocked{Kind: failure.Auth, Detail: "401"})
-		c.Pending = []status.Pending{{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout"}}
-		c.Disk.Published = map[status.Unit]bool{{Run: 1, Attempt: 1}: true}
+	DescribeTable("keeps, after a cycle that stopped early, the units it left and the earlier ones still missing on disk, with their since",
+		func(c status.Cycle) {
+			prev := status.Next(nil, good(started.Add(-time.Hour)))
+			earlier := started.UTC().Add(-time.Hour)
+			prev.Repos[repo] = status.Repo{Pending: []status.Pending{
+				{Unit: status.Unit{Run: 1, Attempt: 1}, Error: "502", Since: earlier},
+				{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "digest mismatch", Since: earlier},
+				{Unit: status.Unit{Run: 3}, Error: "500", Since: earlier.Add(time.Minute)},
+			}}
+			c.Pending = []status.Pending{{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout"}}
+			c.Disk.Published = map[status.Unit]bool{{Run: 1, Attempt: 1}: true}
 
-		r := status.Next(&prev, c).Repos[repo]
-		Expect(r.Pending).To(Equal([]status.Pending{
-			{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout", Since: earlier},
-			{Unit: status.Unit{Run: 3}, Error: "500", Since: earlier.Add(time.Minute)},
-		}))
-		Expect(r.PendingUnits).To(Equal(2))
-	})
+			r := status.Next(&prev, c).Repos[repo]
+			Expect(r.Pending).To(Equal([]status.Pending{
+				{Unit: status.Unit{Run: 2, Artifact: 7}, Error: "timeout", Since: earlier},
+				{Unit: status.Unit{Run: 3}, Error: "500", Since: earlier.Add(time.Minute)},
+			}))
+			Expect(r.PendingUnits).To(Equal(2))
+		},
+		Entry("blocked", blockedCycle(started, failure.Blocked{Kind: failure.Auth, Detail: "401"})),
+		Entry("cancelled", func() status.Cycle {
+			c := good(started)
+			c.Completed, c.Err = false, fmt.Errorf("sync: %w", context.Canceled)
+			return c
+		}()),
+	)
 
 	It("records a blocked cycle since it started, keeping the last good sync, pending units and default branch", func() {
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
