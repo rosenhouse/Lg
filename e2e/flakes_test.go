@@ -202,7 +202,12 @@ var _ = Describe("lg flakes", Ordered, ContinueOnFailure, Label("flakes"), func(
 			HaveKeyWithValue("run_id", BeEquivalentTo(other)),
 			HaveKeyWithValue("failing_steps", BeEmpty()),
 		)))
-		Expect(runIDs("--since", "2026-10-03T14:25:00Z")).To(BeEmpty())
+		// Filters other than --job select runs, whose every attempt counts.
+		Expect(findingsOf(flakes(env, "--since", "2026-10-03T14:24:00Z"), "flaky", false)).To(HaveExactElements(
+			finding("flaky", "", []int{1, 2, 3}, "failure", "success", "success")))
+		Expect(runIDs("--since", "2026-10-03T14:30:00Z")).To(BeEmpty())
+		Expect(runIDs("--conclusion", "success")).To(HaveEach(BeEquivalentTo(fixtureRun)))
+		Expect(runIDs("--conclusion", "failure")).To(HaveExactElements(BeEquivalentTo(other)))
 
 		jobs := filepath.Join(env.Data(), fixtureRunDir)
 		flaky := findingsOf(flakes(env, "--sha", "1a51097"), "flaky", false)

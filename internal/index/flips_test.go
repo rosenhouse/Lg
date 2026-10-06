@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/model"
@@ -16,7 +17,9 @@ import (
 )
 
 var _ = Describe("index.RerunFlips", Label("flakes"), func() {
-	const carried = 2
+	const (
+		carried = 2
+	)
 	var (
 		env *harness.InProcessEnv
 		ix  *index.Index
@@ -43,6 +46,13 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 		return flips
 	}
 
+	jobFlip := func(run int64, job string, outcomes ...model.Outcome) types.GomegaMatcher {
+		return SatisfyAll(HaveField("Flip.RunID", BeEquivalentTo(run)), HaveField("Flip.Job", job), HaveField("Flip.Step", ""), HaveField("Flip.Outcomes", outcomes))
+	}
+	flaky := func() types.GomegaMatcher {
+		return jobFlip(runID, "flaky", model.Outcome{Attempt: 1, Conclusion: "failure"}, model.Outcome{Attempt: 2, Conclusion: "success"}, model.Outcome{Attempt: 3, Conclusion: "success"})
+	}
+
 	It("gives the flips of the jobs and steps that ran, with the run's head SHA and the logs on disk", func(ctx SpecContext) {
 		run := runDir(env.Data(), runID)
 		log := func(attempt string, job string) string { return filepath.Join(run, attempt, "jobs", job, "log.txt") }
@@ -61,18 +71,23 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 
 	It("leaves out carried-forward jobs", func(ctx SpecContext) {
 		Expect(flips(ctx, index.Filter{})).To(ContainElement(SatisfyAll(
-			HaveField("Flip.RunID", BeEquivalentTo(carried)),
-			HaveField("Flip.Job", "pass"),
-			HaveField("Flip.Step", ""),
-			HaveField("Flip.Outcomes", []model.Outcome{{Attempt: 1, Conclusion: "failure"}, {Attempt: 3, Conclusion: "success"}}),
+			jobFlip(carried, "pass", model.Outcome{Attempt: 1, Conclusion: "failure"}, model.Outcome{Attempt: 3, Conclusion: "success"}),
 			HaveField("Flip.Logs", HaveLen(2)),
 		)))
 	})
 
-	It("considers only the jobs the filter selects, as Paths does for UnitJob", func(ctx SpecContext) {
-		Expect(flips(ctx, index.Filter{Jobs: []string{"time*"}})).To(HaveEach(HaveField("Flip.Job", "timeout")))
-		Expect(flips(ctx, index.Filter{Jobs: []string{"time*"}})).To(HaveLen(2))
+	It("selects job names with Filter.Jobs, and runs with the rest of it, comparing every attempt of a run selected", func(ctx SpecContext) {
+		Expect(flips(ctx, index.Filter{Jobs: []string{"time*"}})).To(SatisfyAll(HaveLen(2), HaveEach(HaveField("Flip.Job", "timeout"))))
 		Expect(flips(ctx, index.Filter{SHAs: []string{"2"}})).To(HaveEach(HaveField("Flip.RunID", BeEquivalentTo(carried))))
-		Expect(flips(ctx, index.Filter{Since: time.Date(2026, 10, 3, 14, 25, 0, 0, time.UTC)})).To(BeEmpty())
+
+		sha := []string{"1a51097"}
+		betweenAttempts1And2 := time.Date(2026, 10, 3, 14, 24, 0, 0, time.UTC)
+		Expect(flips(ctx, index.Filter{SHAs: sha, Since: betweenAttempts1And2})).To(ContainElement(flaky()))
+		Expect(flips(ctx, index.Filter{SHAs: sha, Until: betweenAttempts1And2})).To(ContainElement(flaky()))
+		Expect(flips(ctx, index.Filter{SHAs: sha, Since: time.Date(2026, 10, 3, 14, 27, 0, 0, time.UTC)})).To(BeEmpty())
+
+		// The fixture run's latest attempt succeeded; the others' failed.
+		Expect(flips(ctx, index.Filter{Conclusions: []string{"success"}})).To(SatisfyAll(ContainElement(flaky()), HaveEach(HaveField("Flip.RunID", BeEquivalentTo(runID)))))
+		Expect(flips(ctx, index.Filter{Conclusions: []string{"failure"}})).To(SatisfyAll(Not(BeEmpty()), HaveEach(HaveField("Flip.RunID", Not(BeEquivalentTo(runID))))))
 	})
 })

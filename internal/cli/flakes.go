@@ -17,8 +17,10 @@ type flakesCmd struct {
 }
 
 func (flakesCmd) Help() string {
-	return "Reports each job name, and each step name of it, per run. Only jobs that ran count, as lg paths --unit job selects them. " +
-		"A name fails in an attempt if any of its jobs failed, was cancelled or timed out; skipped and neutral count as neither."
+	return "Reports each job name of a run, and each step name of it, that failed in one attempt and passed in another. " +
+		"Only jobs that ran count. A name fails in an attempt if any of its jobs failed, was cancelled or timed out; skipped and neutral count as neither. " +
+		"--job selects job names. The other filters select runs, and every attempt of a run counts: " +
+		"--since and --until match the start of any attempt, and --conclusion the latest attempt."
 }
 
 func (f flakesCmd) Validate() error { return f.validate() }
