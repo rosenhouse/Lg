@@ -44,7 +44,6 @@ var _ = Describe("lg paths", Label("sync"), func() {
 		Expect(stdout.String()).To(BeEmpty())
 		Expect(stderr.String()).To(ContainSubstring(data))
 	})
-
 })
 
 var _ = Describe("lg paths", Label("sync"), func() {
