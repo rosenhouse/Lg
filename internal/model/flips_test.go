@@ -87,6 +87,15 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 		))
 	})
 
+	It("gives no success to a name, or a step of it, in an attempt that carries forward a failing job of that name", func() {
+		Expect(model.RerunFlips([]model.AttemptJob{
+			job(1, 1, 11, "same name", "failure", "check", "failure"),
+			job(1, 1, 12, "same name", "success", "check", "success"),
+			kind(job(1, 2, 21, "same name", "failure", "check", "failure"), model.CarriedForward),
+			job(1, 2, 22, "same name", "success", "check", "success"),
+		})).To(BeEmpty())
+	})
+
 	It("takes a step's outcome from the step, not from its job", func() {
 		flips := model.RerunFlips([]model.AttemptJob{
 			job(1, 1, 11, "test", "success", "check", "failure"),
