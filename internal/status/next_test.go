@@ -156,6 +156,18 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(r.PendingUnits).To(Equal(3))
 	})
 
+	It("lists a unit the cycle left pending twice once, with its first error", func() {
+		c := good(started)
+		c.Pending = []status.Pending{
+			{Unit: status.Unit{Run: 1}, Error: "runs/1: 503"},
+			{Unit: status.Unit{Run: 1}, Error: "artifacts: 503"},
+		}
+
+		r := status.Next(nil, c).Repos[repo]
+		Expect(r.Pending).To(Equal([]status.Pending{{Unit: status.Unit{Run: 1}, Error: "runs/1: 503", Since: finished}}))
+		Expect(r.PendingUnits).To(Equal(1))
+	})
+
 	It("records since for a unit when it first becomes pending", func() {
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
 		c := good(started)

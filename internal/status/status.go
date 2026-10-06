@@ -335,12 +335,15 @@ func lines(err error) []string {
 	return found
 }
 
-// withSince gives pending with each error passed through OneLine. A unit
-// keeps its since from last, unless a clock step put that after finished.
-// Any other unit is pending since finished.
+// withSince gives each unit of pending once, with its first error passed
+// through OneLine. A unit keeps its since from last, unless a clock step put
+// that after finished. Any other unit is pending since finished.
 func withSince(pending, last []Pending, finished time.Time) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
+		if pendingIn(found, p.Unit) {
+			continue
+		}
 		since, ok := sinceIn(last, p.Unit)
 		if !ok || since.After(finished) {
 			since = finished
