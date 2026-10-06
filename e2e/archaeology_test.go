@@ -12,6 +12,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 	"github.com/onsi/gomega/types"
 
@@ -239,6 +240,21 @@ var _ = Describe("lg paths", Label("paths"), func() {
 
 		Expect(os.Remove(logs[0])).To(Succeed())
 		Expect(lines(env, "paths", "--unit", "log")).To(ConsistOf(logs[1:]))
+	})
+
+	It("answers with a warning when state/ is read-only, as on a read-only disk", func() {
+		if os.Geteuid() == 0 {
+			Skip("root writes to a read-only dir")
+		}
+		env, _ := archaeologyEnv()
+		want := lines(env, "paths")
+		Expect(os.Chmod(env.State(), 0o555)).To(Succeed())
+		DeferCleanup(os.Chmod, env.State(), os.FileMode(0o755))
+
+		session := env.Lg("paths")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(outputLines(session)).To(Equal(want))
+		Expect(session.Err).To(gbytes.Say("lg: warning: indexing data/ in memory, since "))
 	})
 
 	It("prints nothing and exits 0 when nothing matches", func() {

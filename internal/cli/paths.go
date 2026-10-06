@@ -129,12 +129,24 @@ func (p pathsCmd) Run(deps *Deps) error {
 	}
 	ctx := context.Background()
 	ix, err := openIndex(ctx, roots, deps)
-	if err != nil {
-		return err
+	reconciled := err
+	if err == nil {
+		// A run or unit lg cannot read leaves the others answerable.
+		reconciled = ix.Reconcile(ctx)
+	}
+	// A full or read-only disk leaves lg.db unusable, but data/ readable.
+	var unusable *index.DBError
+	if errors.As(reconciled, &unusable) {
+		if ix != nil {
+			_ = ix.Close()
+		}
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: indexing data/ in memory, since %v\n", unusable)
+		if ix, err = index.OpenMemory(ctx, roots.Data); err != nil {
+			return err
+		}
+		reconciled = ix.Reconcile(ctx)
 	}
 	defer func() { _ = ix.Close() }()
-	// A run or unit lg cannot read leaves the others answerable.
-	reconciled := ix.Reconcile(ctx)
 	paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
 	for _, path := range paths {
 		if _, err := fmt.Fprint(deps.Stdout, path, sep); err != nil {

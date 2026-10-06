@@ -2,6 +2,7 @@
 package index
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -38,10 +39,25 @@ const lockTimeout = 5 * time.Minute
 // quietWait is how long an index user waits for lg.db.lock before saying so.
 const quietWait = time.Second
 
+// Index is lg.db, or an index held in memory alone when path is "".
 type Index struct {
 	db         *sql.DB
 	path, data string
 	waiting    func(holder string)
+}
+
+// DBError is an error of lg.db or lg.db.lock, rather than of data/.
+type DBError struct{ Err error }
+
+func (e *DBError) Error() string { return e.Err.Error() }
+
+func (e *DBError) Unwrap() error { return e.Err }
+
+func ofDB(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &DBError{err}
 }
 
 // Open opens the index at path over the data dir data. It starts from empty
@@ -54,29 +70,42 @@ func Open(ctx context.Context, path, data string, waiting func(holder string)) (
 		waiting = func(string) {}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+		return nil, ofDB(err)
 	}
 	ix := &Index{path: path, data: data, waiting: waiting}
-	l, err := ix.lockFile(ctx)
+	release, err := ix.lockFile(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = l.Release() }()
+	defer release()
 	if err := ix.openReadable(ctx); err != nil {
-		return nil, err
+		return nil, ofDB(err)
 	}
 	return ix, nil
 }
 
+// OpenMemory opens an empty index over the data dir data, held in memory
+// alone, for when lg.db is unusable.
+func OpenMemory(ctx context.Context, data string) (*Index, error) {
+	ix := &Index{data: data, waiting: func(string) {}}
+	return ix, ix.open(ctx)
+}
+
 // lockFile takes lg.db.lock, unless ctx is done first. Every opener and
 // every writer holds it, so none opens a file while another replaces it, and
-// writers take turns.
-func (ix *Index) lockFile(ctx context.Context) (*lock.Lock, error) {
-	l, err := lock.WaitContext(ctx, ix.path+".lock", quietWait, clock.Real{}, func(string) {})
-	if !errors.Is(err, lock.ErrTimeout) {
-		return l, err
+// writers take turns. An index in memory takes none.
+func (ix *Index) lockFile(ctx context.Context) (release func(), err error) {
+	if ix.path == "" {
+		return func() {}, nil
 	}
-	return lock.WaitContext(ctx, ix.path+".lock", lockTimeout-quietWait, clock.Real{}, ix.waiting)
+	l, err := lock.WaitContext(ctx, ix.path+".lock", quietWait, clock.Real{}, func(string) {})
+	if errors.Is(err, lock.ErrTimeout) {
+		l, err = lock.WaitContext(ctx, ix.path+".lock", lockTimeout-quietWait, clock.Real{}, ix.waiting)
+	}
+	if err != nil {
+		return nil, ofDB(err)
+	}
+	return func() { _ = l.Release() }, nil
 }
 
 // openReadable opens lg.db, first removing a file SQLite cannot read.
@@ -97,9 +126,16 @@ func unreadable(err error) bool { return hasCode(err, sqlite3.SQLITE_NOTADB, sql
 func (ix *Index) open(ctx context.Context) error {
 	// SQLite decodes a file: URI's path, so no character of path starts the query.
 	uri := "file:" + (&url.URL{Path: ix.path}).EscapedPath()
+	if ix.path == "" {
+		uri = "file::memory:"
+	}
 	db, err := sql.Open("sqlite", fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_txlock=immediate", uri, busyTimeout.Milliseconds()))
 	if err != nil {
 		return err
+	}
+	if ix.path == "" {
+		// Each connection to :memory: has a db of its own.
+		db.SetMaxOpenConns(1)
 	}
 	ix.db = db
 	if err := ix.resetUnlessCurrent(ctx); err != nil {
@@ -247,17 +283,17 @@ func (ix *Index) startOver(ctx context.Context) error {
 	unread, statErr := os.Stat(ix.path)
 	// The unreadable db is about to go.
 	_ = ix.db.Close()
-	l, err := ix.lockFile(ctx)
+	release, err := ix.lockFile(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = l.Release() }()
+	defer release()
 	if now, err := os.Stat(ix.path); err == nil && statErr == nil && os.SameFile(unread, now) {
 		if err := os.Remove(ix.path); err != nil {
-			return err
+			return ofDB(err)
 		}
 	}
-	return ix.openReadable(ctx)
+	return ofDB(ix.openReadable(ctx))
 }
 
 func (ix *Index) Close() error { return ix.db.Close() }
@@ -268,11 +304,11 @@ func (ix *Index) Close() error { return ix.db.Close() }
 // takes the write lock only when the db changes. It returns the errors of the
 // runs whose files it could not read, after indexing the others.
 func (ix *Index) index(ctx context.Context, fresh bool) error {
-	l, err := ix.lockFile(ctx)
+	release, err := ix.lockFile(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = l.Release() }()
+	defer release()
 	var indexed map[string][]UnitDir
 	if !fresh {
 		if indexed, err = indexedUnits(ctx, ix.db); err != nil {
@@ -326,7 +362,7 @@ func (ix *Index) dbError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", ix.path, err)
+	return ofDB(fmt.Errorf("%s: %w", cmp.Or(ix.path, "the index in memory"), err))
 }
 
 // write drops the rows of indexed runs not on disk, and replaces those of each read run.

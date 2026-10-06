@@ -252,3 +252,21 @@ var _ = Describe("lg paths", Label("paths"), func() {
 		Expect(string(stderr.Contents())).NotTo(ContainSubstring("lg.db.lock"))
 	})
 })
+
+var _ = Describe("lg paths", Label("paths"), func() {
+	It("answers from an index of data/ in memory, saying why, when lg.db cannot be opened", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		Expect(c.Main("paths")).To(Equal(0))
+		want := c.Stdout.String()
+		db := filepath.Join(c.Home, "state", "lg.db")
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			Expect(os.RemoveAll(db + suffix)).To(Succeed())
+		}
+		Expect(os.Mkdir(db, 0o755)).To(Succeed())
+
+		Expect(c.Main("paths")).To(Equal(0), c.Stderr.String())
+		Expect(c.Stdout.String()).To(Equal(want))
+		Expect(c.Stderr.String()).To(MatchRegexp(`^lg: warning: indexing data/ in memory, since %s: .+\n$`, regexp.QuoteMeta(db)))
+	})
+})
