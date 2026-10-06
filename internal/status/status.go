@@ -240,7 +240,7 @@ func Next(prev *Status, c Cycle) Status {
 		st.Cycle = prev.Cycle + 1
 		st.LastSyncOKAt = prev.LastSyncOKAt
 		st.ServedRequest = max(st.ServedRequest, prev.ServedRequest)
-		last = prev.Repos[c.Repo]
+		last = repoIn(prev.Repos, c.Repo)
 	}
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
@@ -255,6 +255,17 @@ func Next(prev *Status, c Cycle) Status {
 	repo.PendingUnits = len(repo.Pending)
 	st.Repos = map[string]Repo{c.Repo: repo}
 	return st
+}
+
+// repoIn gives the repo in repos named name in any case, as Measure matches
+// it.
+func repoIn(repos map[string]Repo, name string) Repo {
+	for key, r := range repos {
+		if strings.EqualFold(key, name) {
+			return r
+		}
+	}
+	return Repo{}
 }
 
 // Remeasured is st with repo's disk fields from d, retention and diskCap,
