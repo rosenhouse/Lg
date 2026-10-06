@@ -28,6 +28,9 @@ var _ = Describe("lg where", Label("where"), func() {
 
 	BeforeEach(func() {
 		c = harness.NewCLI()
+	})
+
+	JustBeforeEach(func() {
 		Expect(c.Main("sync")).To(Equal(0))
 		attempt = filepath.Join(c.Home, "data", "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "37129390741_lg-fixture_lg-fixture", "attempt-1")
 		job = filepath.Join(attempt, "jobs", "111221289888_flaky")
@@ -310,6 +313,23 @@ var _ = Describe("lg where", Label("where"), func() {
 		))
 	})
 
+	It("exits 1 naming the run when the artifact holding the path does not parse", func() {
+		artifact := filepath.Join(filepath.Dir(attempt), "artifacts", "11276401837_flaky-report")
+		Expect(os.WriteFile(filepath.Join(artifact, "artifact.json"), []byte("{"), 0o644)).To(Succeed())
+
+		Expect(c.Main("where", filepath.Join(artifact, "artifact.zip"))).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Dir(attempt) + ": cannot read its artifact 11276401837_flaky-report"))
+	})
+
+	It("exits 1 naming job.json when it does not parse", func() {
+		Expect(os.WriteFile(filepath.Join(job, "job.json"), []byte("{"), 0o644)).To(Succeed())
+
+		Expect(c.Main("where", filepath.Join(job, "log.txt"))).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Join(job, "job.json") + ": unexpected end of JSON input"))
+	})
+
 	It("exits 1 naming the run when no unit of it parses", func() {
 		units, err := filepath.Glob(filepath.Join(filepath.Dir(attempt), "artifacts", "*", "artifact.json"))
 		Expect(err).NotTo(HaveOccurred())
@@ -336,23 +356,6 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(strings.Count(c.Stderr.String(), filepath.Join(attempt, "attempt.json"))).To(Equal(2))
 	})
 
-	It("decodes an artifact.zip.tombstone", func() {
-		c = harness.NewCLI()
-		c.WriteConfig("repo: rosenhouse/lg\napi_url: " + c.Fake.URL() + "\nartifact_max_bytes: 700\n")
-		Expect(c.Main("sync")).To(Equal(0))
-		tombstone := filepath.Join(c.Home, "data", "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "37129390741_lg-fixture_lg-fixture", "artifacts", "11276272069_pass-artifact", "artifact.zip.tombstone")
-
-		Expect(c.Main("where", tombstone)).To(Equal(0), c.Stderr.String())
-		var p map[string]any
-		Expect(json.Unmarshal(c.Stdout.Bytes(), &p)).To(Succeed())
-		Expect(p).To(SatisfyAll(
-			HaveKeyWithValue("artifact_id", BeEquivalentTo(11276272069)),
-			HaveKeyWithValue("reason", "too_large"),
-			HaveKeyWithValue("http_status", BeNil()),
-			HaveKeyWithValue("message", MatchRegexp(`^size_in_bytes \d+ exceeds artifact_max_bytes 700$`)),
-		))
-	})
-
 	It("gives a carried-forward job's original log only while it exists", func() {
 		Expect(c.Fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Expect(c.Main("sync")).To(Equal(0))
@@ -364,6 +367,40 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(os.Remove(original)).To(Succeed())
 		Expect(c.Main("where", carried)).To(Equal(0))
 		Expect(c.Stdout.String()).To(SatisfyAll(ContainSubstring(`"original_job_id":111221289911`), Not(ContainSubstring("original_log"))))
+	})
+
+	Context("with an artifact too large to fetch", func() {
+		var tombstone string
+
+		BeforeEach(func() {
+			c.WriteConfig("repo: rosenhouse/lg\napi_url: " + c.Fake.URL() + "\nartifact_max_bytes: 700\n")
+		})
+
+		JustBeforeEach(func() {
+			tombstone = filepath.Join(filepath.Dir(attempt), "artifacts", "11276272069_pass-artifact", "artifact.zip.tombstone")
+		})
+
+		It("decodes its artifact.zip.tombstone", func() {
+			Expect(c.Main("where", tombstone)).To(Equal(0), c.Stderr.String())
+			Expect(decoded()).To(HaveExactElements(SatisfyAll(
+				HaveKeyWithValue("artifact_id", BeEquivalentTo(11276272069)),
+				HaveKeyWithValue("reason", "too_large"),
+				HaveKeyWithValue("http_status", BeNil()),
+				HaveKeyWithValue("message", MatchRegexp(`^size_in_bytes \d+ exceeds artifact_max_bytes 700$`)),
+			)))
+		})
+
+		It("exits 1 naming the tombstone when it stops parsing after its run was read", func() {
+			c.Stdin = io.MultiReader(
+				strings.NewReader(tombstone+"\n"),
+				onRead(func() { Expect(os.WriteFile(tombstone, []byte("{"), 0o644)).To(Succeed()) }),
+				strings.NewReader(tombstone+"\n"),
+			)
+
+			Expect(c.Main("where")).To(Equal(1))
+			Expect(decoded()).To(HaveLen(1))
+			Expect(c.Stderr.String()).To(ContainSubstring(tombstone + ": unexpected end of JSON input"))
+		})
 	})
 })
 
