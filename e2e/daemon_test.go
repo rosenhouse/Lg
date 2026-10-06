@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -153,6 +154,19 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		started, err := time.Parse(time.RFC3339, string(times[1]))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(time.Parse(time.RFC3339, string(times[2]))).To(Equal(started.Add(10 * time.Minute)))
+	}, daemonTimeout)
+
+	It("truncates its stderr at cycle start when it is a regular file over 10 MB, as launchd's daemon.log", func(ctx SpecContext) {
+		log := filepath.Join(GinkgoT().TempDir(), "daemon.log")
+		Expect(os.WriteFile(log, bytes.Repeat([]byte("x"), 10_000_001), 0o644)).To(Succeed())
+
+		running := env.Sh(fmt.Sprintf(`exec lg daemon run 2>>'%s'`, log))
+		DeferCleanup(func() { running.Kill().Wait(harness.ExitTimeout) })
+
+		Eventually(ctx, func() (string, error) {
+			content, err := os.ReadFile(log)
+			return string(content), err
+		}, cycleWait).Should(MatchRegexp(`^lg: sync at \S+: ok; next sync at \S+\n$`))
 	}, daemonTimeout)
 
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(ctx SpecContext) {
