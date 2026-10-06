@@ -96,9 +96,6 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	if _, err := os.Stat(roots.Data); err != nil {
-		return err
-	}
 	var unit index.Unit
 	if p.Unit != nil {
 		unit = index.Unit(*p.Unit)
