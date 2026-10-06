@@ -111,6 +111,27 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 	}, daemonTimeout)
 })
 
+var _ = Describe("lg sync --wait with stderr on a broken pipe", Label("sync"), func() {
+	It("still waits for its cycle, and exits 0", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		reader, writer, err := os.Pipe()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(reader.Close()).To(Succeed())
+		waiting := env.Command("sync", "--wait")
+		waiting.Stderr = writer
+		Expect(waiting.Start()).To(Succeed())
+		Expect(writer.Close()).To(Succeed())
+		exited := make(chan error, 1)
+		go func() { exited <- waiting.Wait() }()
+
+		Eventually(exited, cycleWait).WithContext(ctx).Should(Receive(&err))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(env.Status()).To(HaveKeyWithValue("served_request", 1.0))
+	}, daemonTimeout)
+})
+
 var _ = Describe("lg sync --wait when the daemon cannot open write.lock", Label("sync"), func() {
 	It("exits 1 at once naming write.lock", func(ctx SpecContext) {
 		env, _ := newDaemonEnv()

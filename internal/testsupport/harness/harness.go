@@ -49,23 +49,27 @@ func (e *Env) Setenv(key, value string) { e.vars[key] = value }
 
 func (e *Env) Getenv(key string) string { return e.vars[key] }
 
-func (e *Env) Lg(args ...string) *gexec.Session {
-	return e.start(exec.CommandContext(ginkgo.GinkgoT().Context(), e.lgPath, args...))
-}
+func (e *Env) Lg(args ...string) *gexec.Session { return e.start(e.Command(args...)) }
 
-func (e *Env) start(cmd *exec.Cmd) *gexec.Session {
+// Command gives lg with args in e's environment, not yet started.
+func (e *Env) Command(args ...string) *exec.Cmd { return e.command(e.lgPath, args...) }
+
+func (e *Env) command(name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ginkgo.GinkgoT().Context(), name, args...)
 	for k, v := range e.vars {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
+	return cmd
+}
+
+func (e *Env) start(cmd *exec.Cmd) *gexec.Session {
 	session, err := gexec.Start(cmd, ginkgo.GinkgoWriter, ginkgo.GinkgoWriter)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	return session
 }
 
 // Sh runs a shell script with lg first on PATH.
-func (e *Env) Sh(script string) *gexec.Session {
-	return e.start(exec.CommandContext(ginkgo.GinkgoT().Context(), "sh", "-c", script))
-}
+func (e *Env) Sh(script string) *gexec.Session { return e.start(e.command("sh", "-c", script)) }
 
 // WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
 func (e *Env) WriteConfig(apiURL string, lines ...string) {
