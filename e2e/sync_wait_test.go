@@ -94,6 +94,18 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		Expect(indexedAttempts(ctx, env)()).To(ConsistOf(1, 2))
 	}, daemonTimeout)
 
+	It("warns, and exits 0 as its cycle did, when it cannot reconcile lg.db", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		breakIndex(env)
+
+		waiting := env.Lg("sync", "--wait")
+
+		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		Expect(waiting.Err).To(gbytes.Say(`lg: warning: reconcile lg.db: `))
+	}, daemonTimeout)
+
 	It("coalesces concurrent --wait calls into one cycle", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
 		release := holdFirstCycle(ctx, env, fake)
@@ -218,6 +230,24 @@ var _ = Describe("lg sync with no daemon", Label("sync"), func() {
 		Expect(cycleListings(fake)).To(Equal(2))
 		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
 	}, daemonTimeout)
+
+	It("exits 0 once lg.db lists what its cycle published", func(ctx SpecContext) {
+		env, _ := newDaemonEnv()
+
+		Expect(env.Sync()).To(gexec.Exit(0))
+
+		Expect(indexedAttempts(ctx, env)()).To(ConsistOf(1))
+	})
+
+	It("warns, and exits 0 as its cycle did, when it cannot reconcile lg.db", func() {
+		env, _ := newDaemonEnv()
+		breakIndex(env)
+
+		session := env.Sync()
+
+		Expect(session).To(gexec.Exit(0))
+		Expect(session.Err).To(gbytes.Say(`lg: warning: reconcile lg.db: `))
+	})
 })
 
 var _ = Describe("lg sync with no daemon while another process holds the write lock", Label("sync"), func() {
@@ -282,6 +312,14 @@ func snapshotData(env *harness.Env) (appendOnly func()) {
 		GinkgoHelper()
 		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
 	}
+}
+
+// breakIndex makes state/lg.db a directory that sqlite cannot open.
+func breakIndex(env *harness.Env) {
+	GinkgoHelper()
+	db := filepath.Join(env.State(), "lg.db")
+	Expect(os.RemoveAll(db)).To(Succeed())
+	Expect(os.MkdirAll(filepath.Join(db, "not-a-db"), 0o755)).To(Succeed())
 }
 
 // requested gives state/sync-request, or "" before there is one.
