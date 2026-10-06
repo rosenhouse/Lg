@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("index.Reconcile failing", Label("index"), func() {
-	It("on a file that does not parse indexes the other runs, names the file, and indexes the run once the file parses", func(ctx SpecContext) {
+	It("on a file that does not parse indexes the other units, names the file, and indexes the attempt once the file parses", func(ctx SpecContext) {
 		env := harness.InProcess()
 		syncStages(ctx, env, "after-attempt-1")
 		Expect(env.Fake.Load(deletedRun, "logs-deleted")).To(Succeed())
@@ -28,11 +28,31 @@ var _ = Describe("index.Reconcile failing", Label("index"), func() {
 
 		Expect(ix.Reconcile(ctx)).To(MatchError(ContainSubstring(attemptJSON)))
 		db := openDB(dbPath(env))
-		Expect(column[int64](db, "SELECT run_id FROM runs")).To(Equal([]int64{deletedRun}))
+		Expect(column[int64](db, "SELECT DISTINCT run_id FROM attempts")).To(Equal([]int64{deletedRun}))
 
 		Expect(os.WriteFile(attemptJSON, content, 0o644)).To(Succeed())
 		Expect(ix.Reconcile(ctx)).To(Succeed())
-		Expect(column[int64](db, "SELECT run_id FROM runs")).To(ConsistOf(int64(runID), int64(deletedRun)))
+		Expect(column[int64](db, "SELECT DISTINCT run_id FROM attempts")).To(ConsistOf(int64(runID), int64(deletedRun)))
+	}, syncTimeout)
+
+	It("on an artifact.json that does not parse keeps the run's logs answerable, names the file, and indexes the artifact once the file parses", Label("paths"), func(ctx SpecContext) {
+		env := harness.InProcess()
+		syncStages(ctx, env, "after-attempt-1")
+		artifactJSON := filepath.Join(artifactDirs(env, runID)[0], "artifact.json")
+		content, err := os.ReadFile(artifactJSON)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(artifactJSON, []byte("{"), 0o644)).To(Succeed())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+
+		Expect(ix.Reconcile(ctx)).To(MatchError(ContainSubstring(artifactJSON)))
+		Expect(ix.Paths(ctx, index.Filter{}, index.UnitLog)).To(ConsistOf(logsOf(env, runID)))
+		Expect(ix.Paths(ctx, index.Filter{}, index.UnitArtifact)).To(HaveLen(len(artifactDirs(env, runID)) - 1))
+
+		Expect(os.WriteFile(artifactJSON, content, 0o644)).To(Succeed())
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+		Expect(ix.Paths(ctx, index.Filter{}, index.UnitArtifact)).To(HaveLen(len(artifactDirs(env, runID))))
 	}, syncTimeout)
 
 	It("names lg.db when the db fails", func(ctx SpecContext) {

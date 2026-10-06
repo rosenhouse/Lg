@@ -132,7 +132,9 @@ type artifactFiles struct {
 
 // IndexRun derives a run's rows from the files in runDir alone. It reads only
 // the units it lists first, so a unit published later stays unindexed until
-// the next Reconcile lists it.
+// the next Reconcile lists it. It gives the rows of the units it could read,
+// leaving out the others, and their errors. It gives no rows when it could
+// read no attempt or artifact.
 func IndexRun(runDir string) (Rows, error) {
 	units, err := runUnits(runDir)
 	if err != nil {
@@ -141,25 +143,28 @@ func IndexRun(runDir string) (Rows, error) {
 	var rows Rows
 	var attempts []attemptFiles
 	var artifacts []artifactFiles
+	var unread []error
 	for _, unit := range units {
 		rel, err := filepath.Rel(runDir, unit.Path)
 		if err != nil {
 			return Rows{}, err
 		}
-		rows.Units = append(rows.Units, UnitDir{Path: rel, Modified: unit.Modified})
 		if n, ok := layout.AttemptNumber(rel); ok {
 			a, err := readAttempt(unit.Path, n)
 			if err != nil {
-				return Rows{}, err
+				unread = append(unread, err)
+				continue
 			}
 			attempts = append(attempts, a)
 		} else if filepath.Base(rel) != "extracted" {
 			a, err := readArtifact(runDir, rel)
 			if err != nil {
-				return Rows{}, err
+				unread = append(unread, err)
+				continue
 			}
 			artifacts = append(artifacts, a)
 		}
+		rows.Units = append(rows.Units, UnitDir{Path: rel, Modified: unit.Modified})
 	}
 	// Once retention evicts the run, its files read as absent.
 	if _, err := os.Lstat(runDir); err != nil {
@@ -167,19 +172,28 @@ func IndexRun(runDir string) (Rows, error) {
 	}
 	slices.SortFunc(attempts, func(a, b attemptFiles) int { return cmp.Compare(a.n, b.n) })
 	b := &builder{dir: runDir, rows: &rows}
-	rows.Run = runRow(attempts, artifacts)
-	for i, a := range attempts {
-		if err := b.addAttempt(a, attempts[:i]); err != nil {
-			return Rows{}, err
+	var added []attemptFiles
+	for _, a := range attempts {
+		if err := b.add(layout.AttemptDir("", a.n), func(b *builder) error { return b.addAttempt(a, added) }); err != nil {
+			unread = append(unread, err)
+			continue
 		}
+		added = append(added, a)
 	}
-	snapshots := snapshotsOf(attempts)
+	snapshots := snapshotsOf(added)
+	var addedArtifacts []artifactFiles
 	for _, a := range artifacts {
-		if err := b.addArtifact(a, snapshots); err != nil {
-			return Rows{}, err
+		if err := b.add(a.dir, func(b *builder) error { return b.addArtifact(a, snapshots) }); err != nil {
+			unread = append(unread, err)
+			continue
 		}
+		addedArtifacts = append(addedArtifacts, a)
 	}
-	return rows, nil
+	if len(added) == 0 && len(addedArtifacts) == 0 {
+		return Rows{}, errors.Join(unread...)
+	}
+	rows.Run = runRow(added, addedArtifacts)
+	return rows, errors.Join(unread...)
 }
 
 func readAttempt(dir string, n int) (attemptFiles, error) {
@@ -248,6 +262,23 @@ func union(numbers []int) []int {
 type builder struct {
 	dir  string
 	rows *Rows
+}
+
+// add adds the rows f adds, unless f fails. Then it adds none, and leaves
+// the unit at unit out of the run's units, so the next Reconcile reads it
+// again.
+func (b *builder) add(unit string, f func(*builder) error) error {
+	unitRows := &Rows{Units: b.rows.Units}
+	if err := f(&builder{dir: b.dir, rows: unitRows}); err != nil {
+		b.rows.Units = slices.DeleteFunc(b.rows.Units, func(u UnitDir) bool { return u.Path == unit })
+		return err
+	}
+	b.rows.Attempts = append(b.rows.Attempts, unitRows.Attempts...)
+	b.rows.Jobs = append(b.rows.Jobs, unitRows.Jobs...)
+	b.rows.Steps = append(b.rows.Steps, unitRows.Steps...)
+	b.rows.Artifacts = append(b.rows.Artifacts, unitRows.Artifacts...)
+	b.rows.Tombstones = append(b.rows.Tombstones, unitRows.Tombstones...)
+	return nil
 }
 
 func (b *builder) addAttempt(a attemptFiles, earlier []attemptFiles) error {

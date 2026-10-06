@@ -232,7 +232,7 @@ func (ix *Index) inTx(ctx context.Context, f func(context.Context, *sql.Tx) erro
 
 // Reconcile re-indexes each run whose unit dirs differ from those indexed,
 // and drops the rows of runs no longer on disk. It returns the errors of
-// the runs whose files it could not read, after indexing the others.
+// the units whose files it could not read, after indexing the others.
 func (ix *Index) Reconcile(ctx context.Context) error {
 	return ix.orStartOver(ctx, func() error {
 		changed, err := ix.changed(ctx)
@@ -303,7 +303,7 @@ func (ix *Index) Close() error { return ix.db.Close() }
 // unit dirs differ from those indexed, or of every run when fresh. Then,
 // holding the write lock, it writes them, into an emptied db when fresh. It
 // takes the write lock only when the db changes. It returns the errors of the
-// runs whose files it could not read, after indexing the others.
+// units whose files it could not read, after indexing the others.
 func (ix *Index) index(ctx context.Context, fresh bool) error {
 	release, err := ix.lockFile(ctx)
 	if err != nil {
@@ -331,12 +331,13 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 			if _, statErr := os.Lstat(runDir); errors.Is(statErr, fs.ErrNotExist) {
 				// Retention evicted the run while IndexRun read it.
 				delete(onDisk, runDir)
-			} else {
-				failed = append(failed, err)
+				continue
 			}
-			continue
+			failed = append(failed, err)
 		}
-		read[runDir] = rows
+		if len(rows.Units) > 0 {
+			read[runDir] = rows
+		}
 	}
 	unchanged := !fresh && len(read) == 0
 	for runDir := range indexed {
