@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
-		Eventually(attemptDir(env, 2), cycleWait).Should(BeADirectory())
+		Eventually(attemptDir, cycleWait).WithArguments(env, 2).Should(BeADirectory())
 	}, daemonTimeout)
 
 	It("sets next_sync_at 10m after last_sync_started_at when sync_interval is unset", func(SpecContext) {
@@ -117,13 +118,13 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(env.GH().Calls()).To(HaveLen(2))
 	}, daemonTimeout)
 
-	It("reconciles state/lg.db after each cycle, so lg.db lists attempt-2 before any reader runs", func(SpecContext) {
+	It("reconciles state/lg.db after each cycle, so lg.db lists attempt-2 before any reader runs", func(ctx SpecContext) {
 		env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
 
-		Eventually(indexedAttempts(env), cycleWait).Should(ConsistOf(1, 2))
+		Eventually(indexedAttempts(ctx, env), cycleWait).Should(ConsistOf(1, 2))
 	}, daemonTimeout)
 })
 
@@ -268,7 +269,7 @@ func untilNext(st map[string]any) time.Duration {
 }
 
 // indexedAttempts gives the attempts in state/lg.db, or none before it exists.
-func indexedAttempts(env *harness.Env) func() []int {
+func indexedAttempts(ctx context.Context, env *harness.Env) func() []int {
 	return func() []int {
 		GinkgoHelper()
 		path := filepath.Join(env.State(), "lg.db")
@@ -278,7 +279,7 @@ func indexedAttempts(env *harness.Env) func() []int {
 		db, err := sql.Open("sqlite", path)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = db.Close() }()
-		rows, err := db.Query("SELECT attempt FROM attempts")
+		rows, err := db.QueryContext(ctx, "SELECT attempt FROM attempts")
 		if err != nil {
 			return nil
 		}
