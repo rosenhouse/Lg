@@ -185,8 +185,7 @@ func IndexRun(runDir string) (Rows, error) {
 func readAttempt(dir string, n int) (attemptFiles, error) {
 	a := attemptFiles{n: n}
 	return a, errors.Join(
-		readJSON(filepath.Join(dir, "attempt.json"), &a.run),
-		readJSON(filepath.Join(dir, "attempt.json"), &a.repos),
+		readJSON(filepath.Join(dir, "attempt.json"), &a.run, &a.repos),
 		readJSON(filepath.Join(dir, "jobs.json"), &a.jobs),
 		readJSON(filepath.Join(dir, "artifacts.json"), &a.listed),
 		readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
@@ -343,13 +342,16 @@ func (b *builder) file(name string) (exists bool, size int64, lost tombstone.Rea
 	return false, 0, ts.Reason, nil
 }
 
-func readJSON(path string, v any) error {
+// readJSON reads path once and decodes it into each of vs.
+func readJSON(path string, vs ...any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	for _, v := range vs {
+		if err := json.Unmarshal(raw, v); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
 	}
 	return nil
 }
