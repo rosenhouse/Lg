@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rosenhouse/lg/internal/model"
 )
 
 // Filter selects units. Each field left empty selects every unit; values
@@ -305,3 +307,11 @@ func regular(dir string, names ...string) ([]string, error) {
 	}
 	return files, errors.Join(unread...)
 }
+
+// Flip is a rerun flip, with its run's head SHA.
+type Flip struct {
+	model.Flip
+	HeadSHA string
+}
+
+func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) { return nil, nil }
