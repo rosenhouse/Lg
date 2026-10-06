@@ -156,6 +156,16 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(r.PendingUnits).To(Equal(3))
 	})
 
+	It("records since for a unit when it first becomes pending", func() {
+		prev := status.Next(nil, good(started.Add(-time.Hour)))
+		c := good(started.Add(time.Second / 2))
+		c.Pending = []status.Pending{{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503"}}
+
+		Expect(status.Next(&prev, c).Repos[repo].Pending).To(Equal([]status.Pending{
+			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503", Since: started.UTC()},
+		}))
+	})
+
 	It("keeps, after a cycle that stopped early, the units it left and the earlier ones still missing on disk", func() {
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
 		prev.Repos[repo] = status.Repo{Pending: []status.Pending{

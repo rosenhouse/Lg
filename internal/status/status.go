@@ -139,6 +139,8 @@ func (u Unit) String() string {
 type Pending struct {
 	Unit
 	Error string `json:"error"`
+	// Since is when a cycle first left the unit pending.
+	Since time.Time `json:"since"`
 }
 
 func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
