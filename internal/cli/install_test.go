@@ -3,9 +3,11 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,11 +18,17 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// loggingRunner logs each command it runs, and succeeds.
-type loggingRunner struct{ calls []string }
+// loggingRunner logs each command it runs, and fails one whose arguments include fail.
+type loggingRunner struct {
+	calls []string
+	fail  string
+}
 
 func (l *loggingRunner) Run(_ context.Context, name string, args []string, _ map[string]string) (stdout, stderr []byte, err error) {
 	l.calls = append(l.calls, strings.Join(append([]string{name}, args...), " "))
+	if slices.Contains(args, l.fail) {
+		return nil, []byte("Failed to enable unit\n"), errors.New("exit status 1")
+	}
 	return nil, nil, nil
 }
 
@@ -110,6 +118,15 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 			ContainSubstring("<key>XDG_DATA_HOME</key>\n\t\t<string>"+filepath.Join(xdg, "data")+"</string>"),
 			ContainSubstring("<string>"+filepath.Join(xdg, "data", "lg", "state", "daemon.log")+"</string>"),
 		))
+	})
+
+	It("says nothing was installed when the service fails to start", func() {
+		runner.fail = "enable"
+
+		Expect(run("linux", "daemon", "install")).To(Equal(1))
+
+		Expect(stdout.String()).To(BeEmpty())
+		Expect(stderr.String()).To(ContainSubstring("Failed to enable unit"))
 	})
 
 	It("says when nothing is installed to uninstall", func() {

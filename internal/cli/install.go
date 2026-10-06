@@ -36,9 +36,10 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 		Env:  service.Env(deps.Env, gh),
 		Log:  filepath.Join(t.roots.State, "daemon.log"),
 	})
-	if path != "" {
-		_, _ = fmt.Fprintf(deps.Stdout, "installed %s\n", path)
+	if err != nil {
+		return err
 	}
+	_, err = fmt.Fprintf(deps.Stdout, "installed %s\n", path)
 	return err
 }
 
