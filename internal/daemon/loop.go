@@ -94,14 +94,14 @@ func (l *Loop) logf(format string, args ...any) {
 	_, _ = fmt.Fprintf(l.Log, "lg: "+format+"\n", args...)
 }
 
-// truncateLog empties Log when it is a regular file over maxLogBytes.
+// truncateLog empties Log when it is a file over maxLogBytes.
 func (l *Loop) truncateLog() {
 	f, ok := l.Log.(*os.File)
 	if !ok {
 		return
 	}
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() <= maxLogBytes {
+	if err != nil || info.Size() <= maxLogBytes {
 		return
 	}
 	if err := f.Truncate(0); err != nil {
