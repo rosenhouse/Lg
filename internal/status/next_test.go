@@ -203,6 +203,18 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(r.PendingUnits).To(Equal(2))
 	})
 
+	It("keeps a unit's since when config.yaml names the repo in another case", func() {
+		earlier := started.UTC().Add(-time.Hour)
+		prev := status.Next(nil, good(started.Add(-time.Hour)))
+		prev.Repos = map[string]status.Repo{"github.com/Rosenhouse/LG": {Pending: []status.Pending{{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503", Since: earlier}}}}
+		c := good(started)
+		c.Pending = []status.Pending{{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503"}}
+
+		Expect(status.Next(&prev, c).Repos).To(HaveKeyWithValue(repo, HaveField("Pending", Equal([]status.Pending{
+			{Unit: status.Unit{Run: 1, Attempt: 2}, Error: "503", Since: earlier},
+		}))))
+	})
+
 	It("records since anew for a unit whose since is after the cycle, as after a clock stepped back", func() {
 		unit := status.Unit{Run: 1, Attempt: 2}
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
