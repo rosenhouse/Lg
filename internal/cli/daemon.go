@@ -21,7 +21,9 @@ import (
 )
 
 type daemonCmd struct {
-	Run daemonRunCmd `cmd:"" help:"Sync every sync_interval, and at each lg sync, until SIGTERM."`
+	Run       daemonRunCmd       `cmd:"" help:"Sync every sync_interval, and at each lg sync, until SIGTERM."`
+	Install   daemonInstallCmd   `cmd:"" help:"Run lg daemon run as a per-user systemd unit or launchd agent, restarting it if installed."`
+	Uninstall daemonUninstallCmd `cmd:"" help:"Stop the service lg daemon install installed, and remove it."`
 }
 
 type daemonRunCmd struct{}

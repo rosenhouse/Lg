@@ -1,0 +1,11 @@
+[Unit]
+Description=lg: mirror GitHub Actions runs
+
+[Service]
+ExecStart="/opt/lg/bin/lg" daemon run
+Environment="LG_GH=/opt/gh/bin/gh"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
