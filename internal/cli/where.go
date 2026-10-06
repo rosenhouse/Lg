@@ -354,7 +354,7 @@ func (l *lineReader) has(path string, n int, text string) bool {
 
 func (l *lineReader) close() {
 	if l.file != nil {
-		l.file.Close()
+		_ = l.file.Close()
 	}
 	*l = lineReader{}
 }
