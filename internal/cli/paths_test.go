@@ -2,8 +2,10 @@ package cli_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,7 +14,11 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
+
+// fixtureRun is the run harness.CLI serves.
+const fixtureRun = 37129390741
 
 var _ = Describe("lg paths", Label("sync"), func() {
 	var (
@@ -143,4 +149,44 @@ var _ = DescribeTable("lg paths exits 2", Label("paths"),
 	Entry("for a --since that is no time", []string{"--since", "yesterday"}, `--since: want 30d, 12h, 2026-09-01 or an RFC 3339 time, not "yesterday"`),
 	Entry("for an --until in the future", []string{"--until=-1h"}, `--until: want 30d, 12h, 2026-09-01 or an RFC 3339 time, not "-1h"`),
 	Entry("for a --pr that is no number", []string{"--pr", "x"}, `--pr`),
+)
+
+var _ = DescribeTable("lg paths prints the paths it can read, then exits 1 naming what it cannot", Label("paths"),
+	// spoil spoils the files of the run at runDir, and gives the path stderr
+	// names and the dir whose logs drop out.
+	func(spoil func(c *harness.CLI, runDir string) (named, gone string)) {
+		c := harness.NewCLI()
+		Expect(c.Fake.AddRun(scenario.Clone(scenario.Recorded(fixtureRun, "after-attempt-1"), 1))).To(Succeed())
+		Expect(c.Main("sync")).To(Equal(0))
+		Expect(c.Main("paths")).To(Equal(0))
+		all := strings.Fields(c.Stdout.String())
+		Expect(all).To(HaveLen(20))
+		runDirs, err := filepath.Glob(filepath.Join(c.Home, "data", "*", "*", "*", "runs", "*", fmt.Sprintf("%d_*", fixtureRun)))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runDirs).To(HaveLen(1))
+		named, gone := spoil(c, runDirs[0])
+
+		Expect(c.Main("paths")).To(Equal(1))
+		Expect(strings.Fields(c.Stdout.String())).To(Equal(slices.DeleteFunc(all, func(path string) bool {
+			return strings.HasPrefix(path, gone+string(filepath.Separator))
+		})))
+		Expect(c.Stderr.String()).To(ContainSubstring(named))
+	},
+	Entry("a run whose attempt.json does not parse, read into a new lg.db", func(c *harness.CLI, runDir string) (string, string) {
+		attempt := filepath.Join(runDir, "attempt-1", "attempt.json")
+		Expect(os.WriteFile(attempt, []byte("{"), 0o644)).To(Succeed())
+		dbs, err := filepath.Glob(filepath.Join(c.Home, "state", "lg.db*"))
+		Expect(err).NotTo(HaveOccurred())
+		for _, db := range dbs {
+			Expect(os.Remove(db)).To(Succeed())
+		}
+		return attempt, runDir
+	}),
+	Entry("a job dir that is now a file", func(c *harness.CLI, runDir string) (string, string) {
+		jobs, err := filepath.Glob(filepath.Join(runDir, "attempt-1", "jobs", "*"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.RemoveAll(jobs[0])).To(Succeed())
+		Expect(os.WriteFile(jobs[0], nil, 0o644)).To(Succeed())
+		return jobs[0], jobs[0]
+	}),
 )
