@@ -222,6 +222,22 @@ var _ = Describe("lg where", Label("where"), func() {
 		))
 	})
 
+	It("reads a run's files once for consecutive hits in it, and again after a hit in another run", func() {
+		run := filepath.Dir(attempt)
+		other := strings.Replace(run, "37129390741_", "37129390742_", 1)
+		Expect(os.CopyFS(other, os.DirFS(run))).To(Succeed())
+		log := filepath.Join(job, "log.txt")
+		breakJobs := onRead(func() { Expect(os.WriteFile(filepath.Join(attempt, "jobs.json"), []byte("{"), 0o644)).To(Succeed()) })
+		c.Stdin = io.MultiReader(
+			strings.NewReader(log+"\n"), breakJobs, strings.NewReader(log+"\n"),
+			strings.NewReader(strings.Replace(log, run, other, 1)+"\n"), strings.NewReader(log+"\n"),
+		)
+
+		Expect(c.Main("where")).To(Equal(1))
+		Expect(decoded()).To(HaveLen(3))
+		Expect(c.Stderr.String()).To(ContainSubstring(run + ": cannot read its job"))
+	})
+
 	It("exits 1 naming the run when the files of the unit holding the path do not parse", func() {
 		Expect(os.WriteFile(filepath.Join(attempt, "jobs.json"), []byte("{"), 0o644)).To(Succeed())
 

@@ -127,25 +127,26 @@ type tombstonePlace struct {
 
 // runFacts are a run's rows, as index.IndexRun derives them from its files.
 type runFacts struct {
+	dir  string
 	rows index.Rows
 	err  error
 }
 
-// placeFinder decodes hits in the store at data, reading each run once
-// unless its files change.
+// placeFinder decodes hits in the store at data. It reads a run's files once
+// for consecutive hits in it, and again when a hit names a unit that read lacked.
 type placeFinder struct {
 	data string
 	// real is data with symlinks resolved.
 	real  string
 	repos []string
-	runs  map[string]runFacts
+	run   runFacts
 	lines *lineReader
 }
 
-func newPlaceFinder(data string) placeFinder {
+func newPlaceFinder(data string) *placeFinder {
 	// A missing data/ holds no path, so its real path need not be known.
 	real, _ := filepath.EvalSymlinks(data)
-	return placeFinder{data: data, real: real, repos: repoDirs(data), runs: map[string]runFacts{}, lines: newLineReader(openFile)}
+	return &placeFinder{data: data, real: real, repos: repoDirs(data), lines: newLineReader(openFile)}
 }
 
 // repoDirs gives each data/<host>/<owner>/<repo>.
@@ -168,7 +169,7 @@ func repoDirs(data string) []string {
 
 var leadingLine = regexp.MustCompile(`^[0-9]+:`)
 
-func (f placeFinder) find(hit string) (place, error) {
+func (f *placeFinder) find(hit string) (place, error) {
 	var path string
 	h, ok := layout.ParseHit(hit, func(p string) (found bool) {
 		path, found = f.existing(p)
@@ -211,7 +212,7 @@ var rgOmission = regexp.MustCompile(`^\[Omitted long (matching line|line with [0
 
 // holding gives text, without the column rg --column printed before it, when
 // line n of path holds it but for rg's omissions.
-func (f placeFinder) holding(path string, n int, text string) (string, bool) {
+func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 	line, ok := f.lines.line(path, n)
 	if !ok {
 		return "", false
@@ -231,7 +232,7 @@ func (f placeFinder) holding(path string, n int, text string) (string, bool) {
 // existing gives the file path names: path itself when absolute, else path
 // relative to data/, the working directory or a repo dir. It checks each
 // before cleaning it, so that a .. in a hit's text cannot reach a parent dir.
-func (f placeFinder) existing(path string) (string, bool) {
+func (f *placeFinder) existing(path string) (string, bool) {
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
 		candidates = []string{f.data + string(filepath.Separator) + path, path}
@@ -248,20 +249,19 @@ func (f placeFinder) existing(path string) (string, bool) {
 	return "", false
 }
 
-func (f placeFinder) describe(loc layout.Location) (place, error) {
+func (f *placeFinder) describe(loc layout.Location) (place, error) {
 	runDir := filepath.Join(f.data, loc.RunDir)
-	if facts, ok := f.runs[runDir]; ok {
-		if p, err := f.describeWith(loc, facts); err == nil {
+	if f.run.dir == runDir {
+		if p, err := f.describeWith(loc, f.run); err == nil {
 			return p, nil
 		}
 	}
-	var facts runFacts
-	facts.rows, facts.err = index.IndexRun(runDir)
-	f.runs[runDir] = facts
-	return f.describeWith(loc, facts)
+	f.run = runFacts{dir: runDir}
+	f.run.rows, f.run.err = index.IndexRun(runDir)
+	return f.describeWith(loc, f.run)
 }
 
-func (f placeFinder) describeWith(loc layout.Location, facts runFacts) (place, error) {
+func (f *placeFinder) describeWith(loc layout.Location, facts runFacts) (place, error) {
 	runDir := filepath.Join(f.data, loc.RunDir)
 	rows := facts.rows
 	run := rows.Run
