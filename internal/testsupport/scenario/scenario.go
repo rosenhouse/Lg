@@ -466,13 +466,51 @@ func listedRun(id int64, createdAt time.Time, status, conclusion string) json.Ra
 }
 
 // JobIDs lists the ids of attempt's jobs named name, in listing order.
-func (r Run) JobIDs(attempt int, name string) []int64 { return []int64{0, 0} }
+func (r Run) JobIDs(attempt int, name string) []int64 {
+	var listing struct {
+		Jobs []struct {
+			ID   int64
+			Name string
+		}
+	}
+	mustUnmarshal(r.Files[attemptFile(attempt, "jobs.json")].Data, &listing)
+	var ids []int64
+	for _, job := range listing.Jobs {
+		if job.Name == name {
+			ids = append(ids, job.ID)
+		}
+	}
+	return ids
+}
 
 // SetJobConclusion concludes attempt's job of that id so.
-func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run { return r.copy() }
+func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run {
+	return r.editJob(attempt, jobID, func(job map[string]any) { job["conclusion"] = conclusion })
+}
 
 // SetStepConclusion concludes the step of that name in attempt's job of that id so.
-func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run { return r.copy() }
+func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run {
+	return r.editJob(attempt, jobID, func(job map[string]any) {
+		for _, s := range job["steps"].([]any) {
+			if s := s.(map[string]any); s["name"] == step {
+				s["conclusion"] = conclusion
+			}
+		}
+	})
+}
+
+func (r Run) editJob(attempt int, jobID int64, edit func(map[string]any)) Run {
+	out := r.copy()
+	out.editJobs(attempt, func(jobs []any) []any {
+		for _, job := range jobs {
+			if job := job.(map[string]any); job["id"].(json.Number).String() == strconv.FormatInt(jobID, 10) {
+				edit(job)
+			}
+		}
+		return jobs
+	})
+	return out
+}
 
 // AddRerunAttempt adds an attempt after the latest that re-runs the jobs
 // named and carries every other job forward.
