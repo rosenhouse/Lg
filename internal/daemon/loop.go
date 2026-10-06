@@ -11,8 +11,8 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 )
 
-// PollInterval is how often a Loop reads the sync request count while it waits.
-const PollInterval = time.Second
+// pollInterval is how often a Loop reads the sync request count while it waits.
+const pollInterval = time.Second
 
 // maxLogBytes is the size past which a Loop empties the file it logs to.
 const maxLogBytes = 10_000_000
@@ -20,14 +20,14 @@ const maxLogBytes = 10_000_000
 // Outcome is what a Loop needs to know of a cycle. RetryAt is zero unless
 // the cycle blocked until then.
 type Outcome struct {
-	Started  time.Time
-	Interval time.Duration
-	RetryAt  time.Time
-	Err      error
+	Started time.Time
+	Next    time.Time
+	RetryAt time.Time
+	Err     error
 }
 
-// Loop runs Cycle at once, and then whenever Next says or a sync request
-// comes. After each cycle it reconciles the index and logs one line.
+// Loop runs Cycle at once, and then at each Outcome's Next or when a sync
+// request comes. After each cycle it reconciles the index and logs one line.
 type Loop struct {
 	Clock clock.Clock
 	// Cycle runs one cycle that serves sync requests up to served.
@@ -50,19 +50,18 @@ func (l *Loop) Run(ctx context.Context) {
 		}
 		l.truncateLog()
 		out := l.Cycle(ctx, served)
-		next := Next(out.Started, out.Interval, out.RetryAt)
 		result := "ok"
 		if out.Err != nil {
 			result = strings.Join(strings.Fields(out.Err.Error()), " ")
 		}
-		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, next.UTC().Format(time.RFC3339))
+		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, out.Next.UTC().Format(time.RFC3339))
 		if ctx.Err() != nil {
 			return
 		}
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
-		l.wait(ctx, served, next, out.RetryAt)
+		l.wait(ctx, served, out.Next, out.RetryAt)
 	}
 }
 
@@ -80,7 +79,7 @@ func (l *Loop) wait(ctx context.Context, served int64, next, retryAt time.Time) 
 		select {
 		case <-ctx.Done():
 			return
-		case <-l.Clock.After(min(PollInterval, next.Sub(now))):
+		case <-l.Clock.After(min(pollInterval, next.Sub(now))):
 		}
 	}
 }

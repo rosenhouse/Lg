@@ -96,16 +96,16 @@ func (e *loopEnv) expectNoCycle() {
 	Consistently(e.cycles, 100*time.Millisecond).ShouldNot(Receive())
 }
 
-// every is an outcome of a cycle that started at at, with interval 10m.
-func every(at time.Time) daemon.Outcome {
-	return daemon.Outcome{Started: at, Interval: 10 * time.Minute}
+// outcomeAt is the outcome of a cycle that started at at, with the next due 10m later.
+func outcomeAt(at time.Time) daemon.Outcome {
+	return daemon.Outcome{Started: at, Next: at.Add(10 * time.Minute)}
 }
 
 var _ = Describe("Loop", Label("daemon"), func() {
-	It("runs the first cycle at once, and the next at max(start+interval, retry_at)", func() {
-		blocked := every(t0.Add(10 * time.Minute))
-		blocked.RetryAt = t0.Add(30 * time.Minute)
-		e := newLoopEnv(every(t0), blocked, every(t0.Add(30*time.Minute)))
+	It("runs the first cycle at once, and each next at its outcome's Next", func() {
+		blocked := outcomeAt(t0.Add(10 * time.Minute))
+		blocked.RetryAt, blocked.Next = t0.Add(30*time.Minute), t0.Add(30*time.Minute)
+		e := newLoopEnv(outcomeAt(t0), blocked, outcomeAt(t0.Add(30*time.Minute)))
 		e.run()
 
 		e.expectCycle(t0, 0)
@@ -120,7 +120,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("starts a cycle at once for a request during the wait, which serves it", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		e.run()
 		e.expectCycle(t0, 0)
 
@@ -132,9 +132,9 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("serves a request during the wait by the cycle at a future retry_at, not at once", func() {
-		blocked := every(t0)
+		blocked := outcomeAt(t0)
 		blocked.RetryAt = t0.Add(5 * time.Minute)
-		e := newLoopEnv(blocked, every(t0.Add(5*time.Minute)))
+		e := newLoopEnv(blocked, outcomeAt(t0.Add(5*time.Minute)))
 		e.run()
 		e.expectCycle(t0, 0)
 
@@ -148,7 +148,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("coalesces requests during a cycle into one follow-up, which serves them all", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		e.during = func(context.Context) {
 			if e.requested.Load() == 0 {
 				for range 3 {
@@ -165,7 +165,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("returns after the current cycle when ctx is cancelled, without reconciling or serving a request", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		proceed := make(chan struct{})
 		e.during = func(context.Context) { <-proceed }
 		var reconciled atomic.Bool
@@ -187,7 +187,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("starts no cycle for a request once ctx is cancelled during the reconcile", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		cancels := make(chan context.CancelFunc, 1)
 		e.loop.Reconcile = func(context.Context) error {
 			e.requested.Store(1)
@@ -203,7 +203,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("returns when ctx is cancelled during the wait", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		cancel, returned := e.run()
 		e.expectCycle(t0, 0)
 
@@ -213,7 +213,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("reconciles the index after each cycle, and logs a reconcile error without stopping", func() {
-		e := newLoopEnv(every(t0), every(t0.Add(10*time.Minute)))
+		e := newLoopEnv(outcomeAt(t0), outcomeAt(t0.Add(10*time.Minute)))
 		var mu sync.Mutex
 		var events []string
 		record := func(event string) {
@@ -240,7 +240,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("logs one line per cycle with its start, its error and when the next is due", func() {
-		failed := every(t0)
+		failed := outcomeAt(t0)
 		failed.Err = errors.New("GET /repos/rosenhouse/lg:\n502 Bad Gateway")
 		e := newLoopEnv(failed)
 		e.run()
@@ -251,7 +251,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("truncates a regular file over 10 MB that it logs to at cycle start", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		log, err := os.Create(filepath.Join(GinkgoT().TempDir(), "daemon.log"))
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(log.Close)
@@ -267,7 +267,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 	})
 
 	It("keeps a regular file of 10 MB that it logs to", func() {
-		e := newLoopEnv(every(t0))
+		e := newLoopEnv(outcomeAt(t0))
 		log, err := os.Create(filepath.Join(GinkgoT().TempDir(), "daemon.log"))
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(log.Close)

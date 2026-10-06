@@ -69,7 +69,8 @@ type daemonCycle struct {
 func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
-		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err}
+		now := d.deps.Clock.Now()
+		return daemon.Outcome{Started: now, Next: daemon.Next(now, time.Duration(d.target.cfg.SyncInterval), time.Time{}), Err: err}
 	}
 	defer func() { _ = held.Release() }()
 	fresh, configErr := loadTarget(d.deps.Env)
@@ -78,17 +79,16 @@ func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	} else {
 		configErr = fmt.Errorf("%w; kept the last good config", configErr)
 	}
-	interval := time.Duration(d.target.cfg.SyncInterval)
 	c, err := recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
-		c.NextSyncAt = daemon.Next(c.Started, interval, retryAt(c.Err))
+		c.NextSyncAt = daemon.Next(c.Started, time.Duration(d.target.cfg.SyncInterval), retryAt(c.Err))
 		c.ServedRequest = served
 		c.ConfigError = configErr
 	})
-	return daemon.Outcome{Started: c.Started, Interval: interval, RetryAt: retryAt(c.Err), Err: errors.Join(configErr, err)}
+	return daemon.Outcome{Started: c.Started, Next: c.NextSyncAt, RetryAt: retryAt(c.Err), Err: errors.Join(configErr, err)}
 }
 
-// retryAt is when err blocks the next cycle until, or zero.
+// retryAt gives the time a Blocked err defers the next cycle to, or zero.
 func retryAt(err error) time.Time {
 	var blocked failure.Blocked
 	if errors.As(err, &blocked) {
