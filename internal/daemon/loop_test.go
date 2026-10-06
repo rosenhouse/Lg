@@ -86,9 +86,12 @@ func (e *loopEnv) waiting() {
 	Eventually(e.clk.Waiting, time.Second).Should(Equal(1))
 }
 
+// expectCycle expects the next cycle to start at at, serving served.
 func (e *loopEnv) expectCycle(at time.Time, served int64) {
 	GinkgoHelper()
-	Eventually(e.cycles, time.Second).Should(Receive(Equal(started{At: at, Served: served})))
+	var next started
+	Eventually(e.cycles, time.Second).Should(Receive(&next))
+	Expect(next).To(Equal(started{At: at, Served: served}))
 }
 
 func (e *loopEnv) expectNoCycle() {
