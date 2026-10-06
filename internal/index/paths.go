@@ -22,7 +22,8 @@ type Filter struct {
 	PRs  []int
 	// Workflows are names. A run matches when any run of its workflow has one.
 	Workflows []string
-	// Jobs are globs of job names. A unit above a job matches when it holds one that matches.
+	// Jobs are globs of job names. An attempt matches when it holds a matching
+	// job; a run, artifact or extracted file when its run does.
 	Jobs   []string
 	Events []string
 	// Conclusions are of the unit's job, else attempt, else the run's latest attempt.
