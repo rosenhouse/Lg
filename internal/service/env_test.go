@@ -102,3 +102,47 @@ var _ = Describe("Env", Label("install"), func() {
 		}))
 	})
 })
+
+var _ = Describe("Executable", Label("install"), func() {
+	var dir, self, link string
+
+	BeforeEach(func() {
+		dir = GinkgoT().TempDir()
+		self = filepath.Join(dir, "Cellar", "lg")
+		Expect(os.MkdirAll(filepath.Dir(self), 0o755)).To(Succeed())
+		Expect(os.WriteFile(self, []byte("#!/bin/sh\n"), 0o755)).To(Succeed())
+		link = filepath.Join(dir, "bin", "lg")
+		Expect(os.MkdirAll(filepath.Dir(link), 0o755)).To(Succeed())
+		Expect(os.Symlink(self, link)).To(Succeed())
+	})
+
+	It("keeps the symlink lg was run by", func() {
+		Expect(service.Executable(link, "", self)).To(Equal(link))
+	})
+
+	It("looks a bare name up on PATH", func() {
+		Expect(service.Executable("lg", "/nowhere:"+filepath.Dir(link), self)).To(Equal(link))
+	})
+
+	It("makes a relative path absolute", func() {
+		wd, err := os.Getwd()
+		Expect(err).NotTo(HaveOccurred())
+		rel, err := filepath.Rel(wd, link)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(service.Executable(rel, "", self)).To(Equal(link))
+	})
+
+	DescribeTable("falls back to the running executable",
+		func(arg0 func() string) {
+			Expect(service.Executable(arg0(), "/nowhere:"+filepath.Dir(link), self)).To(Equal(self))
+		},
+		Entry("when the name is not on PATH", func() string { return "lg-other" }),
+		Entry("when the path names no file", func() string { return filepath.Join(dir, "missing") }),
+		Entry("when the path names another file", func() string {
+			other := filepath.Join(dir, "other")
+			Expect(os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755)).To(Succeed())
+			return other
+		}),
+	)
+})

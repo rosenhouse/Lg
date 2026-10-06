@@ -19,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/service"
 	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -36,13 +37,22 @@ type Deps struct {
 	Executable func() (string, error)
 }
 
+// executable gives the path lg was run by, as service.Executable finds it.
+func executable() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return service.Executable(os.Args[0], os.Getenv("PATH"), self), nil
+}
+
 func RealDeps() Deps {
 	env := map[string]string{}
 	for _, kv := range os.Environ() {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: os.Executable}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: executable}
 }
 
 type commands struct {

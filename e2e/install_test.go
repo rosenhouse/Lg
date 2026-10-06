@@ -108,6 +108,16 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		}))
 	})
 
+	It("runs lg by the symlink it was run by, so an upgrade that repoints the link reaches the unit", func() {
+		bin := GinkgoT().TempDir()
+		Expect(os.Symlink(lgPath, filepath.Join(bin, "lg"))).To(Succeed())
+		env.PrependPath(bin)
+
+		Eventually(env.Sh("lg daemon install"), harness.ExitTimeout).Should(gexec.Exit(0))
+
+		Expect(readFile(unit)).To(ContainSubstring(fmt.Sprintf(`ExecStart="%s" daemon run`, filepath.Join(bin, "lg"))))
+	})
+
 	It("produces a unit that systemd-analyze verify accepts", func() {
 		analyze, err := exec.LookPath("systemd-analyze")
 		if err != nil {

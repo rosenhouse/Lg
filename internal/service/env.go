@@ -18,13 +18,21 @@ func FindGH(env map[string]string) (string, error) {
 		}
 		return filepath.Abs(name)
 	}
-	for _, dir := range filepath.SplitList(env["PATH"]) {
-		path := filepath.Join(dir, name)
-		if filepath.IsAbs(path) && isExecutable(path) {
-			return path, nil
-		}
+	if path, ok := lookPath(name, env["PATH"]); ok {
+		return path, nil
 	}
 	return "", errNoGH
+}
+
+// lookPath finds the executable name in an absolute dir of the PATH list path.
+func lookPath(name, path string) (string, bool) {
+	for _, dir := range filepath.SplitList(path) {
+		file := filepath.Join(dir, name)
+		if filepath.IsAbs(file) && isExecutable(file) {
+			return file, true
+		}
+	}
+	return "", false
 }
 
 var errNoGH = errors.New("gh is neither at LG_GH nor on PATH; install gh or set LG_GH to its path")
@@ -51,4 +59,28 @@ func Env(env map[string]string, gh string) map[string]string {
 		}
 	}
 	return out
+}
+
+// Executable gives the path lg was run by, as arg0 and the PATH list path
+// name it, when that is self. It keeps a symlink, so a unit follows an
+// upgrade that repoints it. Otherwise it gives self.
+func Executable(arg0, path, self string) string {
+	name := arg0
+	if !strings.Contains(arg0, "/") {
+		name, _ = lookPath(arg0, path)
+	}
+	abs, err := filepath.Abs(name)
+	if err != nil || !sameFile(abs, self) {
+		return self
+	}
+	return abs
+}
+
+func sameFile(a, b string) bool {
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	return err == nil && os.SameFile(ai, bi)
 }
