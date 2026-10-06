@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -192,9 +191,14 @@ func scan(data string, walk func(string, fs.WalkDirFunc) error) ([]Run, error) {
 			case ok:
 				runs = append(runs, r)
 			case run == nil || !within(path, run.Dir):
-			case isAttempt(parts):
-				n, _ := layout.AttemptNumber(parts[runDepth])
-				run.Attempts = append(run.Attempts, n)
+			case len(parts) == runDepth+1:
+				if n, ok := layout.AttemptNumber(parts[runDepth]); ok {
+					run.Attempts = append(run.Attempts, n)
+				}
+			case len(parts) == runDepth+2 && parts[runDepth] == "artifacts":
+				if id, ok := layout.DirID(parts[runDepth+1]); ok {
+					run.Artifacts = append(run.Artifacts, id)
+				}
 			case isExtracted(parts):
 				run.Extracted = append(run.Extracted, Tree{Dir: path})
 			}
@@ -239,18 +243,8 @@ func runAt(path string, parts []string) (Run, bool) {
 	if _, err := time.Parse(time.DateOnly, date); err != nil {
 		return Run{}, false
 	}
-	idPart, _, _ := strings.Cut(parts[runDepth-1], "_")
-	id, _ := strconv.ParseInt(idPart, 10, 64)
+	id, _ := layout.DirID(parts[runDepth-1])
 	return Run{Dir: path, Repo: strings.Join(parts[:3], "/"), Date: date, ID: id}, true
-}
-
-// isAttempt reports whether parts, a path below data/, are <run>/attempt-N.
-func isAttempt(parts []string) bool {
-	if len(parts) != runDepth+1 {
-		return false
-	}
-	_, ok := layout.AttemptNumber(parts[runDepth])
-	return ok
 }
 
 // isExtracted reports whether parts, a path below data/, are <run>/artifacts/<artifact>/extracted.
