@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -46,15 +47,21 @@ const (
 	UnitExtracted Unit = "extracted"
 )
 
-// source is how to select a unit: its tables, bound as r for runs and x for
-// the unit's table, and its columns.
+// source is how to select the dirs of a unit: from runs r joined to the
+// unit's table x, with the unit's columns.
 type source struct {
-	unit       Unit
 	from, path string
 	// when is the unit's time: run created_at, attempt run_started_at, or artifact created_at.
 	when, attempt, id, conclusion string
 	// jobs is the dir whose jobs --job matches, or "" when x is the job.
 	jobs string
+	// requires is a column that is true when the unit's files exist.
+	requires string
+}
+
+func (s source) requiring(column string) source {
+	s.requires = column
+	return s
 }
 
 // within selects the rows of table x below the dir of run r.
@@ -63,37 +70,30 @@ const within = "x.path > r.path || '/' AND x.path < r.path || '0'"
 // latestConclusion is the conclusion of run r's latest attempt.
 const latestConclusion = "(SELECT conclusion FROM attempts WHERE path = r.path || '/attempt-' || r.latest_attempt)"
 
-var sources = map[Unit]source{
-	UnitRun: {
-		from: "runs r", path: "r.path",
-		when: "r.created_at", attempt: "NULL", id: "NULL", conclusion: latestConclusion, jobs: "r.path",
-	},
-	UnitAttempt: {
-		from: "runs r JOIN attempts x ON " + within, path: "x.path",
-		when: "x.run_started_at", attempt: "x.attempt", id: "NULL", conclusion: "x.conclusion", jobs: "x.path",
-	},
-	UnitJob: {
+var (
+	jobSource = source{
 		from: "runs r JOIN jobs x ON " + within + " JOIN attempts a ON a.path = r.path || '/attempt-' || x.attempt", path: "x.path",
 		when: "a.run_started_at", attempt: "x.attempt", id: "x.job_id", conclusion: "x.conclusion",
-	},
-	UnitArtifact: {
+	}
+	artifactSource = source{
 		from: "runs r JOIN artifacts x ON " + within, path: "x.path",
 		when: "x.created_at", attempt: "NULL", id: "x.artifact_id", conclusion: latestConclusion, jobs: "r.path",
-	},
-}
-
-func init() {
-	for unit, s := range map[Unit]Unit{UnitLog: UnitJob, UnitExtracted: UnitArtifact} {
-		sources[unit] = sources[s]
 	}
-	for unit, s := range sources {
-		s.unit = unit
-		sources[unit] = s
+	sources = map[Unit]source{
+		UnitRun: {
+			from: "runs r", path: "r.path",
+			when: "r.created_at", attempt: "NULL", id: "NULL", conclusion: latestConclusion, jobs: "r.path",
+		},
+		UnitAttempt: {
+			from: "runs r JOIN attempts x ON " + within, path: "x.path",
+			when: "x.run_started_at", attempt: "x.attempt", id: "NULL", conclusion: "x.conclusion", jobs: "x.path",
+		},
+		UnitJob:       jobSource,
+		UnitLog:       jobSource.requiring("x.has_log"),
+		UnitArtifact:  artifactSource.requiring("x.has_zip"),
+		UnitExtracted: artifactSource.requiring("x.extracted"),
 	}
-}
-
-// selects adds what a unit needs beyond its row.
-var selects = map[Unit]string{UnitLog: "x.has_log", UnitArtifact: "x.has_zip", UnitExtracted: "x.extracted"}
+)
 
 // Paths gives the regular files of the units f selects, ordered by unit
 // time, run id, attempt, and job or artifact id.
@@ -109,33 +109,29 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 		if !ok {
 			return nil, errors.New("unknown unit " + string(unit))
 		}
-		query, queryArgs := s.query(f)
+		query, queryArgs := s.query(unit, f)
 		queries = append(queries, query)
 		args = append(args, queryArgs...)
 	}
-	rows, err := ix.db.QueryContext(ctx, strings.Join(queries, " UNION ALL ")+" ORDER BY 1, 2, 3, 4, 6", args...)
+	rows, err := ix.db.QueryContext(ctx, "SELECT unit, path FROM ("+strings.Join(queries, " UNION ALL ")+
+		") ORDER BY at, run, attempt, id, path", args...)
 	if err != nil {
 		return nil, ix.dbError(err)
 	}
-	type unitDir struct {
-		unit Unit
-		dir  string
-	}
-	var dirs []unitDir
+	var dirs [][2]string
 	for rows.Next() {
-		var d unitDir
-		var when, run, attempt, id any
-		if err := rows.Scan(&when, &run, &attempt, &id, &d.unit, &d.dir); err != nil {
+		var unit, dir string
+		if err := rows.Scan(&unit, &dir); err != nil {
 			return nil, errors.Join(ix.dbError(err), rows.Close())
 		}
-		dirs = append(dirs, d)
+		dirs = append(dirs, [2]string{unit, dir})
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, ix.dbError(err)
 	}
 	var paths []string
 	for _, d := range dirs {
-		files, err := unitFiles(d.unit, d.dir)
+		files, err := unitFiles(Unit(d[0]), d[1])
 		if err != nil {
 			return nil, err
 		}
@@ -144,27 +140,22 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 	return paths, nil
 }
 
-func (s source) query(f Filter) (string, []any) {
+// query selects the unit's dirs that f selects, with the columns Paths orders them by.
+func (s source) query(unit Unit, f Filter) (string, []any) {
 	var w where
 	if len(f.Branches) > 0 {
 		w.add("NOT r.from_fork")
-		in(&w, "r.head_branch", f.Branches)
+		anyOf(&w, "r.head_branch = ?", f.Branches)
 	}
-	w.anyOf("r.head_sha LIKE ? ESCAPE '\\'", likePrefixes(f.SHAs))
-	if len(f.PRs) > 0 {
-		var prs where
-		in(&prs, "value", f.PRs)
-		w.add("EXISTS (SELECT 1 FROM json_each(r.pr_numbers) WHERE "+prs.conditions[0]+")", prs.args...)
-	}
-	in(&w, "r.workflow_name", f.Workflows)
-	in(&w, "r.event", f.Events)
-	in(&w, s.conclusion, f.Conclusions)
+	anyOf(&w, `r.head_sha LIKE ? ESCAPE '\'`, likePrefixes(f.SHAs))
+	anyOf(&w, "EXISTS (SELECT 1 FROM json_each(r.pr_numbers) WHERE value = ?)", f.PRs)
+	anyOf(&w, "r.workflow_name = ?", f.Workflows)
+	anyOf(&w, "r.event = ?", f.Events)
+	anyOf(&w, s.conclusion+" = ?", f.Conclusions)
 	if s.jobs == "" {
-		w.anyOf("x.name GLOB ?", f.Jobs)
-	} else if len(f.Jobs) > 0 {
-		var jobs where
-		jobs.anyOf("j.name GLOB ?", f.Jobs)
-		w.add("EXISTS (SELECT 1 FROM jobs j WHERE j.path > "+s.jobs+" || '/' AND j.path < "+s.jobs+" || '0' AND "+jobs.conditions[0]+")", jobs.args...)
+		anyOf(&w, "x.name GLOB ?", f.Jobs)
+	} else {
+		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j WHERE j.path > "+s.jobs+" || '/' AND j.path < "+s.jobs+" || '0' AND j.name GLOB ?)", f.Jobs)
 	}
 	if !f.Since.IsZero() {
 		w.add(s.when+" >= ?", timeText(f.Since))
@@ -172,11 +163,11 @@ func (s source) query(f Filter) (string, []any) {
 	if !f.Until.IsZero() {
 		w.add(s.when+" <= ?", timeText(f.Until))
 	}
-	if sel, ok := selects[s.unit]; ok {
-		w.add(sel)
+	if s.requires != "" {
+		w.add(s.requires)
 	}
-	query := "SELECT " + strings.Join([]string{s.when, "r.run_id", s.attempt, s.id, "'" + string(s.unit) + "'", s.path}, ", ") +
-		" FROM " + s.from
+	query := fmt.Sprintf("SELECT %s AS at, r.run_id AS run, %s AS attempt, %s AS id, '%s' AS unit, %s AS path FROM %s",
+		s.when, s.attempt, s.id, unit, s.path, s.from)
 	if len(w.conditions) > 0 {
 		query += " WHERE " + strings.Join(w.conditions, " AND ")
 	}
@@ -194,26 +185,14 @@ func (w *where) add(condition string, args ...any) {
 	w.args = append(w.args, args...)
 }
 
-// in adds column IN values, unless there are none.
-func in[T any](w *where, column string, values []T) {
-	if len(values) == 0 {
-		return
-	}
-	args := make([]any, len(values))
-	for i, v := range values {
-		args[i] = v
-	}
-	w.add(column+" IN (?"+strings.Repeat(", ?", len(values)-1)+")", args...)
-}
-
 // anyOf adds the condition, holding one ?, for any of the values, unless there are none.
-func (w *where) anyOf(condition string, values []string) {
+func anyOf[T any](w *where, condition string, values []T) {
 	if len(values) == 0 {
 		return
 	}
-	var alternatives []string
-	for _, v := range values {
-		alternatives = append(alternatives, condition)
+	alternatives := make([]string, len(values))
+	for i, v := range values {
+		alternatives[i] = condition
 		w.args = append(w.args, v)
 	}
 	w.conditions = append(w.conditions, "("+strings.Join(alternatives, " OR ")+")")

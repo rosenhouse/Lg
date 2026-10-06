@@ -317,4 +317,13 @@ var _ = Describe("Index.Paths", Label("paths"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(ConsistOf(logs[2:]))
 	}, NodeTimeout(time.Minute))
+
+	It("refuses an unknown unit", func(ctx SpecContext) {
+		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), GinkgoT().TempDir())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+
+		_, err = ix.Paths(ctx, index.Filter{}, "step")
+		Expect(err).To(MatchError("unknown unit step"))
+	})
 })
