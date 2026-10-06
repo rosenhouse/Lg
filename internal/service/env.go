@@ -35,8 +35,9 @@ func isExecutable(path string) bool {
 }
 
 // baked are the variables a unit keeps from install time when they are set.
+// The XDG dirs and GH_CONFIG_DIR locate the config, store and gh's login.
 var baked = []string{
-	"LG_HOME", "LG_CONFIG", "SSL_CERT_FILE",
+	"LG_HOME", "LG_CONFIG", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR", "SSL_CERT_FILE",
 	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy",
 }
 

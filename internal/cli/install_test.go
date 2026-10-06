@@ -27,6 +27,7 @@ func (l *loggingRunner) Run(_ context.Context, name string, args []string, _ map
 var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	var (
 		home, gh       string
+		env            map[string]string
 		runner         *loggingRunner
 		stdout, stderr *bytes.Buffer
 	)
@@ -38,13 +39,14 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		config := filepath.Join(home, ".config", "lg", "config.yaml")
 		Expect(os.MkdirAll(filepath.Dir(config), 0o755)).To(Succeed())
 		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		env = map[string]string{"HOME": home, "LG_GH": gh}
 		runner = &loggingRunner{}
 		stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	})
 
 	run := func(goos string, args ...string) int {
 		return cli.Main(args, cli.Deps{
-			Env:        map[string]string{"HOME": home, "LG_GH": gh},
+			Env:        env,
 			Stdout:     stdout,
 			Stderr:     stderr,
 			Clock:      clock.Real{},
@@ -88,6 +90,25 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 			ContainSubstring("<string>/opt/lg/bin/lg</string>"),
 			ContainSubstring("<key>LG_GH</key>\n\t\t<string>"+gh+"</string>"),
 			ContainSubstring("<string>"+filepath.Join(home, ".local", "share", "lg", "state", "daemon.log")+"</string>"),
+		))
+	})
+
+	It("bakes in the XDG dirs that chose config.yaml and the store", func() {
+		xdg := GinkgoT().TempDir()
+		config := filepath.Join(xdg, "config", "lg", "config.yaml")
+		Expect(os.MkdirAll(filepath.Dir(config), 0o755)).To(Succeed())
+		Expect(os.Rename(filepath.Join(home, ".config", "lg", "config.yaml"), config)).To(Succeed())
+
+		env["XDG_CONFIG_HOME"], env["XDG_DATA_HOME"] = filepath.Join(xdg, "config"), filepath.Join(xdg, "data")
+
+		Expect(run("darwin", "daemon", "install")).To(Equal(0), stderr.String())
+
+		plist, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "com.github.rosenhouse.lg.plist"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(plist)).To(And(
+			ContainSubstring("<key>XDG_CONFIG_HOME</key>\n\t\t<string>"+filepath.Join(xdg, "config")+"</string>"),
+			ContainSubstring("<key>XDG_DATA_HOME</key>\n\t\t<string>"+filepath.Join(xdg, "data")+"</string>"),
+			ContainSubstring("<string>"+filepath.Join(xdg, "data", "lg", "state", "daemon.log")+"</string>"),
 		))
 	})
 

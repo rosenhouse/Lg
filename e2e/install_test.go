@@ -52,7 +52,7 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		env, _, unit = newInstallEnv("XDG_CONFIG_HOME", xdg)
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(unit).To(Equal(filepath.Join(xdg, "systemd", "user", "lg.service")))
-		Expect(goldenPaths(env, unit)).To(Equal(string(golden)))
+		Expect(goldenPaths(env, unit)).To(Equal(strings.Replace(string(golden), "Restart=", `Environment="XDG_CONFIG_HOME=`+xdg+"\"\nRestart=", 1)))
 	})
 
 	It("adds LG_HOME, LG_CONFIG, HTTPS_PROXY, HTTP_PROXY, NO_PROXY and SSL_CERT_FILE only when they are set at install time, and never GH_TOKEN or GITHUB_TOKEN", func() {
@@ -78,6 +78,18 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		}
 		Expect(content).NotTo(ContainSubstring("TOKEN"))
 		Expect(content).NotTo(ContainSubstring("gho_"))
+	})
+
+	It("adds XDG_DATA_HOME and XDG_CONFIG_HOME when they locate the store and config.yaml", func() {
+		data, config := filepath.Join(GinkgoT().TempDir(), "data"), filepath.Join(GinkgoT().TempDir(), "config")
+		env, _, unit = newInstallEnv("XDG_DATA_HOME", data, "XDG_CONFIG_HOME", config)
+
+		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
+
+		Expect(readFile(unit)).To(And(
+			ContainSubstring(`Environment="XDG_DATA_HOME=`+data+`"`),
+			ContainSubstring(`Environment="XDG_CONFIG_HOME=`+config+`"`),
+		))
 	})
 
 	It("runs `systemctl --user daemon-reload` then `systemctl --user enable --now lg.service`, and on reinstall rewrites the unit and restarts it", func() {
