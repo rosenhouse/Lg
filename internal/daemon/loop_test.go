@@ -119,6 +119,30 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(30*time.Minute), 0)
 	})
 
+	It("runs a cycle due between polls at its Next", func() {
+		between := outcomeAt(t0)
+		between.Next = t0.Add(10*time.Minute + 500*time.Millisecond)
+		e := newLoopEnv(between, outcomeAt(between.Next))
+		e.run()
+		e.expectCycle(t0, 0)
+
+		e.set(t0.Add(10 * time.Minute))
+		e.expectNoCycle()
+		e.set(between.Next)
+		e.expectCycle(between.Next, 0)
+	})
+
+	It("logs an error reading the requests, and keeps its schedule", func() {
+		e := newLoopEnv(outcomeAt(t0), outcomeAt(t0.Add(10*time.Minute)))
+		e.loop.Requested = func() (int64, error) { return 0, errors.New("state/sync-request: garbled") }
+		e.run()
+		e.expectCycle(t0, 0)
+
+		e.set(t0.Add(10 * time.Minute))
+		e.expectCycle(t0.Add(10*time.Minute), 0)
+		Expect(e.log.String()).To(ContainSubstring("lg: state/sync-request: garbled\n"))
+	})
+
 	It("runs the first cycle at RetryAt when it is in the future, even with a request", func() {
 		e := newLoopEnv(outcomeAt(t0.Add(5 * time.Minute)))
 		e.loop.RetryAt = t0.Add(5 * time.Minute)

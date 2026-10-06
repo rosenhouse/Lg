@@ -49,7 +49,7 @@ func (l *Loop) Run(ctx context.Context) {
 		if n, err := l.Requested(); err != nil {
 			l.logf("%s", err)
 		} else {
-			served = max(served, n)
+			served = n
 		}
 		l.truncateLog()
 		out := l.Cycle(ctx, served)
