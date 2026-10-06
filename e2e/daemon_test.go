@@ -25,11 +25,12 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
-// cycleWait bounds how long a spec waits for a daemon's cycle.
 const (
+	// cycleWait bounds how long a spec waits for a daemon's cycle.
 	cycleWait     = 30 * time.Second
 	daemonTimeout = SpecTimeout(2 * time.Minute)
-	heldLog       = "jobs/111221289888/logs"
+	// heldLog is a job log the fake can hold to keep a cycle running.
+	heldLog = "jobs/111221289888/logs"
 )
 
 var _ = Describe("lg daemon run", Label("daemon"), func() {
@@ -227,7 +228,9 @@ var _ = Describe("lg daemon run when rate limited", Label("daemon"), func() {
 		st := env.Status()
 		Expect(st["blocked"]).To(HaveKeyWithValue("kind", "rate_limit"))
 		retryAt := timeAt(st["blocked"].(map[string]any), "retry_at")
-		Expect(retryAt).To(BeTemporally("~", timeAt(st, "last_sync_started_at").Add(30*time.Minute), harness.ExitTimeout))
+		Expect(retryAt).To(And(
+			BeTemporally(">=", timeAt(st, "last_sync_started_at").Add(30*time.Minute)),
+			BeTemporally("<=", timeAt(st, "last_sync_finished_at").Add(30*time.Minute+time.Second))))
 		Expect(timeAt(st, "next_sync_at")).To(Equal(retryAt))
 	}, daemonTimeout)
 })
@@ -330,7 +333,7 @@ func held(env *harness.Env, name string) func() bool {
 }
 
 func attemptDir(env *harness.Env, n int) string {
-	return filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-03/37129390741_lg-fixture_lg-fixture", fmt.Sprintf("attempt-%d", n))
+	return filepath.Join(env.Data(), fixtureRunDir, fmt.Sprintf("attempt-%d", n))
 }
 
 // untilNext is next_sync_at less last_sync_started_at.
