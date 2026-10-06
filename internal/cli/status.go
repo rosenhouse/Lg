@@ -90,21 +90,13 @@ func statusLines(st *status.Status, daemon bool) []string {
 			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
 			fmt.Sprintf("  pending units: %d", r.PendingUnits))
 		for _, pending := range r.Pending {
-			lines = append(lines, "    "+pendingLine(pending))
+			lines = append(lines, "    "+pending.String())
 		}
 		lines = append(lines,
 			"  horizon: "+orNone(r.Horizon, "none"),
 			fmt.Sprintf("  retention: %d days, disk_cap: %d bytes", r.RetentionDays, r.DiskCapBytes))
 	}
 	return lines
-}
-
-// pendingLine names p's unit, when it was first seen pending, if known, and its error.
-func pendingLine(p status.Pending) string {
-	if p.Since.IsZero() {
-		return p.String()
-	}
-	return fmt.Sprintf("%s, pending since %s: %s", p.Unit, p.Since.Format(time.RFC3339), p.Error)
 }
 
 func orNone(t *time.Time, none string) string {

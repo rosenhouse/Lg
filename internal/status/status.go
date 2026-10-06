@@ -167,7 +167,12 @@ type Pending struct {
 	Since time.Time `json:"since"`
 }
 
-func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
+func (p Pending) String() string {
+	if p.Since.IsZero() {
+		return p.Unit.String() + ": " + p.Error
+	}
+	return fmt.Sprintf("%s, pending since %s: %s", p.Unit, p.Since.Format(time.RFC3339), p.Error)
+}
 
 type Cycle struct {
 	Started, Finished time.Time
