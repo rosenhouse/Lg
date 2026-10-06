@@ -275,3 +275,25 @@ var _ = Describe("lg paths", Label("paths"), func() {
 	})
 })
 
+var _ = Describe("lg paths", Label("paths"), func() {
+	It("names a path holding a newline instead of printing it, unless -0, and exits 1", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		artifacts, err := filepath.Glob(filepath.Join(c.Home, "data", "*", "*", "*", "runs", "*", "*", "artifacts", "*"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(artifacts).NotTo(BeEmpty())
+		extracted := filepath.Join(artifacts[0], "extracted")
+		plain, split := filepath.Join(extracted, "plain.txt"), filepath.Join(extracted, "new\nline.txt")
+		Expect(os.MkdirAll(extracted, 0o755)).To(Succeed())
+		for _, file := range []string{plain, split} {
+			Expect(os.WriteFile(file, []byte("foo bar\n"), 0o644)).To(Succeed())
+		}
+
+		Expect(c.Main("paths", "--unit", "extracted")).To(Equal(1))
+		Expect(c.Stdout.String()).To(Equal(plain + "\n"))
+		Expect(c.Stderr.String()).To(ContainSubstring(fmt.Sprintf("%q holds a newline; use -0", split)))
+
+		Expect(c.Main("paths", "--unit", "extracted", "-0")).To(Equal(0), c.Stderr.String())
+		Expect(strings.Split(c.Stdout.String(), "\x00")).To(ConsistOf(plain, split, ""))
+	})
+})

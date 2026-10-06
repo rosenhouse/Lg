@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -131,16 +133,11 @@ func (p pathsCmd) Run(deps *Deps) error {
 	}
 	defer func() { _ = ix.Close() }()
 	paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
-	sep := "\n"
-	if p.Null {
-		sep = "\x00"
+	unprintable, err := p.print(deps.Stdout, paths)
+	if err != nil {
+		return err
 	}
-	for _, path := range paths {
-		if _, err := fmt.Fprint(deps.Stdout, path, sep); err != nil {
-			return err
-		}
-	}
-	return errors.Join(reconciled, unread)
+	return errors.Join(reconciled, unread, unprintable)
 }
 
 // answerable gives lg.db, reconciled, or else an index of data/ in memory
@@ -165,4 +162,24 @@ func answerable(ctx context.Context, roots config.Roots, deps *Deps) (*index.Ind
 		return nil, err
 	}
 	return memory, memory.Reconcile(ctx)
+}
+
+// print writes the paths to w, each followed by the separator. Without -0,
+// it gives the error of each path holding a newline instead of writing it.
+func (p pathsCmd) print(w io.Writer, paths []string) (unprintable, err error) {
+	sep := "\n"
+	if p.Null {
+		sep = "\x00"
+	}
+	var skipped []error
+	for _, path := range paths {
+		if !p.Null && strings.Contains(path, "\n") {
+			skipped = append(skipped, fmt.Errorf("%q holds a newline; use -0", path))
+			continue
+		}
+		if _, err := fmt.Fprint(w, path, sep); err != nil {
+			return nil, err
+		}
+	}
+	return errors.Join(skipped...), nil
 }
