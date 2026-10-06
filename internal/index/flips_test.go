@@ -103,6 +103,33 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 		))
 	})
 
+	spoil := func(dir string) {
+		GinkgoHelper()
+		Expect(os.RemoveAll(dir)).To(Succeed())
+		Expect(os.WriteFile(dir, nil, 0o644)).To(Succeed())
+	}
+
+	It("gives the flips with the error of each log it cannot read", func(ctx SpecContext) {
+		spoiled := filepath.Join(runDir(env.Data(), runID), "attempt-2", "jobs", "111221661475_flaky")
+		spoil(spoiled)
+
+		got, err := ix.RerunFlips(ctx, index.Filter{SHAs: []string{"1a51097"}})
+		Expect(err).To(HaveOccurred())
+		Expect(strings.Count(err.Error(), spoiled)).To(Equal(1), "the job flip and its step flip share the log")
+		Expect(got).To(ContainElement(SatisfyAll(flaky(), HaveField("Flip.Logs", HaveLen(2)))))
+	})
+
+	It("reads only the logs of the flips it gives", func(ctx SpecContext) {
+		passes, err := filepath.Glob(filepath.Join(runDir(env.Data(), runID), "attempt-*", "jobs", "*_pass"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(passes).NotTo(BeEmpty())
+		for _, dir := range passes {
+			spoil(dir)
+		}
+
+		Expect(flips(ctx, index.Filter{SHAs: []string{"1a51097"}})).To(ContainElement(flaky()))
+	})
+
 	It("orders failing steps and step flips by step number", func(ctx SpecContext) {
 		Expect(flips(ctx, index.Filter{SHAs: []string{"3"}})).To(HaveExactElements(
 			SatisfyAll(HaveField("Flip.Step", ""), HaveField("Flip.FailingSteps", []string{stepEmit, stepBuild})),

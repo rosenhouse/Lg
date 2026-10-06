@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"slices"
 
 	"github.com/rosenhouse/lg/internal/model"
 )
@@ -22,7 +24,8 @@ var flipRuns = source{
 }
 
 // RerunFlips gives the rerun flips of the runs f selects, among the jobs
-// whose names match f.Jobs, comparing every attempt of each run.
+// whose names match f.Jobs, comparing every attempt of each run. With them it
+// returns the error of each of their logs it could not read.
 func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	w := jobSource.where(Filter{Jobs: f.Jobs})
 	runs := flipRuns.where(f)
@@ -34,25 +37,26 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
-	unread := []error{restarted}
-	for i, dir := range jobs.dirs {
-		logs, err := regular(dir, "log.txt")
-		if len(logs) > 0 {
-			jobs.jobs[i].Log = logs[0]
-		}
-		unread = append(unread, err)
-	}
 	var flips []Flip
+	unread := []error{restarted}
+	onDisk := map[string]bool{}
 	for _, flip := range model.RerunFlips(jobs.jobs) {
+		flip.Logs = slices.DeleteFunc(flip.Logs, func(log string) bool {
+			if _, read := onDisk[log]; !read {
+				files, err := regular(filepath.Dir(log), filepath.Base(log))
+				onDisk[log] = len(files) > 0
+				unread = append(unread, err)
+			}
+			return !onDisk[log]
+		})
 		flips = append(flips, Flip{Flip: flip, HeadSHA: jobs.headSHAs[flip.RunID]})
 	}
 	return flips, errors.Join(unread...)
 }
 
-// attemptJobs holds jobs read from the index, without their logs, and the dir of each.
+// attemptJobs holds jobs read from the index, and the head SHA of each run.
 type attemptJobs struct {
 	jobs     []model.AttemptJob
-	dirs     []string
 	headSHAs map[int64]string
 }
 
@@ -74,8 +78,8 @@ func (ix *Index) readAttemptJobs(ctx context.Context, query string, args []any) 
 			return attemptJobs{}, errors.Join(ix.dbError(err), rows.Close())
 		}
 		if path != lastPath {
+			j.Log = filepath.Join(path, "log.txt")
 			read.jobs = append(read.jobs, j)
-			read.dirs = append(read.dirs, path)
 			read.headSHAs[j.RunID] = sha
 			lastPath = path
 		}
