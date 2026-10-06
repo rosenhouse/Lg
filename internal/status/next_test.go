@@ -98,6 +98,13 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(status.Next(&prev, c).ServedRequest).To(BeZero())
 	})
 
+	It("records no next sync for a cycle that was cancelled, since no daemon will run it", func() {
+		c := good(started)
+		c.Completed, c.Err, c.NextSyncAt = false, fmt.Errorf("sync: %w", context.Canceled), started.Add(10*time.Minute)
+
+		Expect(status.Next(nil, c).NextSyncAt).To(BeNil())
+	})
+
 	It("records the horizon, and no newest run or lag without a completed run on disk", func() {
 		c := good(started)
 		c.Disk = status.Disk{Horizon: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}

@@ -59,6 +59,10 @@ func statusLines(st *status.Status, daemon bool) []string {
 	if st == nil {
 		return []string{"last sync: never", daemonLine}
 	}
+	next := orNone(st.NextSyncAt, "none scheduled")
+	if !daemon {
+		next = "none (daemon not running)"
+	}
 	blocked := "no"
 	if st.Blocked != nil {
 		blocked = st.Blocked.String()
@@ -66,7 +70,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 	lines := []string{
 		fmt.Sprintf("last sync: %s, finished %s (cycle %d)", st.LastSyncStartedAt.Format(time.RFC3339), st.LastSyncFinishedAt.Format(time.RFC3339), st.Cycle),
 		"last ok sync: " + orNone(st.LastSyncOKAt, "never"),
-		"next sync: " + orNone(st.NextSyncAt, "none scheduled"),
+		"next sync: " + next,
 		"blocked: " + blocked,
 	}
 	if st.ConfigError != nil {
