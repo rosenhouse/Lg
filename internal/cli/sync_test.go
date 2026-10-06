@@ -111,3 +111,34 @@ func (c *firedClock) requested() []time.Duration {
 	defer c.mu.Unlock()
 	return append([]time.Duration(nil), c.durations...)
 }
+
+var _ = DescribeTable("lg sync --timeout", Label("sync"),
+	func(args []string, busy string, want time.Duration) {
+		home := GinkgoT().TempDir()
+		config := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\n"), 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(home, "state"), 0o755)).To(Succeed())
+		held, err := lock.Wait(filepath.Join(home, "state", busy), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+
+		var stderr bytes.Buffer
+		clk := &firedClock{}
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main(append([]string{"sync"}, args...), cli.Deps{
+				Env:    map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+				Stdout: &bytes.Buffer{},
+				Stderr: &stderr,
+				Clock:  clk,
+			})
+		}()
+
+		Eventually(code, 5*time.Second).Should(Receive(Equal(4)))
+		Expect(clk.requested()).To(ContainElement(want))
+		Expect(stderr.String()).To(HaveSuffix(fmt.Sprintf("gave up after %s\n", want)))
+	},
+	Entry("defaults to 15m for a --wait served by the daemon", []string{"--wait"}, "daemon.lock", 15*time.Minute),
+	Entry("defaults to 5m for the write-lock wait of a one-shot sync", nil, "write.lock", 5*time.Minute),
+	Entry("defaults to 5m for the write-lock wait of a --wait with no daemon", []string{"--wait"}, "write.lock", 5*time.Minute),
+)
