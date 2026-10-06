@@ -542,7 +542,6 @@ func AddRerunAttempt(r Run, jobs ...string) Run {
 	}
 	mustUnmarshal(out.Files[attemptFile(latest, "attempt.json")].Data, &ended)
 	started := ended.UpdatedAt.Add(time.Minute)
-	completed := started
 
 	var listing map[string]any
 	mustUnmarshal(out.Files[attemptFile(latest, "jobs.json")].Data, &listing)
@@ -552,12 +551,9 @@ func AddRerunAttempt(r Run, jobs ...string) Run {
 		job := j.(map[string]any)
 		id++
 		old, renumbered := job["id"].(json.Number).String(), strconv.FormatInt(id, 10)
-		job["id"], job["run_attempt"] = json.Number(renumbered), next
-		for _, key := range []string{"url", "html_url", "check_run_url"} {
-			job[key] = strings.Replace(job[key].(string), old, renumbered, 1)
-		}
+		job["id"] = json.Number(renumbered)
 		if slices.Contains(jobs, job["name"].(string)) {
-			completed = laterOf(completed, rerunJob(job, started.Add(2*time.Second)))
+			rerunJob(job, started.Add(2*time.Second))
 		}
 		if failing(job["conclusion"]) {
 			conclusion = "failure"
@@ -565,25 +561,19 @@ func AddRerunAttempt(r Run, jobs ...string) Run {
 		out.copyLog(latest, old, next, renumbered)
 	}
 	out.Files[attemptFile(next, "jobs.json")] = &fstest.MapFile{Data: mustMarshal(listing)}
-
-	var attempt map[string]any
-	mustUnmarshal(out.Files[attemptFile(latest, "attempt.json")].Data, &attempt)
-	for _, key := range []string{"jobs_url", "logs_url"} {
-		attempt[key] = strings.Replace(attempt[key].(string), fmt.Sprintf("/attempts/%d/", latest), fmt.Sprintf("/attempts/%d/", next), 1)
-	}
-	out.Files[attemptFile(next, "attempt.json")] = &fstest.MapFile{Data: mustMarshal(attempt)}
+	out.Files[attemptFile(next, "attempt.json")] = &fstest.MapFile{Data: bytes.Clone(out.Files[attemptFile(latest, "attempt.json")].Data)}
 	conclude := func(run map[string]any) {
 		run["run_attempt"], run["status"], run["conclusion"] = next, "completed", conclusion
-		run["run_started_at"], run["updated_at"] = started.Format(time.RFC3339), completed.Add(5*time.Second).Format(time.RFC3339)
+		run["run_started_at"], run["updated_at"] = started.Format(time.RFC3339), started.Add(2*time.Minute).Format(time.RFC3339)
 	}
 	out.edit(attemptFile(next, "attempt.json"), conclude)
 	out.edit("run.json", conclude)
 	return out
 }
 
-// rerunJob moves the job's times so that it starts at start, concludes it
-// and its steps success, and gives when it completed.
-func rerunJob(job map[string]any, start time.Time) time.Time {
+// rerunJob moves the job's times so that it starts at start, and concludes
+// it and its steps success.
+func rerunJob(job map[string]any, start time.Time) {
 	delta := start.Sub(parseTime(job["started_at"]))
 	rerun := func(m map[string]any) {
 		for _, key := range []string{"created_at", "started_at", "completed_at"} {
@@ -597,7 +587,6 @@ func rerunJob(job map[string]any, start time.Time) time.Time {
 	for _, step := range job["steps"].([]any) {
 		rerun(step.(map[string]any))
 	}
-	return parseTime(job["completed_at"])
 }
 
 func parseTime(v any) time.Time {
@@ -606,13 +595,6 @@ func parseTime(v any) time.Time {
 		panic(err)
 	}
 	return t
-}
-
-func laterOf(a, b time.Time) time.Time {
-	if b.After(a) {
-		return b
-	}
-	return a
 }
 
 func failing(conclusion any) bool {
