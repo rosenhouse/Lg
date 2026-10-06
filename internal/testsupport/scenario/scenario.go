@@ -246,7 +246,9 @@ func FromFork(r Run, fullName string) Run {
 	out := r.editRuns(func(run map[string]any) {
 		run["head_repository"] = map[string]any{"id": forkID, "full_name": fullName}
 	})
-	out.editArtifacts(func(artifact map[string]any) { artifact["workflow_run"].(map[string]any)["head_repository_id"] = forkID })
+	out.editArtifacts(func(artifact map[string]any) {
+		artifact["workflow_run"].(map[string]any)["head_repository_id"] = forkID
+	})
 	return out
 }
 
