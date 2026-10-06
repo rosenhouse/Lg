@@ -11,7 +11,17 @@ import (
 )
 
 type pathsCmd struct {
-	Null bool `short:"0" help:"Separate paths with NUL instead of newline."`
+	Branch     []string `help:"Only runs on this branch of the repository, not of a fork."`
+	SHA        []string `name:"sha" help:"Only runs of a commit whose SHA starts with this."`
+	PR         []int    `name:"pr" help:"Only runs of this pull request."`
+	Workflow   []string `help:"Only runs of this workflow."`
+	Job        []string `help:"Only jobs whose name matches this glob."`
+	Event      []string `help:"Only runs triggered by this event."`
+	Conclusion []string `help:"Only units with this conclusion."`
+	Since      string   `help:"Only units since this time."`
+	Until      string   `help:"Only units until this time."`
+	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit."`
+	Null       bool     `short:"0" help:"Separate paths with NUL instead of newline."`
 }
 
 func (p pathsCmd) Run(deps *Deps) error {
