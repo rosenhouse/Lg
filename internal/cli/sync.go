@@ -36,11 +36,17 @@ func (c syncCmd) Run(deps *Deps) error {
 		return failure.FromErrno(err)
 	}
 	if running {
-		n, err := requestSync(t.roots, deps)
-		if err != nil || !c.Wait {
-			return err
+		since, timeout := deps.Clock.Now(), c.timeout(cycleWait)
+		n, err := daemon.Request(deps.StoreFS, t.roots.State, timeout, deps.Clock)
+		if err != nil {
+			return failure.FromErrno(err)
 		}
-		return daemon.WaitForCycle(t.roots.State, n, deps.Clock.Now(), c.timeout(cycleWait), deps.Clock)
+		// Like the daemon's log, this line must not decide the outcome.
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: sent sync request %d to the running daemon\n", n)
+		if !c.Wait {
+			return nil
+		}
+		return daemon.WaitForCycle(t.roots.State, n, since, timeout, deps.Clock)
 	}
 	held, err := lockWrites(context.Background(), t.roots, deps, c.timeout(writeLockWait))
 	if err != nil {
@@ -54,21 +60,13 @@ func (c syncCmd) Run(deps *Deps) error {
 	return err
 }
 
+func (c syncCmd) Validate() error { return validateTimeout(c.timeout(0)) }
+
 func (c syncCmd) timeout(fallback time.Duration) time.Duration {
 	if c.Timeout == nil {
 		return fallback
 	}
 	return *c.Timeout
-}
-
-// requestSync asks the running daemon for a cycle, and gives the request's number.
-func requestSync(roots config.Roots, deps *Deps) (int64, error) {
-	n, err := daemon.Request(deps.StoreFS, roots.State, time.Hour, deps.Clock)
-	if err != nil {
-		return 0, failure.FromErrno(err)
-	}
-	_, err = fmt.Fprintf(deps.Stderr, "lg: sent sync request %d to the running daemon\n", n)
-	return n, err
 }
 
 // target is what a cycle syncs, from config.yaml.

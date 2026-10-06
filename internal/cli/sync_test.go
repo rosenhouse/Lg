@@ -180,7 +180,7 @@ var _ = DescribeTable("a negative --timeout", Label("sync"),
 		s := harness.NewCLI()
 
 		Expect(s.Main(args...)).To(Equal(2))
-		Expect(s.Stderr.String()).To(HavePrefix("lg: --timeout must not be negative: -5s\n"))
+		Expect(s.Stderr.String()).To(HavePrefix(fmt.Sprintf("lg: %s: --timeout must not be negative: -5s\n", args[0])))
 	},
 	Entry("is a usage error for sync", "sync", "--timeout=-5s"),
 	Entry("is a usage error for gc", "gc", "--timeout=-5s"),

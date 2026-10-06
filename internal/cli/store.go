@@ -79,3 +79,10 @@ func initAndSweep(fsys store.FS, root string) (*store.Store, error) {
 	}
 	return s, s.Sweep()
 }
+
+func validateTimeout(timeout time.Duration) error {
+	if timeout < 0 {
+		return fmt.Errorf("--timeout must not be negative: %s", timeout)
+	}
+	return nil
+}
