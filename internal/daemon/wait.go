@@ -3,9 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
@@ -32,7 +30,8 @@ func WaitForCycle(state string, n int64, timeout time.Duration, clk clock.Clock)
 			return err
 		}
 		st, err := status.Read(filepath.Join(state, "status.json"))
-		if err != nil {
+		// A running daemon rewrites a status.json that does not parse.
+		if err != nil && !running {
 			return err
 		}
 		switch {
@@ -56,16 +55,11 @@ func result(st *status.Status) error {
 	if st.Blocked != nil {
 		return blocked(*st.Blocked)
 	}
-	if st.LastSyncOKAt == nil || st.LastSyncOKAt.Before(st.LastSyncFinishedAt) {
-		return fmt.Errorf("the daemon's sync at %s failed; its log says why", st.LastSyncStartedAt.Format(time.RFC3339))
+	errs := make([]error, len(st.LastSyncErrors))
+	for i, line := range st.LastSyncErrors {
+		errs[i] = errors.New(line)
 	}
-	var pending []error
-	for _, repo := range slices.Sorted(maps.Keys(st.Repos)) {
-		for _, p := range st.Repos[repo].Pending {
-			pending = append(pending, errors.New(p.String()))
-		}
-	}
-	return errors.Join(pending...)
+	return errors.Join(errs...)
 }
 
 func blocked(b status.Blocked) failure.Blocked {
