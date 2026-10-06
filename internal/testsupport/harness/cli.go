@@ -3,9 +3,11 @@ package harness
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -28,6 +30,7 @@ type CLI struct {
 	Fake           *fakegithub.Server
 	FS             *faultfs.FS
 	Runner         execx.Runner
+	Stdin          io.Reader
 	Stdout, Stderr bytes.Buffer
 }
 
@@ -39,6 +42,7 @@ func NewCLI() *CLI {
 		Fake:   fakegithub.Start(37129390741, "after-attempt-1"),
 		FS:     faultfs.New(),
 		Runner: TokenRunner{},
+		Stdin:  strings.NewReader(""),
 	}
 	c.WriteConfig("repo: rosenhouse/lg\napi_url: " + c.Fake.URL() + "\n")
 	return c
@@ -59,6 +63,7 @@ func (c *CLI) Main(args ...string) int {
 	before := treesnap.Snapshot(data)
 	code := cli.Main(args, cli.Deps{
 		Env:    map[string]string{"LG_HOME": c.Home, "LG_CONFIG": c.Config, "LG_GH": "gh", "LG_TEST_NOW": DefaultNow().Format(time.RFC3339)},
+		Stdin:  c.Stdin,
 		Stdout: &c.Stdout,
 		Stderr: &c.Stderr,
 		Clock:  clock.Real{},

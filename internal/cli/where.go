@@ -49,7 +49,7 @@ func (w whereCmd) Run(deps *Deps) error {
 
 // eachInput calls f with each of hits, or else with each line of stdin.
 func eachInput(hits []string, stdin io.Reader, f func(string) error) error {
-	if len(hits) > 0 || stdin == nil {
+	if len(hits) > 0 {
 		for _, hit := range hits {
 			if err := f(hit); err != nil {
 				return err
