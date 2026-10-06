@@ -532,6 +532,7 @@ var _ = Describe("Manager", Label("install"), func() {
 
 		_, err := m.Install(context.Background(), unit)
 
-		Expect(err).To(MatchError(ContainSubstring("HOME")))
+		Expect(err).To(MatchError(`HOME must be an absolute path: "home"`))
+		Expect(runner.calls).To(BeEmpty())
 	})
 })
