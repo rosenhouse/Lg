@@ -31,6 +31,8 @@ type Status struct {
 	Blocked             *Blocked        `json:"blocked"`
 	DaemonPID           *int            `json:"daemon_pid"`
 	DaemonVersion       *string         `json:"daemon_version"`
+	ServedRequest       int64           `json:"served_request"`
+	ConfigError         *string         `json:"config_error"`
 	Repos               map[string]Repo `json:"repos"`
 }
 
@@ -114,7 +116,8 @@ func (u Unit) String() string {
 // Pending is a unit that a cycle left for the next one, with its last error.
 type Pending struct {
 	Unit
-	Error string `json:"error"`
+	Error string    `json:"error"`
+	Since time.Time `json:"since"`
 }
 
 func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
@@ -133,6 +136,15 @@ type Cycle struct {
 	Retention     time.Duration
 	DiskCap       int64
 	Disk          Disk
+	Daemon        *Daemon
+	NextSyncAt    time.Time
+	ServedRequest int64
+	ConfigError   error
+}
+
+type Daemon struct {
+	PID     int
+	Version string
 }
 
 type Disk struct {
