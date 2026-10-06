@@ -66,6 +66,13 @@ func (f *Fake) After(d time.Duration) <-chan time.Time {
 	return w.fired
 }
 
+// Waiting counts the Afters that have not fired.
+func (f *Fake) Waiting() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.waiters)
+}
+
 // FromEnv gives base, or, when LG_TEST_NOW is set, a clock that starts at
 // that RFC 3339 time and advances as base does.
 func FromEnv(env map[string]string, base Clock) (Clock, error) {

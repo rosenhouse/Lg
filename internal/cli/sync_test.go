@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
 var _ = Describe("lg sync", Label("store"), func() {
@@ -43,6 +44,21 @@ var _ = Describe("lg sync", Label("store"), func() {
 		Eventually(code, 5*time.Second).Should(Receive(Equal(4)))
 		Expect(clk.requested()).To(ContainElement(5 * time.Minute))
 		Expect(stderr.String()).To(HaveSuffix(fmt.Sprintf("lg: %s is held by pid %d; gave up after 5m0s\n", writeLock, os.Getpid())))
+	})
+})
+
+var _ = Describe("lg sync that cannot tell whether a daemon runs", Label("daemon"), func() {
+	It("exits 1 naming state/daemon.lock, and neither syncs nor sends a request", func() {
+		s := harness.NewCLI()
+		state := filepath.Join(s.Home, "state")
+		Expect(os.Mkdir(state, 0o755)).To(Succeed())
+		daemonLock := filepath.Join(state, "daemon.lock")
+		Expect(os.Symlink(daemonLock, daemonLock)).To(Succeed())
+
+		Expect(s.Main("sync")).To(Equal(1))
+		Expect(s.Stderr.String()).To(ContainSubstring(daemonLock))
+		Expect(filepath.Join(state, "sync-request")).NotTo(BeAnExistingFile())
+		Expect(s.StatusFile()).NotTo(BeAnExistingFile())
 	})
 })
 

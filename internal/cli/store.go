@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ const writeLockWait = 5 * time.Minute
 // check, unless it is nil, initializes the store and sweeps what dead writers
 // left in tmp/.
 func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check func() error) (*store.Store, func(), error) {
-	held, err := lockWrites(roots, deps, timeout)
+	held, err := lockWrites(context.Background(), roots, deps, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -57,13 +58,13 @@ func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check
 }
 
 // lockWrites takes state/write.lock, which every writer of data/ and tmp/
-// holds, waiting up to timeout.
-func lockWrites(roots config.Roots, deps *Deps, timeout time.Duration) (*lock.Lock, error) {
+// holds, waiting up to timeout or until ctx is done.
+func lockWrites(ctx context.Context, roots config.Roots, deps *Deps, timeout time.Duration) (*lock.Lock, error) {
 	if err := os.MkdirAll(roots.State, 0o755); err != nil {
 		return nil, err
 	}
 	writeLock := filepath.Join(roots.State, "write.lock")
-	return lock.Wait(writeLock, timeout, deps.Clock, func(holder string) {
+	return lock.WaitContext(ctx, writeLock, timeout, deps.Clock, func(holder string) {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: waiting for %s (held by %s)\n", writeLock, holder)
 	})
 }

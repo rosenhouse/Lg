@@ -30,6 +30,17 @@ var _ = Describe("Fake", Label("failures"), func() {
 		Eventually(fired, time.Second).Should(Receive(Equal(t0.Add(time.Minute))))
 	})
 
+	It("counts the Afters still waiting", func() {
+		fake := clock.NewFake(t0)
+		fake.After(time.Minute)
+		fake.After(time.Hour)
+		fake.After(0)
+		Expect(fake.Waiting()).To(Equal(2))
+
+		fake.Set(t0.Add(time.Minute))
+		Expect(fake.Waiting()).To(Equal(1))
+	})
+
 	DescribeTable("fires After at once for a duration that is not positive",
 		func(d time.Duration) {
 			Expect(clock.NewFake(t0).After(d)).To(Receive(Equal(t0)))

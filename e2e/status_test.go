@@ -156,7 +156,7 @@ var _ = Describe("lg status", Label("status"), func() {
 
 		free := env.Lg("status")
 		Eventually(free, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(free.Out.Contents())).To(ContainSubstring("daemon: not running"))
+		Expect(string(free.Out.Contents())).To(And(ContainSubstring("next sync: none (daemon not running)\n"), ContainSubstring("daemon: not running")))
 
 		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
 		held, err := lock.Wait(filepath.Join(env.State(), "daemon.lock"), time.Second, clock.Real{}, func(string) {})

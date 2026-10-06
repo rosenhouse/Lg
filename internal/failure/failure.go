@@ -67,12 +67,13 @@ func retryAt(header http.Header, now time.Time) time.Time {
 		return now.Add(time.Duration(min(seconds, uint64(maxRetryAfter.Seconds()))) * time.Second)
 	}
 	if reset, ok := resetOf(header, now); ok && header.Get("X-RateLimit-Remaining") == "0" && reset.After(now) {
-		return capped(reset, now)
+		return Capped(reset, now)
 	}
 	return now.Add(time.Minute)
 }
 
-func capped(retryAt, now time.Time) time.Time {
+// Capped is retryAt, or a day after now when retryAt is later.
+func Capped(retryAt, now time.Time) time.Time {
 	if limit := now.Add(maxRetryAfter); retryAt.After(limit) {
 		return limit
 	}
@@ -104,7 +105,7 @@ func Reserve(header http.Header, received, now time.Time) (Blocked, bool) {
 		return Blocked{}, false
 	}
 	detail := fmt.Sprintf("X-RateLimit-Remaining %d is below 10%% of X-RateLimit-Limit %d", remaining, limit)
-	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: ceilSecond(capped(reset, now))}, true
+	return Blocked{Kind: RateLimit, Detail: detail, RetryAt: ceilSecond(Capped(reset, now))}, true
 }
 
 // ceilSecond rounds t up to a whole second, so a retry at it is never early.

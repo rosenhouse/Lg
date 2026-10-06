@@ -84,6 +84,38 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Expect(count(openDB(path), "SELECT count(*) FROM runs")).To(Equal(1))
 	})
 
+	// stopsWhenCancelled runs use while another holds lg.db.lock, and expects
+	// it to return ctx's error once ctx is cancelled.
+	stopsWhenCancelled := func(ctx context.Context, use func(context.Context) error) {
+		GinkgoHelper()
+		held, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+		cancellable, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- use(cancellable) }()
+		Consistently(done, "200ms").ShouldNot(Receive())
+
+		cancel()
+
+		Eventually(done, waitTimeout).Should(Receive(MatchError(context.Canceled)))
+	}
+
+	It("stop waiting in Open for lg.db.lock when ctx is done", func(ctx SpecContext) {
+		stopsWhenCancelled(ctx, func(ctx context.Context) error {
+			_, err := index.Open(ctx, dbPath(env), env.Data())
+			return err
+		})
+	})
+
+	It("stop waiting in Reconcile for lg.db.lock when ctx is done", func(ctx SpecContext) {
+		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+
+		stopsWhenCancelled(ctx, ix.Reconcile)
+	})
+
 	It("keep the db another made while waiting to open a file that is not a db", func(ctx SpecContext) {
 		opening, err := lock.Wait(dbPath(env)+".lock", 0, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())

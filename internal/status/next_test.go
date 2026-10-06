@@ -66,6 +66,45 @@ var _ = Describe("Next", Label("status"), func() {
 		}))
 	})
 
+	It("records a daemon's pid, version, next sync, served request and config error", func() {
+		c := good(started)
+		c.Daemon = &status.Daemon{PID: 4242, Version: "v1.2.3"}
+		c.NextSyncAt = started.Add(10 * time.Minute)
+		c.ServedRequest = 7
+		c.ConfigError = errors.New("config.yaml:\n unknown key colour")
+
+		st := status.Next(nil, c)
+
+		Expect(st.DaemonPID).To(Equal(ptr(4242)))
+		Expect(st.DaemonVersion).To(Equal(ptr("v1.2.3")))
+		Expect(st.NextSyncAt).To(Equal(ptr(started.Add(10 * time.Minute).UTC())))
+		Expect(st.ServedRequest).To(Equal(int64(7)))
+		Expect(st.ConfigError).To(Equal(ptr("config.yaml: unknown key colour")))
+	})
+
+	It("keeps the served request of a daemon cycle after a one-shot sync", func() {
+		daemonCycle := good(started)
+		daemonCycle.ServedRequest = 7
+		prev := status.Next(nil, daemonCycle)
+
+		Expect(status.Next(&prev, good(started.Add(time.Hour))).ServedRequest).To(Equal(int64(7)))
+	})
+
+	It("keeps the served request after a cycle that was cancelled, since it served none", func() {
+		prev := status.Next(nil, good(started))
+		c := good(started.Add(time.Hour))
+		c.Completed, c.Err, c.ServedRequest = false, fmt.Errorf("sync: %w", context.Canceled), 7
+
+		Expect(status.Next(&prev, c).ServedRequest).To(BeZero())
+	})
+
+	It("records no next sync for a cycle that was cancelled, since no daemon will run it", func() {
+		c := good(started)
+		c.Completed, c.Err, c.NextSyncAt = false, fmt.Errorf("sync: %w", context.Canceled), started.Add(10*time.Minute)
+
+		Expect(status.Next(nil, c).NextSyncAt).To(BeNil())
+	})
+
 	It("records the horizon, and no newest run or lag without a completed run on disk", func() {
 		c := good(started)
 		c.Disk = status.Disk{Horizon: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}

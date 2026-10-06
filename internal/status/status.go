@@ -31,6 +31,8 @@ type Status struct {
 	Blocked             *Blocked        `json:"blocked"`
 	DaemonPID           *int            `json:"daemon_pid"`
 	DaemonVersion       *string         `json:"daemon_version"`
+	ServedRequest       int64           `json:"served_request"`
+	ConfigError         *string         `json:"config_error"`
 	Repos               map[string]Repo `json:"repos"`
 }
 
@@ -53,7 +55,7 @@ func Warning(now time.Time, st *Status) string {
 		return "no sync has succeeded yet"
 	}
 	interval := time.Duration(st.SyncIntervalSeconds) * time.Second
-	if age := now.Sub(*st.LastSyncOKAt); age > 2*interval {
+	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
 		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
 	}
 	return ""
@@ -66,11 +68,11 @@ func (b Blocked) String() string {
 	if b.RetryAt != nil {
 		s += ", retry_at " + b.RetryAt.Format(time.RFC3339)
 	}
-	return s + ": " + oneLine(b.Detail)
+	return s + ": " + OneLine(b.Detail)
 }
 
-// oneLine gives s on one line, without terminal controls.
-func oneLine(s string) string {
+// OneLine gives s on one line, without terminal controls.
+func OneLine(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -133,6 +135,15 @@ type Cycle struct {
 	Retention     time.Duration
 	DiskCap       int64
 	Disk          Disk
+	Daemon        *Daemon
+	NextSyncAt    time.Time
+	ServedRequest int64
+	ConfigError   error
+}
+
+type Daemon struct {
+	PID     int
+	Version string
 }
 
 type Disk struct {
@@ -156,12 +167,25 @@ func Next(prev *Status, c Cycle) Status {
 		LastSyncFinishedAt:  finished,
 		SyncIntervalSeconds: int64(c.SyncInterval / time.Second),
 	}
+	if !errors.Is(c.Err, context.Canceled) {
+		st.NextSyncAt = timeOrNil(c.NextSyncAt)
+		st.ServedRequest = c.ServedRequest
+	}
+	if c.Daemon != nil {
+		d := *c.Daemon
+		st.DaemonPID, st.DaemonVersion = &d.PID, &d.Version
+	}
+	if c.ConfigError != nil {
+		msg := OneLine(c.ConfigError.Error())
+		st.ConfigError = &msg
+	}
 	repo := Repo{DefaultBranch: c.DefaultBranch}
 	repo.setDisk(c.Disk, finished, c.Retention, c.DiskCap)
 	var last Repo
 	if prev != nil {
 		st.Cycle = prev.Cycle + 1
 		st.LastSyncOKAt = prev.LastSyncOKAt
+		st.ServedRequest = max(st.ServedRequest, prev.ServedRequest)
 		last = prev.Repos[c.Repo]
 	}
 	if repo.DefaultBranch == "" {
@@ -234,11 +258,11 @@ func timeOrNil(t time.Time) *time.Time {
 	return &t
 }
 
-// oneLineErrors gives pending with each error passed through oneLine.
+// oneLineErrors gives pending with each error passed through OneLine.
 func oneLineErrors(pending []Pending) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
-		found = append(found, Pending{Unit: p.Unit, Error: oneLine(p.Error)})
+		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error)})
 	}
 	return found
 }

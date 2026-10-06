@@ -15,6 +15,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/version"
@@ -128,7 +130,40 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 var _ = Describe("lg status after a good sync", Label("status"), func() {
 	It("prints no blocked state, next sync, horizon or daemon", func() {
 		s := harness.NewCLI()
-		s.WriteStatus(`{
+		s.WriteStatus(goodStatus)
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(Equal(`last sync: 2026-10-03T17:59:00Z, finished 2026-10-03T17:59:30Z (cycle 2)
+last ok sync: 2026-10-03T17:59:30Z
+next sync: none (daemon not running)
+blocked: no
+daemon: not running
+github.com/rosenhouse/lg:
+  default branch: main
+  newest completed run: none, lag: none
+  runs: 0, attempts: 0, bytes: 0
+  pending units: 0
+  horizon: none
+  retention: 30 days, disk_cap: 1000000 bytes
+`))
+	})
+})
+
+var _ = Describe("lg status with a daemon running and no next_sync_at", Label("status"), func() {
+	It("prints that no next sync is scheduled", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(goodStatus)
+		held, err := lock.Wait(filepath.Join(s.Home, "state", "daemon.lock"), time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(ContainSubstring("next sync: none scheduled\n"))
+	})
+})
+
+// goodStatus is a status.json from a one-shot sync with no runs.
+const goodStatus = `{
   "lg_format": 1,
   "cycle": 2,
   "last_sync_started_at": "2026-10-03T17:59:00Z",
@@ -155,24 +190,7 @@ var _ = Describe("lg status after a good sync", Label("status"), func() {
     }
   }
 }
-`)
-
-		Expect(s.Main("status")).To(Equal(0))
-		Expect(s.Stdout.String()).To(Equal(`last sync: 2026-10-03T17:59:00Z, finished 2026-10-03T17:59:30Z (cycle 2)
-last ok sync: 2026-10-03T17:59:30Z
-next sync: none scheduled
-blocked: no
-daemon: not running
-github.com/rosenhouse/lg:
-  default branch: main
-  newest completed run: none, lag: none
-  runs: 0, attempts: 0, bytes: 0
-  pending units: 0
-  horizon: none
-  retention: 30 days, disk_cap: 1000000 bytes
-`))
-	})
-})
+`
 
 var _ = DescribeTable("cli.Main on a store that never synced", Label("status"),
 	func(command, warning string) {
@@ -319,6 +337,16 @@ var _ = Describe("lg status with several repos", Label("status"), func() {
 				"github.com/o/a:", "github.com/o/b:", "github.com/o/c:", "github.com/o/d:", "github.com/o/e:", "github.com/o/f:", "github.com/o/g:", "github.com/o/h:",
 			}))
 		}
+	})
+})
+
+var _ = Describe("lg status after a daemon rejected config.yaml", Label("status"), func() {
+	It("prints the config error", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(`{"lg_format": 1, "sync_interval_seconds": 600, "config_error": "config.yaml: sync_interval must be at least 1m: 30s; kept the last good config"}`)
+
+		Expect(s.Main("status")).To(Equal(0))
+		Expect(s.Stdout.String()).To(ContainSubstring("\nblocked: no\nconfig error: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config\ndaemon: not running\n"))
 	})
 })
 

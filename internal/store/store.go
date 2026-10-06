@@ -147,9 +147,17 @@ func check(fsys FS, root string) error {
 	return nil
 }
 
+// ownState is what lg, or launchd for its daemon.log, writes in state/ before
+// the store has FORMAT.
+var ownState = []string{
+	"write.lock", "daemon.lock", "daemon.pid", "daemon.pid.tmp", "request.lock", "sync-request", "sync-request.tmp",
+	"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock", "daemon.log",
+}
+
 // isOwn reports whether name, in a root without FORMAT, is what Init, a
-// writer waiting on state/write.lock, mkfs or Finder left there, or lg's
-// config when LG_CONFIG points there.
+// writer waiting on state/write.lock, a starting daemon, a cycle that could
+// not init the store, mkfs or Finder left there, or lg's config when
+// LG_CONFIG points there.
 func isOwn(fsys FS, root, name string) (bool, error) {
 	var ownChild func(string) bool
 	switch name {
@@ -158,7 +166,9 @@ func isOwn(fsys FS, root, name string) (bool, error) {
 	case "data", "lost+found":
 		ownChild = func(string) bool { return false }
 	case "state":
-		ownChild = func(child string) bool { return child == "write.lock" }
+		ownChild = func(child string) bool {
+			return slices.Contains(ownState, child)
+		}
 	case "tmp":
 		ownChild = func(child string) bool { return isUnit(child) || child == "trash" }
 	default:
