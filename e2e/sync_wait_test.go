@@ -17,6 +17,7 @@ import (
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 var _ = Describe("lg sync --wait with a daemon mid-cycle", Label("sync"), func() {
@@ -24,6 +25,7 @@ var _ = Describe("lg sync --wait with a daemon mid-cycle", Label("sync"), func()
 		env, fake := newDaemonEnv()
 		release := holdFirstCycle(ctx, env, fake)
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 		Eventually(requested(env), cycleWait).WithContext(ctx).Should(Equal("1\n"))
 		listings := len(fakegithub.RunListings(fake.Requests()))
@@ -35,6 +37,7 @@ var _ = Describe("lg sync --wait with a daemon mid-cycle", Label("sync"), func()
 		Consistently(waiting, 2*time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
 		releaseListings()
 		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		appendOnly()
 		Expect(cycleListings(fake)).To(Equal(2))
 	}, daemonTimeout)
 })
@@ -46,9 +49,11 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		env.GH().Fail("no oauth token found for github.com")
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 
 		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(3))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say(`lg: blocked \(auth\): .*no oauth token found for github.com`))
 	}, daemonTimeout)
 
@@ -58,9 +63,11 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(os.WriteFile(filepath.Join(env.State(), "watch.json"), []byte("{not json"), 0o644)).To(Succeed())
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 
 		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(1))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say(`lg: .*watch.json: moved to .*watch.json.corrupt`))
 	}, daemonTimeout)
 
@@ -75,6 +82,7 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		writer, err := db.BeginTx(ctx, nil)
 		Expect(err).NotTo(HaveOccurred())
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 		Eventually(env.Status, cycleWait).WithContext(ctx).Should(HaveKeyWithValue("served_request", 1.0))
 		// A -race lg sleeps 1s as it exits.
@@ -82,6 +90,7 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		Expect(writer.Rollback()).To(Succeed())
 
 		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		appendOnly()
 		Expect(indexedAttempts(ctx, env)()).To(ConsistOf(1, 2))
 	}, daemonTimeout)
 
@@ -89,12 +98,14 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		env, fake := newDaemonEnv()
 		release := holdFirstCycle(ctx, env, fake)
 
+		appendOnly := snapshotData(env)
 		first, second := env.Lg("sync", "--wait"), env.Lg("sync", "--wait")
 		Eventually(requested(env), cycleWait).WithContext(ctx).Should(Equal("2\n"))
 		release()
 
 		Eventually(first, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
 		Eventually(second, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		appendOnly()
 		Expect(cycleListings(fake)).To(Equal(2))
 		Expect(env.Status()).To(And(HaveKeyWithValue("cycle", 2.0), HaveKeyWithValue("served_request", 2.0)))
 	}, daemonTimeout)
@@ -109,9 +120,11 @@ var _ = Describe("lg sync --wait when the daemon cannot open write.lock", Label(
 		Expect(os.Remove(writeLock)).To(Succeed())
 		Expect(os.Mkdir(writeLock, 0o755)).To(Succeed())
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 
 		Eventually(waiting, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(1))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say(`lg: .*%s: is a directory`, writeLock))
 	}, daemonTimeout)
 })
@@ -121,9 +134,11 @@ var _ = Describe("lg sync --wait --timeout 1s", Label("sync"), func() {
 		env, fake := newDaemonEnv()
 		holdFirstCycle(ctx, env, fake)
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait", "--timeout", "1s")
 
 		Eventually(waiting, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(4))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say(`lg: no cycle served sync request 1; gave up after 1s\n`))
 	}, daemonTimeout)
 })
@@ -134,12 +149,14 @@ var _ = Describe("lg sync --wait when the daemon dies", Label("sync"), func() {
 		DeferCleanup(fake.Hold(heldLog))
 		running := env.Start("daemon", "run")
 		Eventually(fake.Requests, cycleWait).WithContext(ctx).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 		Eventually(requested(env), cycleWait).WithContext(ctx).Should(Equal("1\n"))
 
 		Eventually(running.Kill(), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit())
 
 		Eventually(waiting, 5*time.Second).WithContext(ctx).Should(gexec.Exit(1))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say("the daemon exited"))
 	}, daemonTimeout)
 })
@@ -152,9 +169,11 @@ var _ = Describe("lg sync --wait while rate limited past the timeout", Label("sy
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		retryAt := timeAt(env.Status()["blocked"].(map[string]any), "retry_at")
 
+		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 
 		Eventually(waiting, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(3))
+		appendOnly()
 		Expect(waiting.Err).To(gbytes.Say(`lg: .*blocked \(rate_limit, retry_at %s\)`, retryAt.Format(time.RFC3339)))
 	}, daemonTimeout)
 })
@@ -232,6 +251,16 @@ func holdWriteLock(env *harness.Env) (release func()) {
 	release = sync.OnceFunc(func() { Expect(writer.Release()).To(Succeed()) })
 	DeferCleanup(release)
 	return release
+}
+
+// snapshotData snapshots env's data/, and gives a func that asserts data/
+// only grew since.
+func snapshotData(env *harness.Env) (appendOnly func()) {
+	before := treesnap.Snapshot(env.Data())
+	return func() {
+		GinkgoHelper()
+		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
+	}
 }
 
 // requested gives state/sync-request, or "" before there is one.
