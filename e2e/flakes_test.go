@@ -24,7 +24,8 @@ func syncThroughAttempt3(env *harness.Env, others ...scenario.Run) {
 		Expect(fake.AddRun(r)).To(Succeed())
 	}
 	env.WriteConfig(fake.URL())
-	for _, stage := range []string{"after-attempt-1", "after-attempt-2", "after-attempt-3"} {
+	Expect(env.Sync()).To(gexec.Exit(0))
+	for _, stage := range []string{"after-attempt-2", "after-attempt-3"} {
 		Expect(fake.Advance(fixtureRun, stage)).To(Succeed())
 		Expect(env.Sync()).To(gexec.Exit(0))
 	}
@@ -162,8 +163,8 @@ var _ = Describe("a run where re-running one job carries another job's failure f
 		Expect(pass).To(HaveExactElements(finding("pass", "", []int{1, 3}, "failure", "success")))
 		run := runDirOf(env, 1)
 		Expect(pass[0]["logs"]).To(HaveExactElements(
-			SatisfyAll(HavePrefix(filepath.Join(run, "attempt-1", "jobs")+"/"), HaveSuffix("_pass/log.txt"), BeARegularFile()),
-			SatisfyAll(HavePrefix(filepath.Join(run, "attempt-3", "jobs")+"/"), HaveSuffix("_pass/log.txt"), BeARegularFile()),
+			SatisfyAll(under(filepath.Join(run, "attempt-1", "jobs")), HaveSuffix("_pass/log.txt"), BeARegularFile()),
+			SatisfyAll(under(filepath.Join(run, "attempt-3", "jobs")), HaveSuffix("_pass/log.txt"), BeARegularFile()),
 		))
 	})
 })
@@ -181,7 +182,8 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 	It("applies --sha 1a51097 and the lg paths filters, and with --json prints one object per finding with run_id, head_sha, job, step (null for a job finding), attempts, conclusions, failing steps and log paths", func() {
 		const other = 2
 		env := harness.New(lgPath)
-		syncThroughAttempt3(env, scenario.OnBranch(scenario.WithSHA(sameNameFlip(other), strings.Repeat("2", 40)), "main"))
+		otherRun := scenario.OnBranch(scenario.WithSHA(sameNameFlip(other), strings.Repeat("2", 40)), "main")
+		syncThroughAttempt3(env, scenario.WithEvent(scenario.WithPullRequests(otherRun, 7), "workflow_dispatch"))
 		runIDs := func(args ...string) []any {
 			var ids []any
 			for _, f := range flakes(env, args...) {
@@ -192,7 +194,11 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 
 		Expect(runIDs()).To(ContainElements(BeEquivalentTo(fixtureRun), BeEquivalentTo(other)))
 		Expect(runIDs("--sha", "1a51097")).To(HaveEach(BeEquivalentTo(fixtureRun)))
-		Expect(runIDs("--branch", "main")).To(HaveExactElements(BeEquivalentTo(other)))
+		for _, onlyOther := range [][]string{{"--branch", "main"}, {"--pr", "7"}, {"--event", "workflow_dispatch"}} {
+			Expect(runIDs(onlyOther...)).To(HaveExactElements(BeEquivalentTo(other)), "%v", onlyOther)
+		}
+		Expect(runIDs("--workflow", "lg-fixture")).To(ContainElements(BeEquivalentTo(fixtureRun), BeEquivalentTo(other)))
+		Expect(runIDs("--workflow", "no such workflow")).To(BeEmpty())
 		Expect(flakes(env, "--job", "same*")).To(HaveExactElements(SatisfyAll(
 			HaveKeyWithValue("run_id", BeEquivalentTo(other)),
 			HaveKeyWithValue("failing_steps", BeEmpty()),
@@ -201,6 +207,7 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(findingsOf(flakes(env, "--since", "2026-10-03T14:24:00Z"), "flaky", false)).To(HaveExactElements(
 			finding("flaky", "", []int{1, 2, 3}, "failure", "success", "success")))
 		Expect(runIDs("--since", "2026-10-03T14:30:00Z")).To(BeEmpty())
+		Expect(runIDs("--until", "2026-10-03T14:22:00Z")).To(BeEmpty())
 		Expect(runIDs("--conclusion", "success")).To(HaveEach(BeEquivalentTo(fixtureRun)))
 		Expect(runIDs("--conclusion", "failure")).To(HaveExactElements(BeEquivalentTo(other)))
 
