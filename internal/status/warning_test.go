@@ -1,6 +1,7 @@
 package status_test
 
 import (
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -50,7 +51,7 @@ func withConfigError(st *status.Status) *status.Status {
 	return st
 }
 
-const stuckLine = "4 units pending since 2026-10-03T17:30:00Z; run `lg status`"
+const stuckLine = "4 units pending since 2026-10-03T17:30:00Z"
 
 var stuck = map[string][]time.Duration{
 	"github.com/rosenhouse/lg": {21 * time.Minute, 30 * time.Minute, 5 * time.Minute, 25 * time.Minute},
@@ -58,10 +59,12 @@ var stuck = map[string][]time.Duration{
 }
 
 var _ = DescribeTable("Warning", Label("status"),
-	func(st *status.Status, warning string) {
-		Expect(status.Warning(now, st)).To(Equal(warning))
+	func(st *status.Status, warning string, hint ...string) {
+		gotWarning, gotHint := status.Warning(now, st)
+		Expect(gotWarning).To(Equal(warning))
+		Expect(gotHint).To(Equal(strings.Join(hint, "")))
 	},
-	Entry("never synced", nil, "never synced"),
+	Entry("never synced", nil, "never synced", "sync"),
 	Entry("blocked as auth", blocked(failure.Auth, "401 Unauthorized", nil),
 		"sync blocked: auth since 2026-10-03T17:00:00Z: 401 Unauthorized"),
 	Entry("blocked as rate_limit", blocked(failure.RateLimit, "429 Too Many Requests", &retryAt),
@@ -82,7 +85,7 @@ var _ = DescribeTable("Warning", Label("status"),
 		"last successful sync was 20m1s ago, at 2026-10-03T17:39:59Z, over twice sync_interval 10m0s"),
 	Entry("at twice sync_interval", synced(20*time.Minute), ""),
 	Entry("fresh", synced(time.Minute), ""),
-	Entry("with units pending longer than twice sync_interval, counting only those", pendingFor(synced(time.Minute), stuck), stuckLine),
+	Entry("with units pending longer than twice sync_interval, counting only those", pendingFor(synced(time.Minute), stuck), stuckLine, "status"),
 	Entry("with a unit pending for twice sync_interval", pendingFor(synced(time.Minute), map[string][]time.Duration{"r": {20 * time.Minute}}), ""),
 	Entry("with a unit pending for less than twice sync_interval", pendingFor(synced(time.Minute), map[string][]time.Duration{"r": {15 * time.Minute}}), ""),
 	Entry("with a unit pending since a zero time", pendingFor(synced(time.Minute), map[string][]time.Duration{"r": {0}}), ""),
@@ -95,7 +98,7 @@ var _ = DescribeTable("Warning", Label("status"),
 		"config.yaml is invalid: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config"),
 	Entry("stale with an invalid config.yaml, as stale", withConfigError(synced(30*time.Minute)),
 		"last successful sync was 30m0s ago, at 2026-10-03T17:30:00Z, over twice sync_interval 10m0s"),
-	Entry("with stuck units and an invalid config.yaml, as stuck", withConfigError(pendingFor(synced(time.Minute), stuck)), stuckLine),
+	Entry("with stuck units and an invalid config.yaml, as stuck", withConfigError(pendingFor(synced(time.Minute), stuck)), stuckLine, "status"),
 	Entry("fresh, with a sync_interval whose double overflows", func() *status.Status {
 		st := synced(time.Minute)
 		st.SyncIntervalSeconds = 2_000_000 * 3600

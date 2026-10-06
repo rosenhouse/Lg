@@ -45,27 +45,28 @@ type Blocked struct {
 
 // Warning is the one line every command prints while st, the status at
 // now, is blocked or stale, has units stuck pending, or records an invalid
-// config.yaml, and "" otherwise (D24).
-func Warning(now time.Time, st *Status) string {
+// config.yaml, and "" otherwise (D24). hint is the lg command to run about
+// it, if any.
+func Warning(now time.Time, st *Status) (warning, hint string) {
 	switch {
 	case st == nil:
-		return "never synced"
+		return "never synced", "sync"
 	case st.Blocked != nil:
-		return "sync blocked: " + st.Blocked.String()
+		return "sync blocked: " + st.Blocked.String(), ""
 	case st.LastSyncOKAt == nil:
-		return "no sync has succeeded yet"
+		return "no sync has succeeded yet", ""
 	}
 	interval := time.Duration(st.SyncIntervalSeconds) * time.Second
 	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
-		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
+		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval), ""
 	}
 	if n, oldest := stuck(now, st, interval); n > 0 {
-		return fmt.Sprintf("%d units pending since %s; run `lg status`", n, oldest.Format(time.RFC3339))
+		return fmt.Sprintf("%d units pending since %s", n, oldest.Format(time.RFC3339)), "status"
 	}
 	if st.ConfigError != nil {
-		return "config.yaml is invalid: " + *st.ConfigError
+		return "config.yaml is invalid: " + *st.ConfigError, ""
 	}
-	return ""
+	return "", ""
 }
 
 // stuck counts the units in st pending longer than twice interval at now,
