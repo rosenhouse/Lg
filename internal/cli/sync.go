@@ -13,8 +13,10 @@ import (
 
 	"github.com/rosenhouse/lg/internal/auth"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
@@ -23,18 +25,18 @@ import (
 type syncCmd struct{}
 
 func (syncCmd) Run(deps *Deps) error {
-	roots, cfg, err := loadConfig(deps.Env)
+	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
 	}
-	if config.IsLoopback(cfg.APIURL) && deps.Env["LG_GH"] == "" {
-		return config.Error(fmt.Sprintf("api_url may be on a loopback address only when LG_GH is set: %q", cfg.APIURL))
+	if running, err := lock.Held(filepath.Join(roots.State, "daemon.lock")); err != nil || running {
+		return errors.Join(err, requestSync(roots, deps))
 	}
-	api, err := github.BaseURL(cfg.Host, cfg.APIURL)
+	t, err := loadTarget(deps.Env)
 	if err != nil {
 		return err
 	}
-	held, err := lockWrites(roots, deps, writeLockWait)
+	held, err := lockWrites(t.roots, deps, writeLockWait)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
@@ -42,16 +44,48 @@ func (syncCmd) Run(deps *Deps) error {
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	started := deps.Clock.Now()
-	report, err := runCycle(ctx, roots, cfg, api, deps)
-	return errors.Join(err, writeStatus(deps.StoreFS, roots, cfg, status.Cycle{
-		Started:       started,
-		Finished:      deps.Clock.Now(),
-		Err:           err,
-		Completed:     report.Completed,
-		Pending:       pending(report.Pending),
-		DefaultBranch: report.DefaultBranch,
-	}))
+	_, err = recordCycle(ctx, t, deps, func(*status.Cycle) {})
+	return err
+}
+
+// requestSync asks the running daemon for a cycle.
+func requestSync(roots config.Roots, deps *Deps) error {
+	n, err := daemon.Request(roots.State, deps.Clock)
+	if err != nil {
+		return failure.FromErrno(err)
+	}
+	_, err = fmt.Fprintf(deps.Stderr, "lg: sent sync request %d to the running daemon\n", n)
+	return err
+}
+
+// target is what a cycle syncs, from config.yaml.
+type target struct {
+	roots config.Roots
+	cfg   config.Config
+	api   *url.URL
+}
+
+func loadTarget(env map[string]string) (target, error) {
+	roots, cfg, err := loadConfig(env)
+	if err != nil {
+		return target{}, err
+	}
+	if config.IsLoopback(cfg.APIURL) && env["LG_GH"] == "" {
+		return target{}, config.Error(fmt.Sprintf("api_url may be on a loopback address only when LG_GH is set: %q", cfg.APIURL))
+	}
+	api, err := github.BaseURL(cfg.Host, cfg.APIURL)
+	return target{roots: roots, cfg: cfg, api: api}, err
+}
+
+// recordCycle runs one cycle and writes status.json, with the fields that
+// complete adds. Callers hold state/write.lock.
+func recordCycle(ctx context.Context, t target, deps *Deps, complete func(*status.Cycle)) (status.Cycle, error) {
+	c := status.Cycle{Started: deps.Clock.Now()}
+	report, err := runCycle(ctx, t.roots, t.cfg, t.api, deps)
+	c.Finished, c.Err, c.Completed = deps.Clock.Now(), err, report.Completed
+	c.Pending, c.DefaultBranch = pending(report.Pending), report.DefaultBranch
+	complete(&c)
+	return c, errors.Join(err, writeStatus(deps.StoreFS, t.roots, t.cfg, c))
 }
 
 // runCycle opens the store and runs one cycle. Callers hold state/write.lock.
