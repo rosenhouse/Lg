@@ -195,8 +195,8 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(os.Remove(writeLock)).To(Succeed())
 		Expect(daemon.Request(store.OSFS{}, env.State(), time.Minute, clock.Real{})).To(Equal(int64(1)))
 
-		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
-		Expect(env.Status()).To(HaveKeyWithValue("served_request", 1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		Expect(env.Status()).To(And(HaveKeyWithValue("served_request", 1.0), HaveKeyWithValue("last_sync_errors", BeEmpty())))
 	}, daemonTimeout)
 
 	It("truncates its stderr at cycle start when it is a regular file over 10 MB, as launchd's state/daemon.log on a fresh store", func(ctx SpecContext) {
