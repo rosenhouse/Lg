@@ -71,7 +71,20 @@ var _ = DescribeTable("starting from empty over a file SQLite cannot read", Labe
 	Entry("index.Rebuild, over a db with corrupt pages", syncTimeout, corruptPages, rebuild),
 	Entry("index.Rebuild, over a db whose jobs table has a corrupt page", syncTimeout, corruptRootPage("jobs"), rebuild),
 	Entry("index.Reconcile, over a db whose index of unit paths has a corrupt page", syncTimeout, corruptRootPage("units_path"), reconcile),
+	Entry("Index.Paths, over a db whose jobs table has a corrupt page", syncTimeout, corruptRootPage("jobs"), listLogs),
 )
+
+// listLogs opens the index at path over data, reconciles it, lists its logs and closes it.
+func listLogs(ctx context.Context, path, data string) {
+	GinkgoHelper()
+	ix, err := index.Open(ctx, path, data, nil)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(ix.Reconcile(ctx)).To(Succeed())
+	logs, err := ix.Paths(ctx, index.Filter{}, index.UnitLog)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(logs).To(HaveLen(10))
+	Expect(ix.Close()).To(Succeed())
+}
 
 func notADB(path string) {
 	GinkgoHelper()

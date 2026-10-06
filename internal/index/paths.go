@@ -124,14 +124,36 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 		queries = append(queries, query)
 		args = append(args, queryArgs...)
 	}
-	rows, err := ix.db.QueryContext(ctx, "SELECT unit, path FROM ("+strings.Join(queries, " UNION ALL ")+
-		") ORDER BY at, run, attempt, id, path", args...)
+	query := "SELECT unit, path FROM (" + strings.Join(queries, " UNION ALL ") + ") ORDER BY at, run, attempt, id, path"
+	dirs, err := ix.unitDirs(ctx, query, args)
+	var restarted error
+	if unreadable(err) {
+		restarted = ix.orStartOver(ctx, func() error { return err })
+		dirs, err = ix.unitDirs(ctx, query, args)
+	}
+	if err != nil {
+		return nil, errors.Join(restarted, err)
+	}
+	var paths []string
+	unread := []error{restarted}
+	for _, d := range dirs {
+		files, err := sources[d.unit].files(d.dir)
+		paths = append(paths, files...)
+		unread = append(unread, err)
+	}
+	return paths, errors.Join(unread...)
+}
+
+type unitDir struct {
+	unit Unit
+	dir  string
+}
+
+// unitDirs gives the unit dirs the query selects.
+func (ix *Index) unitDirs(ctx context.Context, query string, args []any) ([]unitDir, error) {
+	rows, err := ix.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, ix.dbError(err)
-	}
-	type unitDir struct {
-		unit Unit
-		dir  string
 	}
 	var dirs []unitDir
 	for rows.Next() {
@@ -141,17 +163,7 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 		}
 		dirs = append(dirs, d)
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return nil, ix.dbError(err)
-	}
-	var paths []string
-	var unread []error
-	for _, d := range dirs {
-		files, err := sources[d.unit].files(d.dir)
-		paths = append(paths, files...)
-		unread = append(unread, err)
-	}
-	return paths, errors.Join(unread...)
+	return dirs, ix.dbError(errors.Join(rows.Err(), rows.Close()))
 }
 
 // query selects the unit's dirs that f selects, with the columns Paths orders them by.
