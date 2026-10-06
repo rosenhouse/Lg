@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/status"
 )
 
 // pollInterval is how often a Loop reads the sync request count while it waits.
@@ -55,7 +55,7 @@ func (l *Loop) Run(ctx context.Context) {
 		out := l.Cycle(ctx, served)
 		result := "ok"
 		if out.Err != nil {
-			result = strings.Join(strings.Fields(out.Err.Error()), " ")
+			result = status.OneLine(out.Err.Error())
 		}
 		l.logf("sync at %s: %s; next sync at %s", out.Started.UTC().Format(time.RFC3339), result, out.Next.UTC().Format(time.RFC3339))
 		if ctx.Err() != nil {

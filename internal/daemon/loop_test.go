@@ -262,6 +262,17 @@ var _ = Describe("Loop", Label("daemon"), func() {
 			"lg: sync at 2026-10-03T18:00:00Z: GET /repos/rosenhouse/lg: 502 Bad Gateway; next sync at 2026-10-03T18:10:00Z\n"))
 	})
 
+	It("logs an error without terminal controls", func() {
+		failed := outcomeAt(t0)
+		failed.Err = errors.New("gh: \x1b]0;x\a not logged in")
+		e := newLoopEnv(failed)
+		e.run()
+		e.expectCycle(t0, 0)
+
+		Eventually(e.log.String, time.Second).Should(Equal(
+			"lg: sync at 2026-10-03T18:00:00Z: gh: ]0;x not logged in; next sync at 2026-10-03T18:10:00Z\n"))
+	})
+
 	It("truncates a regular file over 10 MB that it logs to at cycle start", func() {
 		e := newLoopEnv(outcomeAt(t0))
 		log, err := os.Create(filepath.Join(GinkgoT().TempDir(), "daemon.log"))

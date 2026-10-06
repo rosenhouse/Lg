@@ -68,11 +68,11 @@ func (b Blocked) String() string {
 	if b.RetryAt != nil {
 		s += ", retry_at " + b.RetryAt.Format(time.RFC3339)
 	}
-	return s + ": " + oneLine(b.Detail)
+	return s + ": " + OneLine(b.Detail)
 }
 
-// oneLine gives s on one line, without terminal controls.
-func oneLine(s string) string {
+// OneLine gives s on one line, without terminal controls.
+func OneLine(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -174,7 +174,7 @@ func Next(prev *Status, c Cycle) Status {
 		st.DaemonPID, st.DaemonVersion = &d.PID, &d.Version
 	}
 	if c.ConfigError != nil {
-		msg := oneLine(c.ConfigError.Error())
+		msg := OneLine(c.ConfigError.Error())
 		st.ConfigError = &msg
 	}
 	repo := Repo{DefaultBranch: c.DefaultBranch}
@@ -256,11 +256,11 @@ func timeOrNil(t time.Time) *time.Time {
 	return &t
 }
 
-// oneLineErrors gives pending with each error passed through oneLine.
+// oneLineErrors gives pending with each error passed through OneLine.
 func oneLineErrors(pending []Pending) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
-		found = append(found, Pending{Unit: p.Unit, Error: oneLine(p.Error)})
+		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error)})
 	}
 	return found
 }
