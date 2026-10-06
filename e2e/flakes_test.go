@@ -58,9 +58,9 @@ func flakes(env *harness.Env, args ...string) []map[string]any {
 
 // finding matches a finding of the job, or of its step unless step is "".
 func finding(job, step string, attempts []int, conclusions ...string) types.GomegaMatcher {
-	var stepValue any
+	stepValue := BeNil()
 	if step != "" {
-		stepValue = step
+		stepValue = Equal(step)
 	}
 	var attemptValues []any
 	for _, a := range attempts {
@@ -211,7 +211,10 @@ var _ = Describe("lg flakes", Ordered, ContinueOnFailure, Label("flakes"), func(
 		Expect(runIDs()).To(ContainElements(BeEquivalentTo(fixtureRun), BeEquivalentTo(other)))
 		Expect(runIDs("--sha", "1a51097")).To(HaveEach(BeEquivalentTo(fixtureRun)))
 		Expect(runIDs("--branch", "main")).To(HaveExactElements(BeEquivalentTo(other)))
-		Expect(flakes(env, "--job", "same*")).To(HaveExactElements(HaveKeyWithValue("run_id", BeEquivalentTo(other))))
+		Expect(flakes(env, "--job", "same*")).To(HaveExactElements(SatisfyAll(
+			HaveKeyWithValue("run_id", BeEquivalentTo(other)),
+			HaveKeyWithValue("failing_steps", BeEmpty()),
+		)))
 		Expect(runIDs("--since", "2026-10-03T14:25:00Z")).To(BeEmpty())
 
 		jobs := filepath.Join(env.Data(), fixtureRunDir)

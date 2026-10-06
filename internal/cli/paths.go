@@ -32,6 +32,23 @@ func (p pathsCmd) Validate() error {
 }
 
 func (p pathsCmd) Run(deps *Deps) error {
+	var unit index.Unit
+	if len(p.Unit) > 0 {
+		unit = index.Unit(p.Unit[0])
+	}
+	return query(deps, func(ctx context.Context, ix *index.Index) error {
+		paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
+		unprintable, err := p.print(deps.Stdout, paths)
+		if err != nil {
+			return err
+		}
+		return errors.Join(unread, unprintable)
+	})
+}
+
+// query runs read on the index of data/, reconciled. Before the first sync
+// creates data/, it reads nothing.
+func query(deps *Deps, read func(context.Context, *index.Index) error) error {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
@@ -39,22 +56,13 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	var unit index.Unit
-	if len(p.Unit) > 0 {
-		unit = index.Unit(p.Unit[0])
-	}
 	ctx := context.Background()
 	ix, reconciled := answerable(ctx, roots, deps)
 	if ix == nil {
 		return reconciled
 	}
 	defer func() { _ = ix.Close() }()
-	paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
-	unprintable, err := p.print(deps.Stdout, paths)
-	if err != nil {
-		return err
-	}
-	return errors.Join(reconciled, unread, unprintable)
+	return errors.Join(reconciled, read(ctx, ix))
 }
 
 // answerable gives lg.db, reconciled, or else an index of data/ in memory
