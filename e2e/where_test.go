@@ -36,7 +36,7 @@ func where(env *harness.Env, args ...string) []map[string]any {
 	return decoded(session)
 }
 
-// These specs only read the store, so they share one sync. Its LG_HOME holds
+// These specs leave data/ unchanged, so they share one sync. Its LG_HOME holds
 // a colon, as a hit's path may.
 var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() {
 	var (

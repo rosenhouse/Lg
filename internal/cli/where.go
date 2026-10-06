@@ -21,7 +21,7 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path in the store, absolute, or relative to the store, a repo dir in it, or the working directory; or a line rg or grep printed. Without any, lines are read from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a line rg or grep printed. A relative path is resolved against data/, the working directory, or a repo dir. Without any, lg reads lines from stdin."`
 }
 
 func (whereCmd) Help() string {
