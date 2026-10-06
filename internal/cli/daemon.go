@@ -56,14 +56,8 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		Cycle:     d.run,
 		Requested: func() (int64, error) { return daemon.Requested(state) },
 		Lost:      instance.Lost,
-		Reconcile: func(ctx context.Context) error {
-			ix, err := index.Open(ctx, filepath.Join(state, "lg.db"), t.roots.Data)
-			if err != nil {
-				return err
-			}
-			return errors.Join(ix.Reconcile(ctx), ix.Close())
-		},
-		Log: deps.Stderr,
+		Reconcile: func(ctx context.Context) error { return reconcileIndex(ctx, t.roots) },
+		Log:       deps.Stderr,
 	}
 	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil && st.Blocked != nil && st.Blocked.RetryAt != nil {
 		now := deps.Clock.Now()
@@ -73,6 +67,15 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		}
 	}
 	return loop.Run(ctx)
+}
+
+// reconcileIndex brings state/lg.db up to date with data/.
+func reconcileIndex(ctx context.Context, roots config.Roots) error {
+	ix, err := index.Open(ctx, filepath.Join(roots.State, "lg.db"), roots.Data)
+	if err != nil {
+		return err
+	}
+	return errors.Join(ix.Reconcile(ctx), ix.Close())
 }
 
 // initOnStart initializes the store and sweeps what dead writers left in

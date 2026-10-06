@@ -46,7 +46,11 @@ func (c syncCmd) Run(deps *Deps) error {
 		if !c.Wait {
 			return nil
 		}
-		return daemon.WaitForCycle(t.roots.State, n, since, timeout, deps.Clock)
+		if err := daemon.WaitForCycle(t.roots.State, n, since, timeout, deps.Clock); err != nil {
+			return err
+		}
+		// The daemon reconciles lg.db only after it reports the cycle.
+		return reconcileIndex(context.Background(), t.roots)
 	}
 	held, err := lockWrites(context.Background(), t.roots, deps, c.timeout(writeLockWait))
 	if err != nil {

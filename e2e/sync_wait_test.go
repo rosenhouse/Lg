@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"database/sql"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,6 +62,27 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 
 		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(1))
 		Expect(waiting.Err).To(gbytes.Say(`lg: .*watch.json: moved to .*watch.json.corrupt`))
+	}, daemonTimeout)
+
+	It("exits 0 only once lg.db lists what that cycle published", func(ctx SpecContext) {
+		env, fake := newDaemonEnv()
+		env.Start("daemon", "run")
+		Eventually(indexedAttempts(ctx, env), cycleWait).WithContext(ctx).Should(ConsistOf(1))
+		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
+		db, err := sql.Open("sqlite", filepath.Join(env.State(), "lg.db")+"?_pragma=busy_timeout(10000)&_txlock=immediate")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(db.Close)
+		writer, err := db.BeginTx(ctx, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		waiting := env.Lg("sync", "--wait")
+		Eventually(env.Status, cycleWait).WithContext(ctx).Should(HaveKeyWithValue("served_request", 1.0))
+		// A -race lg sleeps 1s as it exits.
+		Consistently(waiting, 3*time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
+		Expect(writer.Rollback()).To(Succeed())
+
+		Eventually(waiting, cycleWait).WithContext(ctx).Should(gexec.Exit(0))
+		Expect(indexedAttempts(ctx, env)()).To(ConsistOf(1, 2))
 	}, daemonTimeout)
 
 	It("coalesces concurrent --wait calls into one cycle", func(ctx SpecContext) {
