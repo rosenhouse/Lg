@@ -127,7 +127,6 @@ var _ = Describe("lg daemon install", Label("install"), func() {
 	It("refuses when lg runs from a `go run` temp dir", func() {
 		env, systemctl, unit := newInstallEnv()
 		tmp := GinkgoT().TempDir()
-		env.Setenv("TMPDIR", tmp)
 		lg := filepath.Join(tmp, "go-build1234", "b001", "exe", "lg")
 		Expect(os.MkdirAll(filepath.Dir(lg), 0o755)).To(Succeed())
 		Expect(os.WriteFile(lg, readBytes(lgPath), 0o755)).To(Succeed())
