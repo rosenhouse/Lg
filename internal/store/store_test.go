@@ -83,7 +83,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
 		for _, name := range []string{
 			"write.lock", "daemon.lock", "daemon.pid", "daemon.pid.tmp", "request.lock", "sync-request", "sync-request.tmp",
-			"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock",
+			"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock", "daemon.log",
 		} {
 			Expect(os.WriteFile(filepath.Join(root, "state", name), []byte("1\n"), 0o644)).To(Succeed())
 		}

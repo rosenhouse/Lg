@@ -147,10 +147,11 @@ func check(fsys FS, root string) error {
 	return nil
 }
 
-// ownState is what lg writes in state/ before the store has FORMAT.
+// ownState is what lg, or launchd for its daemon.log, writes in state/ before
+// the store has FORMAT.
 var ownState = []string{
 	"write.lock", "daemon.lock", "daemon.pid", "daemon.pid.tmp", "request.lock", "sync-request", "sync-request.tmp",
-	"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock",
+	"status.json", "status.json.tmp", "lg.db", "lg.db-wal", "lg.db-shm", "lg.db.lock", "daemon.log",
 }
 
 // isOwn reports whether name, in a root without FORMAT, is what Init, a

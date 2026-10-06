@@ -156,8 +156,9 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(time.Parse(time.RFC3339, string(times[2]))).To(Equal(started.Add(10 * time.Minute)))
 	}, daemonTimeout)
 
-	It("truncates its stderr at cycle start when it is a regular file over 10 MB, as launchd's daemon.log", func(ctx SpecContext) {
-		log := filepath.Join(GinkgoT().TempDir(), "daemon.log")
+	It("truncates its stderr at cycle start when it is a regular file over 10 MB, as launchd's state/daemon.log on a fresh store", func(ctx SpecContext) {
+		log := filepath.Join(env.State(), "daemon.log")
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
 		Expect(os.WriteFile(log, bytes.Repeat([]byte("x"), 10_000_001), 0o644)).To(Succeed())
 
 		running := env.Sh(fmt.Sprintf(`exec lg daemon run 2>>'%s'`, log))
