@@ -124,7 +124,7 @@ var _ = Describe("lg sync --wait --timeout 1s", Label("sync"), func() {
 		waiting := env.Lg("sync", "--wait", "--timeout", "1s")
 
 		Eventually(waiting, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(4))
-		Expect(waiting.Err).To(gbytes.Say(`gave up after 1s`))
+		Expect(waiting.Err).To(gbytes.Say(`lg: no cycle served sync request 1; gave up after 1s\n`))
 	}, daemonTimeout)
 })
 
