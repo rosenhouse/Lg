@@ -222,8 +222,10 @@ func (f placeFinder) describe(loc layout.Location) (place, error) {
 }
 
 func jobOf(runDir string, rows index.Rows, job index.Job) *jobPlace {
-	p := &jobPlace{JobID: job.JobID, Job: job.Name, JobConclusion: job.Conclusion, CarriedForward: job.Kind == model.CarriedForward}
-	p.OriginalJobID = job.OriginalJobID
+	p := &jobPlace{
+		JobID: job.JobID, Job: job.Name, JobConclusion: job.Conclusion,
+		CarriedForward: job.Kind == model.CarriedForward, OriginalJobID: job.OriginalJobID,
+	}
 	i := slices.IndexFunc(rows.Jobs, func(j index.Job) bool { return j.JobID == job.OriginalJobID })
 	if job.OriginalJobID != 0 && i >= 0 && rows.Jobs[i].HasLog {
 		p.OriginalLog = filepath.Join(runDir, rows.Jobs[i].Path, "log.txt")
