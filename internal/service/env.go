@@ -50,15 +50,28 @@ var baked = []string{
 }
 
 // Env gives the environment a unit bakes in: LG_GH as gh, and those of
-// baked that env sets. It never holds a token.
-func Env(env map[string]string, gh string) map[string]string {
+// baked that env sets. It never holds a token. A service runs in another
+// dir, so Env makes a relative path absolute, or drops a relative XDG dir,
+// which the XDG spec says to ignore.
+func Env(env map[string]string, gh string) (map[string]string, error) {
 	out := map[string]string{"LG_GH": gh}
 	for _, k := range baked {
-		if env[k] != "" {
-			out[k] = env[k]
+		v := env[k]
+		switch {
+		case v == "":
+			continue
+		case k == "SSL_CERT_FILE" || k == "GH_CONFIG_DIR":
+			abs, err := filepath.Abs(v)
+			if err != nil {
+				return nil, err
+			}
+			v = abs
+		case strings.HasPrefix(k, "XDG_") && !filepath.IsAbs(v):
+			continue
 		}
+		out[k] = v
 	}
-	return out
+	return out, nil
 }
 
 // Executable gives the path lg was run by, as arg0 and the PATH list path

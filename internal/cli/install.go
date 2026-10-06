@@ -30,10 +30,14 @@ func (c daemonInstallCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
+	env, err := service.Env(deps.Env, gh)
+	if err != nil {
+		return err
+	}
 	path, err := manager(deps).Install(context.Background(), service.Unit{
 		Name: c.Name,
 		Exe:  exe,
-		Env:  service.Env(deps.Env, gh),
+		Env:  env,
 		Log:  filepath.Join(t.roots.State, "daemon.log"),
 	})
 	if err != nil {

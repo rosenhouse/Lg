@@ -101,6 +101,22 @@ var _ = Describe("Env", Label("install"), func() {
 			"no_proxy":        "localhost",
 		}))
 	})
+
+	It("makes a relative SSL_CERT_FILE or GH_CONFIG_DIR absolute, and drops a relative XDG dir, since a service runs elsewhere", func() {
+		wd, err := os.Getwd()
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(service.Env(map[string]string{
+			"SSL_CERT_FILE":   "ca.pem",
+			"GH_CONFIG_DIR":   "ghconf",
+			"XDG_DATA_HOME":   "rel",
+			"XDG_CONFIG_HOME": "relc",
+		}, "/opt/gh")).To(Equal(map[string]string{
+			"LG_GH":         "/opt/gh",
+			"SSL_CERT_FILE": filepath.Join(wd, "ca.pem"),
+			"GH_CONFIG_DIR": filepath.Join(wd, "ghconf"),
+		}))
+	})
 })
 
 var _ = Describe("Executable", Label("install"), func() {
