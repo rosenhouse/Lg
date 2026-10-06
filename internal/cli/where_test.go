@@ -223,19 +223,36 @@ var _ = Describe("lg where", Label("where"), func() {
 		))
 	})
 
-	It("reads a run's files once for consecutive hits in it, and again after a hit in another run", func() {
+	It("reads a run's files once while it is among the 16 runs hits were last in", func() {
 		run := filepath.Dir(attempt)
-		other := strings.Replace(run, "37129390741_", "37129390742_", 1)
-		Expect(os.CopyFS(other, os.DirFS(run))).To(Succeed())
-		log := filepath.Join(job, "log.txt")
-		breakJobs := onRead(func() { Expect(os.WriteFile(filepath.Join(attempt, "jobs.json"), []byte("{"), 0o644)).To(Succeed()) })
-		c.Stdin = io.MultiReader(
-			strings.NewReader(log+"\n"), breakJobs, strings.NewReader(log+"\n"),
-			strings.NewReader(strings.Replace(log, run, other, 1)+"\n"), strings.NewReader(log+"\n"),
-		)
+		log := filepath.Join(job, "log.txt") + "\n"
+		var others []io.Reader
+		for n := range 16 {
+			other := strings.Replace(run, "37129390741_", strconv.Itoa(37129390742+n)+"_", 1)
+			Expect(os.CopyFS(other, os.DirFS(run))).To(Succeed())
+			others = append(others, strings.NewReader(strings.Replace(log, run, other, 1)))
+		}
+		jobs := filepath.Join(attempt, "jobs.json")
+		good, err := os.ReadFile(jobs)
+		Expect(err).NotTo(HaveOccurred())
+		breakJobs := onRead(func() { Expect(os.WriteFile(jobs, []byte("{"), 0o644)).To(Succeed()) })
+		hits := func(others ...io.Reader) io.Reader {
+			Expect(os.WriteFile(jobs, good, 0o644)).To(Succeed())
+			for _, r := range others {
+				_, err := r.(io.Seeker).Seek(0, io.SeekStart)
+				Expect(err).NotTo(HaveOccurred())
+			}
+			return io.MultiReader(append(append([]io.Reader{strings.NewReader(log), breakJobs}, others...), strings.NewReader(log))...)
+		}
 
+		c.Stdin = hits(others[:15]...)
+		Expect(c.Main("where")).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveLen(17))
+
+		c.Stdout.Reset()
+		c.Stdin = hits(others...)
 		Expect(c.Main("where")).To(Equal(1))
-		Expect(decoded()).To(HaveLen(3))
+		Expect(decoded()).To(HaveLen(17))
 		Expect(c.Stderr.String()).To(ContainSubstring(run + ": cannot read its job"))
 	})
 

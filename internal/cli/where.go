@@ -132,14 +132,19 @@ type runFacts struct {
 	err  error
 }
 
+// cachedRuns is how many runs a placeFinder keeps the facts of.
+const cachedRuns = 16
+
 // placeFinder decodes hits in the store at data. It reads a run's files once
-// for consecutive hits in it, and again when a hit names a unit that read lacked.
+// while the run is among the last cachedRuns that hits were in, and again
+// when a hit names a unit that read lacked.
 type placeFinder struct {
 	data string
 	// real is data with symlinks resolved.
 	real  string
 	repos []string
-	run   runFacts
+	// runs are the runs hits were last in, the latest last.
+	runs  []runFacts
 	lines *lineReader
 }
 
@@ -251,14 +256,21 @@ func (f *placeFinder) existing(path string) (string, bool) {
 
 func (f *placeFinder) describe(loc layout.Location) (place, error) {
 	runDir := filepath.Join(f.data, loc.RunDir)
-	if f.run.dir == runDir {
-		if p, err := describeRun(f.data, loc, f.run); err == nil {
+	if i := slices.IndexFunc(f.runs, func(r runFacts) bool { return r.dir == runDir }); i >= 0 {
+		facts := f.runs[i]
+		f.runs = slices.Delete(f.runs, i, i+1)
+		if p, err := describeRun(f.data, loc, facts); err == nil {
+			f.runs = append(f.runs, facts)
 			return p, nil
 		}
 	}
-	f.run = runFacts{dir: runDir}
-	f.run.rows, f.run.err = index.IndexRun(runDir)
-	return describeRun(f.data, loc, f.run)
+	facts := runFacts{dir: runDir}
+	facts.rows, facts.err = index.IndexRun(runDir)
+	if len(f.runs) == cachedRuns {
+		f.runs = slices.Delete(f.runs, 0, 1)
+	}
+	f.runs = append(f.runs, facts)
+	return describeRun(f.data, loc, facts)
 }
 
 func (f *placeFinder) close() {
