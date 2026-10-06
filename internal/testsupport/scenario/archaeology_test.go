@@ -38,7 +38,7 @@ var _ = Describe("mutations of the run's head", Label("paths"), func() {
 		scenario.WithDisplayTitle(run, "title")
 		scenario.FromFork(run, "someone/Lg")
 		scenario.WithPullRequests(run, 42)
-		scenario.RerunAt(run, 2, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+		scenario.RerunAt(run, 2, time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC))
 		scenario.InjectLogLine(run, 2, "flaky", "foo bar")
 
 		Expect(string(run.Files["attempt-2/attempt.json"].Data)).To(Equal(before))
@@ -111,15 +111,19 @@ var _ = Describe("mutations of the run's head", Label("paths"), func() {
 
 	Describe("RerunAt", func() {
 		It("moves the attempt and the jobs it ran so that the attempt starts at the given time, and nothing earlier", func() {
-			rerun := scenario.RerunAt(run, 2, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC))
+			rerun := scenario.RerunAt(run, 2, time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC))
 
-			Expect(field(rerun, "attempt-2/attempt.json", "run_started_at")).To(Equal("2026-10-01T12:00:00Z"))
-			Expect(field(rerun, "attempt-2/attempt.json", "created_at")).To(Equal("2026-10-01T12:00:01Z"))
+			Expect(field(rerun, "attempt-2/attempt.json", "run_started_at")).To(Equal("2026-10-05T12:00:00Z"))
+			Expect(field(rerun, "attempt-2/attempt.json", "created_at")).To(Equal("2026-10-05T12:00:01Z"))
 			Expect(field(rerun, "run.json", "created_at")).To(Equal("2026-10-03T14:22:54Z"))
 			Expect(jobs(rerun, "attempt-2")).To(ContainElements(
-				SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("started_at", "2026-10-01T12:00:04Z")),
+				SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("started_at", "2026-10-05T12:00:04Z")),
 				SatisfyAll(HaveKeyWithValue("name", "pass"), HaveKeyWithValue("started_at", "2026-10-03T14:22:57Z")),
 			))
+		})
+
+		It("panics when the attempt would start earlier, which would make its carried-forward jobs look ran", func() {
+			Expect(func() { scenario.RerunAt(run, 2, time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)) }).To(Panic())
 		})
 	})
 

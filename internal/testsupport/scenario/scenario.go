@@ -101,9 +101,13 @@ func NextDayRerun(r Run, attempt int) Run {
 }
 
 // RerunAt moves every time at or after attempt's run_started_at by the same
-// amount, so that the attempt started at the given time.
+// amount, so that the attempt started at the given time. It panics when at is
+// earlier, since the jobs the attempt carried forward must start before it.
 func RerunAt(r Run, attempt int, at time.Time) Run {
 	started := r.runStartedAt(attempt)
+	if at.Before(started) {
+		panic(fmt.Sprintf("attempt %d started at %s, after %s", attempt, started, at))
+	}
 	return r.shiftTimes(func(t time.Time) bool { return !t.Before(started) }, at.Sub(started))
 }
 
