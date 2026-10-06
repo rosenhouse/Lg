@@ -60,7 +60,7 @@ func (c syncCmd) Run(deps *Deps) error {
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signalContext()
 	defer stop()
-	_, err = recordCycle(ctx, t, deps, func(*status.Cycle) {})
+	_, err = recordCycle(t, deps, func() (mirror.Report, error) { return runCycle(ctx, t, deps) }, func(*status.Cycle) {})
 	return err
 }
 
@@ -92,11 +92,11 @@ func loadTarget(env map[string]string) (target, error) {
 	return target{roots: roots, cfg: cfg, api: api}, err
 }
 
-// recordCycle runs one cycle and writes status.json, with the fields that
-// complete adds. Callers hold state/write.lock.
-func recordCycle(ctx context.Context, t target, deps *Deps, complete func(*status.Cycle)) (status.Cycle, error) {
+// recordCycle runs cycle and writes status.json, with the fields that
+// complete adds. Callers hold state/write.lock, or know no writer can.
+func recordCycle(t target, deps *Deps, cycle func() (mirror.Report, error), complete func(*status.Cycle)) (status.Cycle, error) {
 	c := status.Cycle{Started: deps.Clock.Now()}
-	report, err := runCycle(ctx, t.roots, t.cfg, t.api, deps)
+	report, err := cycle()
 	c.Finished, c.Err, c.Completed = deps.Clock.Now(), err, report.Completed
 	c.Pending, c.DefaultBranch = pending(report.Pending), report.DefaultBranch
 	complete(&c)
@@ -104,15 +104,16 @@ func recordCycle(ctx context.Context, t target, deps *Deps, complete func(*statu
 }
 
 // runCycle opens the store and runs one cycle. Callers hold state/write.lock.
-func runCycle(ctx context.Context, roots config.Roots, cfg config.Config, api *url.URL, deps *Deps) (mirror.Report, error) {
-	s, err := initAndSweep(deps.StoreFS, roots.Store)
+func runCycle(ctx context.Context, t target, deps *Deps) (mirror.Report, error) {
+	cfg := t.cfg
+	s, err := initAndSweep(deps.StoreFS, t.roots.Store)
 	if err != nil {
 		return mirror.Report{}, failure.FromErrno(err)
 	}
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
 		NewGitHub: func(token string) github.Client {
-			return deps.NewGitHub(api, cfg.Repo, token, deps.Clock)
+			return deps.NewGitHub(t.api, cfg.Repo, token, deps.Clock)
 		},
 		Store:            s,
 		Host:             cfg.Host,

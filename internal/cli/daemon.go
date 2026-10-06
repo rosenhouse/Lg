@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/mirror"
 	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -97,23 +98,27 @@ type daemonCycle struct {
 
 // run reads config.yaml after it takes write.lock, so it syncs with an edit
 // made while it waited. It skips the cycle when that wait times out, so the
-// daemon retries a request. Another lock error counts as the cycle, so the
-// daemon does not retry it every second.
+// daemon retries a request. It records another lock error as the cycle, so
+// sync --wait sees it and the daemon does not retry it every second. No
+// writer can hold a lock that cannot be taken, so it writes status.json
+// without one.
 func (d *daemonCycle) run(ctx context.Context, serving func() int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
-	if err != nil {
-		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: errors.Is(err, lock.ErrTimeout)}
+	if errors.Is(err, lock.ErrTimeout) || ctx.Err() != nil {
+		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: true}
 	}
-	defer func() { _ = held.Release() }()
-	fresh, configErr := loadTarget(d.deps.Env)
-	if configErr == nil {
-		d.target = fresh
+	cycle := func() (mirror.Report, error) { return runCycle(ctx, d.target, d.deps) }
+	var configErr error
+	if err != nil {
+		lockErr := failure.FromErrno(err)
+		cycle = func() (mirror.Report, error) { return mirror.Report{}, lockErr }
 	} else {
-		configErr = fmt.Errorf("%w; kept the last good config", configErr)
+		defer func() { _ = held.Release() }()
+		configErr = d.reloadConfig()
 	}
 	served := serving()
 	var out daemon.Outcome
-	_, err = recordCycle(ctx, d.target, d.deps, func(c *status.Cycle) {
+	_, err = recordCycle(d.target, d.deps, cycle, func(c *status.Cycle) {
 		out = daemon.Outcome{Started: c.Started, Interval: time.Duration(d.target.cfg.SyncInterval), RetryAt: retryAt(c.Err)}
 		c.Daemon = &status.Daemon{PID: os.Getpid(), Version: version.Version}
 		c.NextSyncAt = out.Next()
@@ -122,6 +127,16 @@ func (d *daemonCycle) run(ctx context.Context, serving func() int64) daemon.Outc
 	})
 	out.Err = errors.Join(configErr, err)
 	return out
+}
+
+// reloadConfig reads config.yaml, keeping the last good one when it is not valid.
+func (d *daemonCycle) reloadConfig() error {
+	fresh, err := loadTarget(d.deps.Env)
+	if err != nil {
+		return fmt.Errorf("%w; kept the last good config", err)
+	}
+	d.target = fresh
+	return nil
 }
 
 // retryAt gives the time a Blocked err defers the next cycle to, or zero.
