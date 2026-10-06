@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -134,6 +135,24 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		running.Signal(syscall.SIGHUP)
 
 		Consistently(ctx, running, 2*time.Second).ShouldNot(gexec.Exit())
+	}, daemonTimeout)
+
+	It("keeps its schedule after a cycle that cannot take write.lock", func(ctx SpecContext) {
+		running := env.Start("daemon", "run")
+		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		writeLock := filepath.Join(env.State(), "write.lock")
+		Expect(os.Remove(writeLock)).To(Succeed())
+		Expect(os.Mkdir(writeLock, 0o755)).To(Succeed())
+
+		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
+
+		failed := regexp.MustCompile(`lg: sync at (\S+): open \S+/write.lock: is a directory; next sync at (\S+)\n`)
+		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say(failed.String()))
+		Consistently(ctx, func() int { return len(failed.FindAll(running.Err.Contents(), -1)) }, 2*time.Second).Should(Equal(1))
+		times := failed.FindSubmatch(running.Err.Contents())
+		started, err := time.Parse(time.RFC3339, string(times[1]))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(time.Parse(time.RFC3339, string(times[2]))).To(Equal(started.Add(10 * time.Minute)))
 	}, daemonTimeout)
 
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(ctx SpecContext) {
