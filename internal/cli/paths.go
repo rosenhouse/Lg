@@ -94,12 +94,13 @@ func parseMoment(s string) (moment, error) {
 }
 
 // resolve gives the moment as of now, or the zero time when it is not set.
+// A duration counts back from the whole second, as unit times are whole seconds.
 func (m moment) resolve(now time.Time) time.Time {
 	switch {
 	case !m.set:
 		return time.Time{}
 	case m.at.IsZero():
-		return now.Add(-m.ago)
+		return now.Truncate(time.Second).Add(-m.ago)
 	}
 	return m.at
 }
