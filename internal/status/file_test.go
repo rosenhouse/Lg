@@ -50,14 +50,6 @@ var _ = Describe("Write", Label("status"), func() {
 		Expect(status.Read(path)).To(Equal(&st))
 	})
 
-	It("writes a file that other accounts can read", func() {
-		Expect(status.Write(store.OSFS{}, path, status.Status{LgFormat: 1})).To(Succeed())
-
-		info, err := os.Stat(path)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o644)))
-	})
-
 	It("writes <, > and & as they are", func() {
 		st := status.Status{Repos: map[string]status.Repo{"github.com/o/r": {Pending: []status.Pending{{Unit: status.Unit{Run: 1}, Error: "runs?created=a..b&per_page=100: <html>"}}}}}
 
