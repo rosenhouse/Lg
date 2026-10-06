@@ -24,12 +24,12 @@ type Rows struct {
 	Steps      []Step
 	Artifacts  []Artifact
 	Tombstones []Tombstone
-	Units      []Unit
+	Units      []UnitDir
 }
 
-// Unit is a unit dir with its mtime in Unix nanoseconds. A unit published
+// UnitDir is a unit dir with its mtime in Unix nanoseconds. A unit published
 // again under the same path has a new mtime.
-type Unit struct {
+type UnitDir struct {
 	Path     string
 	Modified int64
 }
@@ -144,7 +144,7 @@ func IndexRun(runDir string) (Rows, error) {
 		if err != nil {
 			return Rows{}, err
 		}
-		rows.Units = append(rows.Units, Unit{Path: rel, Modified: unit.Modified})
+		rows.Units = append(rows.Units, UnitDir{Path: rel, Modified: unit.Modified})
 		if n, ok := layout.AttemptNumber(rel); ok {
 			a, err := readAttempt(unit.Path, n)
 			if err != nil {
@@ -310,7 +310,7 @@ func (b *builder) addArtifact(a artifactFiles, snapshots []model.Snapshot) error
 	}
 	row.HasZip, row.Expired = hasZip, lost == tombstone.Expired
 	extracted := filepath.Join(a.dir, "extracted")
-	row.Extracted = slices.ContainsFunc(b.rows.Units, func(u Unit) bool { return u.Path == extracted })
+	row.Extracted = slices.ContainsFunc(b.rows.Units, func(u UnitDir) bool { return u.Path == extracted })
 	b.rows.Artifacts = append(b.rows.Artifacts, row)
 	return nil
 }

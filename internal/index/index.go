@@ -190,7 +190,7 @@ func (ix *Index) changed(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return !maps.EqualFunc(onDisk, indexed, slices.Equal[[]Unit]), nil
+	return !maps.EqualFunc(onDisk, indexed, slices.Equal[[]UnitDir]), nil
 }
 
 // Rebuild indexes every run on disk into an empty lg.db at path.
@@ -252,7 +252,7 @@ func (ix *Index) index(ctx context.Context, fresh bool) error {
 		return err
 	}
 	defer func() { _ = l.Release() }()
-	var indexed map[string][]Unit
+	var indexed map[string][]UnitDir
 	if !fresh {
 		if indexed, err = indexedUnits(ctx, ix.db); err != nil {
 			return ix.dbError(err)
@@ -309,7 +309,7 @@ func (ix *Index) dbError(err error) error {
 }
 
 // write drops the rows of indexed runs not on disk, and replaces those of each read run.
-func write(ctx context.Context, tx *sql.Tx, onDisk map[string][]Unit, read map[string]Rows) (err error) {
+func write(ctx context.Context, tx *sql.Tx, onDisk map[string][]UnitDir, read map[string]Rows) (err error) {
 	indexed, err := indexedUnits(ctx, tx)
 	if err != nil {
 		return err
@@ -338,8 +338,8 @@ func write(ctx context.Context, tx *sql.Tx, onDisk map[string][]Unit, read map[s
 }
 
 // unitsOnDisk gives the sorted units of each run dir under data.
-func unitsOnDisk(data string) (map[string][]Unit, error) {
-	runs := map[string][]Unit{}
+func unitsOnDisk(data string) (map[string][]UnitDir, error) {
+	runs := map[string][]UnitDir{}
 	runDirs, err := dirs(data, "*", "*", "*", "runs", "*", "*")
 	if err != nil {
 		return nil, err
@@ -381,7 +381,7 @@ func dirs(root string, pattern ...string) ([]string, error) {
 }
 
 // runUnits gives the sorted units of a run: attempts, artifacts and extracted trees.
-func runUnits(runDir string) ([]Unit, error) {
+func runUnits(runDir string) ([]UnitDir, error) {
 	attempts, err := dirs(runDir, "attempt-*")
 	if err != nil {
 		return nil, err
@@ -398,7 +398,7 @@ func runUnits(runDir string) ([]Unit, error) {
 		paths = append(paths, dir, filepath.Join(dir, "extracted"))
 	}
 	slices.Sort(paths)
-	var units []Unit
+	var units []UnitDir
 	for _, path := range paths {
 		info, err := os.Lstat(path)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -407,20 +407,20 @@ func runUnits(runDir string) ([]Unit, error) {
 		if err != nil {
 			return nil, err
 		}
-		units = append(units, Unit{Path: path, Modified: info.ModTime().UnixNano()})
+		units = append(units, UnitDir{Path: path, Modified: info.ModTime().UnixNano()})
 	}
 	return units, nil
 }
 
 // indexedUnits gives the sorted indexed units of each run dir.
-func indexedUnits(ctx context.Context, q querier) (map[string][]Unit, error) {
+func indexedUnits(ctx context.Context, q querier) (map[string][]UnitDir, error) {
 	rows, err := q.QueryContext(ctx, "SELECT path, modified FROM units ORDER BY path")
 	if err != nil {
 		return nil, err
 	}
-	runs := map[string][]Unit{}
+	runs := map[string][]UnitDir{}
 	for rows.Next() {
-		var unit Unit
+		var unit UnitDir
 		if err := rows.Scan(&unit.Path, &unit.Modified); err != nil {
 			return nil, errors.Join(err, rows.Close())
 		}
