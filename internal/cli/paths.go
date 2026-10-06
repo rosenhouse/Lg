@@ -117,10 +117,6 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	sep := "\n"
-	if p.Null {
-		sep = "\x00"
-	}
 	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -129,30 +125,44 @@ func (p pathsCmd) Run(deps *Deps) error {
 		unit = index.Unit(p.Unit[0])
 	}
 	ctx := context.Background()
-	ix, err := openIndex(ctx, roots, deps)
-	reconciled := err
-	if err == nil {
-		// A run or unit lg cannot read leaves the others answerable.
-		reconciled = ix.Reconcile(ctx)
-	}
-	// A full or read-only disk leaves lg.db unusable, but data/ readable.
-	var unusable *index.DBError
-	if errors.As(reconciled, &unusable) {
-		if ix != nil {
-			_ = ix.Close()
-		}
-		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: indexing data/ in memory, since %v\n", unusable)
-		if ix, err = index.OpenMemory(ctx, roots.Data); err != nil {
-			return err
-		}
-		reconciled = ix.Reconcile(ctx)
+	ix, reconciled := answerable(ctx, roots, deps)
+	if ix == nil {
+		return reconciled
 	}
 	defer func() { _ = ix.Close() }()
 	paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
+	sep := "\n"
+	if p.Null {
+		sep = "\x00"
+	}
 	for _, path := range paths {
 		if _, err := fmt.Fprint(deps.Stdout, path, sep); err != nil {
 			return err
 		}
 	}
 	return errors.Join(reconciled, unread)
+}
+
+// answerable gives lg.db, reconciled, or else an index of data/ in memory
+// when lg.db is unusable, with the errors of the units it could not read.
+func answerable(ctx context.Context, roots config.Roots, deps *Deps) (*index.Index, error) {
+	ix, err := openIndex(ctx, roots, deps)
+	if err == nil {
+		// A run or unit lg cannot read leaves the others answerable.
+		err = ix.Reconcile(ctx)
+	}
+	// A full or read-only disk leaves lg.db unusable, but data/ readable.
+	var unusable *index.DBError
+	if !errors.As(err, &unusable) {
+		return ix, err
+	}
+	if ix != nil {
+		_ = ix.Close()
+	}
+	_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: indexing data/ in memory, since %v\n", unusable)
+	memory, err := index.OpenMemory(ctx, roots.Data)
+	if err != nil {
+		return nil, err
+	}
+	return memory, memory.Reconcile(ctx)
 }
