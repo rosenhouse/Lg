@@ -145,6 +145,13 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Eventually(done, time.Second).Should(Receive(BeNil()))
 	})
 
+	It("fails at once when it cannot read status.json, which the daemon cannot repair", func() {
+		runDaemon()
+		Expect(os.Mkdir(filepath.Join(state, "status.json"), 0o755)).To(Succeed())
+
+		Expect(result(3)).To(MatchError(ContainSubstring("status.json: is a directory")))
+	})
+
 	It("gives the parse error of status.json once the daemon has exited", func() {
 		writeStatus("{garbage")
 

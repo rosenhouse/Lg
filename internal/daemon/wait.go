@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"time"
 
@@ -32,8 +33,10 @@ func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration,
 			return err
 		}
 		st, err := status.Read(filepath.Join(state, "status.json"))
-		// A running daemon rewrites a status.json that does not parse.
-		if err != nil && !running {
+		// A running daemon rewrites a status.json that does not parse, but
+		// cannot repair one it cannot read.
+		var unreadable *fs.PathError
+		if err != nil && (!running || errors.As(err, &unreadable)) {
 			return err
 		}
 		switch {
