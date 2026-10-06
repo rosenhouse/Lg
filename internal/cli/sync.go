@@ -72,7 +72,7 @@ func reconcileAfter(cycleErr error, roots config.Roots, deps *Deps) error {
 	if cycleErr != nil {
 		return cycleErr
 	}
-	if err := reconcileIndex(context.Background(), roots); err != nil {
+	if err := reconcileIndex(context.Background(), roots, deps); err != nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: reconcile lg.db: %s\n", status.OneLine(err.Error()))
 	}
 	return nil

@@ -117,6 +117,8 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		scenario.InProgress(run, 2)
 		scenario.StartupFailure(run, 2)
 		scenario.QueueJob(run, 2, "flaky")
+		scenario.RenameJob(run, 2, "flaky", "steady")
+		scenario.RenumberJob(run, 2, "flaky", 8)
 		scenario.WithoutRunAttempt(run)
 
 		Expect(field(run, "run.json", "run_attempt")).To(BeEquivalentTo(2))
@@ -220,6 +222,28 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			)))
 			Expect(jobs(queued, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "timeout"), HaveKeyWithValue("status", "completed"))))
 			Expect(jobs(queued, "attempt-1")).To(HaveEach(HaveKeyWithValue("status", "completed")))
+		})
+	})
+
+	Describe("RenameJob", func() {
+		It("renames the attempt's jobs of that name only", func() {
+			renamed := scenario.RenameJob(run, 2, "flaky", "steady")
+
+			Expect(jobs(renamed, "attempt-2")).To(ContainElement(HaveKeyWithValue("name", "steady")))
+			Expect(jobs(renamed, "attempt-2")).NotTo(ContainElement(HaveKeyWithValue("name", "flaky")))
+			Expect(jobs(renamed, "attempt-1")).To(ContainElement(HaveKeyWithValue("name", "flaky")))
+		})
+	})
+
+	Describe("RenumberJob", func() {
+		It("gives the attempt's job of that name the id, and its log too", func() {
+			renumbered := scenario.RenumberJob(run, 2, "flaky", 8)
+
+			Expect(jobs(renumbered, "attempt-2")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("id", BeEquivalentTo(8)))))
+			Expect(renumbered.Files["attempt-2/logs/8.txt"].Data).To(Equal(run.Files["attempt-2/logs/7111221661475.txt"].Data))
+			Expect(renumbered.Files).NotTo(HaveKey("attempt-2/logs/7111221661475.txt"))
+			Expect(string(renumbered.Files["status.txt"].Data)).To(SatisfyAll(ContainSubstring(" jobs/8/logs\n"), Not(ContainSubstring("/7111221661475/"))))
+			Expect(jobs(renumbered, "attempt-1")).To(ContainElement(SatisfyAll(HaveKeyWithValue("name", "flaky"), HaveKeyWithValue("id", BeEquivalentTo(7111221289888)))))
 		})
 	})
 

@@ -259,6 +259,20 @@ var _ = Describe("Server controls", func() {
 			_, err = resp.Body.Read(make([]byte, 1))
 			Expect(err).To(MatchError(context.DeadlineExceeded))
 		}, SpecTimeout(5*time.Second))
+
+		It("records a response's status once its headers are sent, before its body ends", func(ctx SpecContext) {
+			fake.Fail("blob", "/logs/111221289888.txt", fakegithub.Fault{Truncate: true, Stall: true})
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fake.URL()+logPath, http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(fake.Requests()).To(HaveExactElements(
+				HaveField("Status", http.StatusFound),
+				HaveField("Status", http.StatusOK),
+			))
+		}, SpecTimeout(5*time.Second))
 	})
 
 	It("Fail with a Body answers with the fault's status and that body", Label("failures"), func() {

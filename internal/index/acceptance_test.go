@@ -227,10 +227,10 @@ var _ = Describe("index.Open", Label("index"), func() {
 		syncStages(ctx, env, "after-attempt-1")
 		reconcile(ctx, dbPath(env), env.Data())
 		db := openDB(dbPath(env))
-		_, err := db.Exec("UPDATE meta SET format = 0; INSERT INTO runs (run_id, path) VALUES (99, 'stale')")
+		_, err := db.Exec("UPDATE meta SET format = 0; INSERT INTO runs (run_id, path, from_fork) VALUES (99, 'stale', 0)")
 		Expect(err).NotTo(HaveOccurred())
 
-		ix, err := index.Open(ctx, dbPath(env), env.Data())
+		ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		Expect(column[int](db, "SELECT format FROM meta")).To(Equal([]int{1}))

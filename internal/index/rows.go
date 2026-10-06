@@ -24,12 +24,12 @@ type Rows struct {
 	Steps      []Step
 	Artifacts  []Artifact
 	Tombstones []Tombstone
-	Units      []Unit
+	Units      []UnitDir
 }
 
-// Unit is a unit dir with its mtime in Unix nanoseconds. A unit published
+// UnitDir is a unit dir with its mtime in Unix nanoseconds. A unit published
 // again under the same path has a new mtime.
-type Unit struct {
+type UnitDir struct {
 	Path     string
 	Modified int64
 }
@@ -43,6 +43,7 @@ type Run struct {
 	WorkflowName  string
 	HeadBranch    string
 	HeadSHA       string
+	FromFork      bool
 	Event         string
 	PRNumbers     []int
 	DisplayTitle  string
@@ -117,6 +118,7 @@ type fetch struct {
 type attemptFiles struct {
 	n      int
 	run    model.Run
+	repos  model.RunRepositories
 	jobs   []model.Job
 	listed []model.Artifact
 	fetch  fetch
@@ -130,7 +132,9 @@ type artifactFiles struct {
 
 // IndexRun derives a run's rows from the files in runDir alone. It reads only
 // the units it lists first, so a unit published later stays unindexed until
-// the next Reconcile lists it.
+// the next Reconcile lists it. It gives the rows of the units it could read,
+// leaving out the others, and their errors. It gives no rows when it could
+// read no attempt or artifact.
 func IndexRun(runDir string) (Rows, error) {
 	units, err := runUnits(runDir)
 	if err != nil {
@@ -139,25 +143,28 @@ func IndexRun(runDir string) (Rows, error) {
 	var rows Rows
 	var attempts []attemptFiles
 	var artifacts []artifactFiles
+	var unread []error
 	for _, unit := range units {
 		rel, err := filepath.Rel(runDir, unit.Path)
 		if err != nil {
 			return Rows{}, err
 		}
-		rows.Units = append(rows.Units, Unit{Path: rel, Modified: unit.Modified})
 		if n, ok := layout.AttemptNumber(rel); ok {
 			a, err := readAttempt(unit.Path, n)
 			if err != nil {
-				return Rows{}, err
+				unread = append(unread, err)
+				continue
 			}
 			attempts = append(attempts, a)
 		} else if filepath.Base(rel) != "extracted" {
 			a, err := readArtifact(runDir, rel)
 			if err != nil {
-				return Rows{}, err
+				unread = append(unread, err)
+				continue
 			}
 			artifacts = append(artifacts, a)
 		}
+		rows.Units = append(rows.Units, UnitDir{Path: rel, Modified: unit.Modified})
 	}
 	// Once retention evicts the run, its files read as absent.
 	if _, err := os.Lstat(runDir); err != nil {
@@ -165,25 +172,34 @@ func IndexRun(runDir string) (Rows, error) {
 	}
 	slices.SortFunc(attempts, func(a, b attemptFiles) int { return cmp.Compare(a.n, b.n) })
 	b := &builder{dir: runDir, rows: &rows}
-	rows.Run = runRow(attempts, artifacts)
-	for i, a := range attempts {
-		if err := b.addAttempt(a, attempts[:i]); err != nil {
-			return Rows{}, err
+	var added []attemptFiles
+	for _, a := range attempts {
+		if err := b.add(layout.AttemptDir("", a.n), func(b *builder) error { return b.addAttempt(a, added) }); err != nil {
+			unread = append(unread, err)
+			continue
 		}
+		added = append(added, a)
 	}
-	snapshots := snapshotsOf(attempts)
+	snapshots := snapshotsOf(added)
+	var addedArtifacts []artifactFiles
 	for _, a := range artifacts {
-		if err := b.addArtifact(a, snapshots); err != nil {
-			return Rows{}, err
+		if err := b.add(a.dir, func(b *builder) error { return b.addArtifact(a, snapshots) }); err != nil {
+			unread = append(unread, err)
+			continue
 		}
+		addedArtifacts = append(addedArtifacts, a)
 	}
-	return rows, nil
+	if len(added) == 0 && len(addedArtifacts) == 0 {
+		return Rows{}, errors.Join(unread...)
+	}
+	rows.Run = runRow(added, addedArtifacts)
+	return rows, errors.Join(unread...)
 }
 
 func readAttempt(dir string, n int) (attemptFiles, error) {
 	a := attemptFiles{n: n}
 	return a, errors.Join(
-		readJSON(filepath.Join(dir, "attempt.json"), &a.run),
+		readJSON(filepath.Join(dir, "attempt.json"), &a.run, &a.repos),
 		readJSON(filepath.Join(dir, "jobs.json"), &a.jobs),
 		readJSON(filepath.Join(dir, "artifacts.json"), &a.listed),
 		readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
@@ -212,7 +228,7 @@ func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
 			Host: latest.fetch.Host, Repo: latest.fetch.Repo, RunID: latest.run.ID,
 			CreatedAt: latest.fetch.RunCreatedAt, DateDir: latest.fetch.RunCreatedAt.UTC().Format(time.DateOnly),
 			WorkflowID: latest.run.WorkflowID, WorkflowName: latest.run.Name,
-			HeadBranch: latest.run.HeadBranch, HeadSHA: latest.run.HeadSHA, Event: latest.run.Event,
+			HeadBranch: latest.run.HeadBranch, HeadSHA: latest.run.HeadSHA, FromFork: latest.repos.FromFork(), Event: latest.run.Event,
 			PRNumbers: union(prs), DisplayTitle: latest.run.DisplayTitle, LatestAttempt: latest.n,
 		}
 	}
@@ -231,7 +247,8 @@ func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
 		Host: f.Host, Repo: f.Repo, RunID: f.RunID,
 		CreatedAt: f.RunCreatedAt, DateDir: f.RunCreatedAt.UTC().Format(time.DateOnly),
 		WorkflowID: f.WorkflowID, WorkflowName: f.WorkflowName,
-		HeadBranch: last.artifact.WorkflowRun.HeadBranch, HeadSHA: last.artifact.WorkflowRun.HeadSHA, Event: f.Event,
+		HeadBranch: last.artifact.WorkflowRun.HeadBranch, HeadSHA: last.artifact.WorkflowRun.HeadSHA,
+		FromFork: last.artifact.WorkflowRun.FromFork(), Event: f.Event,
 		PRNumbers: union(prs), DisplayTitle: f.DisplayTitle,
 	}
 }
@@ -245,6 +262,23 @@ func union(numbers []int) []int {
 type builder struct {
 	dir  string
 	rows *Rows
+}
+
+// add adds the rows f adds, unless f fails. Then it adds none, and leaves
+// the unit at unit out of the run's units, so the next Reconcile reads it
+// again.
+func (b *builder) add(unit string, f func(*builder) error) error {
+	unitRows := &Rows{Units: b.rows.Units}
+	if err := f(&builder{dir: b.dir, rows: unitRows}); err != nil {
+		b.rows.Units = slices.DeleteFunc(b.rows.Units, func(u UnitDir) bool { return u.Path == unit })
+		return err
+	}
+	b.rows.Attempts = append(b.rows.Attempts, unitRows.Attempts...)
+	b.rows.Jobs = append(b.rows.Jobs, unitRows.Jobs...)
+	b.rows.Steps = append(b.rows.Steps, unitRows.Steps...)
+	b.rows.Artifacts = append(b.rows.Artifacts, unitRows.Artifacts...)
+	b.rows.Tombstones = append(b.rows.Tombstones, unitRows.Tombstones...)
+	return nil
 }
 
 func (b *builder) addAttempt(a attemptFiles, earlier []attemptFiles) error {
@@ -310,7 +344,7 @@ func (b *builder) addArtifact(a artifactFiles, snapshots []model.Snapshot) error
 	}
 	row.HasZip, row.Expired = hasZip, lost == tombstone.Expired
 	extracted := filepath.Join(a.dir, "extracted")
-	row.Extracted = slices.ContainsFunc(b.rows.Units, func(u Unit) bool { return u.Path == extracted })
+	row.Extracted = slices.ContainsFunc(b.rows.Units, func(u UnitDir) bool { return u.Path == extracted })
 	b.rows.Artifacts = append(b.rows.Artifacts, row)
 	return nil
 }
@@ -339,13 +373,16 @@ func (b *builder) file(name string) (exists bool, size int64, lost tombstone.Rea
 	return false, 0, ts.Reason, nil
 }
 
-func readJSON(path string, v any) error {
+// readJSON reads path once and decodes it into each of vs.
+func readJSON(path string, vs ...any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+	for _, v := range vs {
+		if err := json.Unmarshal(raw, v); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
 	}
 	return nil
 }

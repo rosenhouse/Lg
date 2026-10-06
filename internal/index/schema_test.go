@@ -14,7 +14,7 @@ import (
 var _ = Describe("the schema", Label("index"), func() {
 	It("sets WAL, busy_timeout and meta.format 1", func(ctx SpecContext) {
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
-		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -27,12 +27,28 @@ var _ = Describe("the schema", Label("index"), func() {
 	})
 })
 
+var _ = Describe("the schema", Label("paths"), func() {
+	It("keeps SQLite's temp files in memory, so a full temp dir fails no sort, in lg.db and in an index in memory", func(ctx SpecContext) {
+		onDisk, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), GinkgoT().TempDir(), nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(onDisk.Close)
+		inMemory, err := index.OpenMemory(ctx, GinkgoT().TempDir())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(inMemory.Close)
+
+		const memory = 2
+		for _, ix := range []*index.Index{onDisk, inMemory} {
+			Expect(column[int](ix.DB(), "PRAGMA temp_store")).To(Equal([]int{memory}))
+		}
+	})
+})
+
 var _ = Describe("index.Open", Label("index"), func() {
 	It("keeps lg.db at path when path holds '?', '#' or '%'", func(ctx SpecContext) {
 		dir := filepath.Join(GinkgoT().TempDir(), "a?b#c%3Fd")
 		Expect(os.Mkdir(dir, 0o755)).To(Succeed())
 		path := filepath.Join(dir, "lg.db")
-		ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+		ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 
@@ -49,7 +65,7 @@ var _ = Describe("index.Open", Label("index"), func() {
 			for range 8 {
 				wg.Go(func() {
 					defer GinkgoRecover()
-					ix, err := index.Open(ctx, path, GinkgoT().TempDir())
+					ix, err := index.Open(ctx, path, GinkgoT().TempDir(), nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(ix.Close()).To(Succeed())
 				})

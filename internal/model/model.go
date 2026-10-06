@@ -37,6 +37,18 @@ type Repository struct {
 	FullName string `json:"full_name"`
 }
 
+// RunRepositories are the ids of a run's repository and head repository.
+// The head repository is nil for a run from a deleted fork.
+type RunRepositories struct {
+	Repository     struct{ ID int64 }  `json:"repository"`
+	HeadRepository *struct{ ID int64 } `json:"head_repository"`
+}
+
+// FromFork reports whether the run's head repository is another than its repository.
+func (r RunRepositories) FromFork() bool {
+	return r.HeadRepository == nil || r.HeadRepository.ID != r.Repository.ID
+}
+
 type Job struct {
 	ID          int64      `json:"id"`
 	Name        string     `json:"name"`
@@ -94,9 +106,14 @@ type Artifact struct {
 
 // ArtifactRun is the run an artifact lists itself under.
 type ArtifactRun struct {
-	HeadBranch string `json:"head_branch"`
-	HeadSHA    string `json:"head_sha"`
+	RepositoryID     int64  `json:"repository_id"`
+	HeadRepositoryID int64  `json:"head_repository_id"`
+	HeadBranch       string `json:"head_branch"`
+	HeadSHA          string `json:"head_sha"`
 }
+
+// FromFork reports whether the run's head repository is another than its repository.
+func (r ArtifactRun) FromFork() bool { return r.HeadRepositoryID != r.RepositoryID }
 
 // ArtifactAction is what lg does with a listed artifact.
 type ArtifactAction string

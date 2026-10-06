@@ -75,20 +75,25 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode {
 		return fmt.Errorf("line %d: want a duration such as 1h, not %s", node.Line, node.ShortTag())
 	}
-	if strings.HasSuffix(node.Value, "d") {
-		n, err := strconv.ParseInt(strings.TrimSuffix(node.Value, "d"), 10, 64)
-		if !days.MatchString(node.Value) || err != nil || n > int64(math.MaxInt64/day) {
-			return fmt.Errorf("line %d: want a duration such as 7d or 36h, not %q", node.Line, node.Value)
-		}
-		*d = Duration(time.Duration(n) * day)
-		return nil
-	}
-	parsed, err := time.ParseDuration(node.Value)
+	parsed, err := ParseDuration(node.Value)
 	if err != nil {
 		return fmt.Errorf("line %d: %w", node.Line, err)
 	}
 	*d = Duration(parsed)
 	return nil
+}
+
+// ParseDuration parses a Go duration such as 1h or 0s, a whole number of
+// days such as 7d, or a bare 0.
+func ParseDuration(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "d") {
+		n, err := strconv.ParseInt(strings.TrimSuffix(s, "d"), 10, 64)
+		if !days.MatchString(s) || err != nil || n > int64(math.MaxInt64/day) {
+			return 0, fmt.Errorf("want a duration such as 7d or 36h, not %q", s)
+		}
+		return time.Duration(n) * day, nil
+	}
+	return time.ParseDuration(s)
 }
 
 // String prints whole days as days, and otherwise as Go does without zero parts.

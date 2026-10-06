@@ -27,7 +27,7 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		_, err := openDB(dbPath(env)).ExecContext(ctx, "DROP TABLE steps; ALTER TABLE jobs ADD COLUMN note TEXT")
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
+		Expect(index.Rebuild(ctx, dbPath(env), env.Data(), nil)).To(Succeed())
 		db := openDB(dbPath(env))
 		Expect(count(db, "SELECT count(*) FROM jobs")).To(Equal(12))
 		Expect(count(db, "SELECT count(*) FROM steps")).To(BeNumerically(">", 0))
@@ -39,7 +39,7 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		_, err := openDB(dbPath(env)).ExecContext(ctx, `CREATE TABLE "a""b\c" (x)`)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
+		Expect(index.Rebuild(ctx, dbPath(env), env.Data(), nil)).To(Succeed())
 		Expect(column[string](openDB(dbPath(env)), "SELECT name FROM sqlite_master WHERE name = ?", `a"b\c`)).To(BeEmpty())
 	})
 
@@ -47,7 +47,7 @@ var _ = Describe("index.Rebuild", Label("index"), func() {
 		reconcile(ctx, dbPath(env), env.Data())
 		Expect(os.RemoveAll(runDir(env.Data(), runID))).To(Succeed())
 
-		Expect(index.Rebuild(ctx, dbPath(env), env.Data())).To(Succeed())
+		Expect(index.Rebuild(ctx, dbPath(env), env.Data(), nil)).To(Succeed())
 		Expect(count(openDB(dbPath(env)), "SELECT count(*) FROM runs")).To(Equal(0))
 	})
 })
@@ -71,7 +71,20 @@ var _ = DescribeTable("starting from empty over a file SQLite cannot read", Labe
 	Entry("index.Rebuild, over a db with corrupt pages", syncTimeout, corruptPages, rebuild),
 	Entry("index.Rebuild, over a db whose jobs table has a corrupt page", syncTimeout, corruptRootPage("jobs"), rebuild),
 	Entry("index.Reconcile, over a db whose index of unit paths has a corrupt page", syncTimeout, corruptRootPage("units_path"), reconcile),
+	Entry("Index.Paths, over a db whose jobs table has a corrupt page", syncTimeout, corruptRootPage("jobs"), listLogs),
 )
+
+// listLogs opens the index at path over data, reconciles it, lists its logs and closes it.
+func listLogs(ctx context.Context, path, data string) {
+	GinkgoHelper()
+	ix, err := index.Open(ctx, path, data, nil)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(ix.Reconcile(ctx)).To(Succeed())
+	logs, err := ix.Paths(ctx, index.Filter{}, index.UnitLog)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(logs).To(HaveLen(10))
+	Expect(ix.Close()).To(Succeed())
+}
 
 func notADB(path string) {
 	GinkgoHelper()
@@ -123,12 +136,12 @@ func corruptRootPage(name string) func(path string) {
 
 func rebuild(ctx context.Context, path, data string) {
 	GinkgoHelper()
-	Expect(index.Rebuild(ctx, path, data)).To(Succeed())
+	Expect(index.Rebuild(ctx, path, data, nil)).To(Succeed())
 }
 
 var _ = Describe("an index transaction", Label("index"), func() {
 	It("fails with only the cause when SQLite has already rolled it back", func(ctx SpecContext) {
-		ix, err := index.Open(ctx, dbPath(harness.InProcess()), GinkgoT().TempDir())
+		ix, err := index.Open(ctx, dbPath(harness.InProcess()), GinkgoT().TempDir(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
 		full := errors.New("database or disk is full")

@@ -110,6 +110,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	addr := flags.String("addr", "127.0.0.1:8088", "address of the API host")
 	pageCap := flags.Int("page-cap", 0, "page every listing at most `n` per page")
 	rateLimit := flags.String("rate-limit", "5000,5000", "set X-RateLimit-Limit to LIMIT and X-RateLimit-Remaining to REMAINING before the first request, given as `LIMIT,REMAINING`")
+	scenarioName := flags.String("scenario", "", "also serve the runs of the named `scenario`: archaeology (runs 1 to 8)")
 	now := flags.String("now", "", "start the clock that Date and X-RateLimit-Reset come from at the RFC 3339 `time`, not the real time")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -167,6 +168,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "fakegithub: -rate-limit %q: want LIMIT,REMAINING with 0 <= REMAINING <= LIMIT\n", *rateLimit)
 		return 2
 	}
+	var added []scenario.Run
+	switch *scenarioName {
+	case "":
+	case "archaeology":
+		added = scenario.Archaeology().All()
+	default:
+		_, _ = fmt.Fprintf(stderr, "fakegithub: -scenario %q: want archaeology\n", *scenarioName)
+		return 2
+	}
 	var clk clock.Clock = clock.Real{}
 	if *now != "" {
 		start, err := time.Parse(time.RFC3339, *now)
@@ -198,6 +208,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 				run, listed[id] = scenario.Expire(run, id), true
 			}
 		}
+		if err := server.AddRun(run); err != nil {
+			_, _ = fmt.Fprintf(stderr, "fakegithub: %s\n", err)
+			return 1
+		}
+	}
+	for _, run := range added {
 		if err := server.AddRun(run); err != nil {
 			_, _ = fmt.Fprintf(stderr, "fakegithub: %s\n", err)
 			return 1

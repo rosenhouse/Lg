@@ -5,7 +5,7 @@ var tables = []string{"runs", "attempts", "jobs", "steps", "artifacts", "tombsto
 
 const schema = `
 CREATE TABLE runs (host TEXT, repo TEXT, run_id INTEGER, created_at TEXT, date_dir TEXT, path TEXT,
-	workflow_id INTEGER, workflow_name TEXT, head_branch TEXT, head_sha TEXT, event TEXT, pr_numbers TEXT,
+	workflow_id INTEGER, workflow_name TEXT, head_branch TEXT, head_sha TEXT, from_fork INTEGER NOT NULL, event TEXT, pr_numbers TEXT,
 	display_title TEXT, latest_attempt INTEGER);
 CREATE TABLE attempts (run_id INTEGER, attempt INTEGER, path TEXT, status TEXT, conclusion TEXT,
 	run_started_at TEXT, completed_at TEXT);
@@ -19,7 +19,7 @@ CREATE TABLE artifacts (artifact_id INTEGER, run_id INTEGER, attributed_attempt 
 	path TEXT);
 CREATE TABLE tombstones (path TEXT, reason TEXT, http_status INTEGER, tombstoned_at TEXT);
 CREATE TABLE units (path TEXT, modified INTEGER);
-CREATE TABLE meta (format INTEGER);
+CREATE TABLE meta (format INTEGER, schema TEXT);
 CREATE INDEX runs_path ON runs (path);
 CREATE INDEX attempts_path ON attempts (path);
 CREATE INDEX jobs_path ON jobs (path);
