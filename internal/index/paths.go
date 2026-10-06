@@ -21,7 +21,7 @@ type Filter struct {
 	PRs  []int
 	// Workflows are workflow names.
 	Workflows []string
-	// Jobs are globs of job names.
+	// Jobs are globs of job names. A unit above a job matches when it holds one that matches.
 	Jobs   []string
 	Events []string
 	// Conclusions are of the unit's job, else attempt, else the run's latest attempt.
@@ -53,7 +53,7 @@ type source struct {
 	from, path string
 	// when is the unit's time: run created_at, attempt run_started_at, or artifact created_at.
 	when, attempt, id, conclusion string
-	// jobs is the dir whose jobs --job matches, or "" when x is the job.
+	// jobs is the dir whose jobs Filter.Jobs matches, or "" when x is the job.
 	jobs string
 	// requires is a column that is true when the unit's files exist.
 	requires string
