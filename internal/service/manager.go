@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/execx"
 )
 
@@ -307,7 +308,7 @@ func (l launchd) stop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return stillLoaded
-		case <-time.After(100 * time.Millisecond):
+		case <-(clock.Real{}).After(100 * time.Millisecond):
 		}
 	}
 	if ctx.Err() != nil {
