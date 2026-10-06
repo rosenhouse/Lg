@@ -163,7 +163,7 @@ func (u Unit) String() string {
 type Pending struct {
 	Unit
 	Error string `json:"error"`
-	// Since is when a cycle first left the unit pending.
+	// Since is when the cycle that first left the unit pending started.
 	Since time.Time `json:"since,omitzero"`
 }
 
@@ -245,7 +245,7 @@ func Next(prev *Status, c Cycle) Status {
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
-	repo.Pending = stillPending(c.Pending, last.Pending, st.LastSyncStartedAt)
+	repo.Pending = withSince(c.Pending, last.Pending, st.LastSyncStartedAt)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
@@ -324,18 +324,27 @@ func lines(err error) []string {
 	return found
 }
 
-// stillPending gives pending with each error passed through OneLine, and
-// each unit pending since its since in last, else since started.
-func stillPending(pending, last []Pending, started time.Time) []Pending {
+// withSince gives pending with each error passed through OneLine. A unit
+// keeps its since from last. Any other unit is pending since started.
+func withSince(pending, last []Pending, started time.Time) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
-		since := started
-		if i := slices.IndexFunc(last, func(l Pending) bool { return l.Unit == p.Unit }); i >= 0 && !last[i].Since.IsZero() {
-			since = last[i].Since
+		since, ok := sinceIn(last, p.Unit)
+		if !ok {
+			since = started
 		}
 		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: since})
 	}
 	return found
+}
+
+// sinceIn gives u's since in ps, if ps has u with a since.
+func sinceIn(ps []Pending, u Unit) (time.Time, bool) {
+	i := slices.IndexFunc(ps, func(p Pending) bool { return p.Unit == u })
+	if i < 0 || ps[i].Since.IsZero() {
+		return time.Time{}, false
+	}
+	return ps[i].Since, true
 }
 
 // carried gives the units of last that a cycle which stopped early neither
