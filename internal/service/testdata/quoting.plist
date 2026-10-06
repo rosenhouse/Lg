@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.github.rosenhouse.lg-test.1</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/a b/100% $HOME &amp; &lt;bin&gt;/lg</string>
+		<string>daemon</string>
+		<string>run</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HTTPS_PROXY</key>
+		<string>http://u:p%40$x&#34;\@proxy:1</string>
+		<key>LG_GH</key>
+		<string>/opt/gh/bin/gh</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>StandardErrorPath</key>
+	<string>/Users/a b/&lt;lg&gt; &amp; state/daemon.log</string>
+</dict>
+</plist>
