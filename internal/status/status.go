@@ -164,7 +164,7 @@ type Pending struct {
 	Unit
 	Error string `json:"error"`
 	// Since is when a cycle first left the unit pending.
-	Since time.Time `json:"since"`
+	Since time.Time `json:"since,omitzero"`
 }
 
 func (p Pending) String() string {
