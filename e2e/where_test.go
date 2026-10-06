@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -109,6 +110,7 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 			Not(HaveKey("line")),
 		)
 		Expect(where(env, log, rel)).To(HaveExactElements(mainSeptember, mainSeptember))
+		Expect(where(env, log+":1")).To(HaveExactElements(HaveKeyWithValue("line", BeEquivalentTo(1))))
 
 		hits := env.Sh("lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 grep -Hn 'foo bar' | lg where")
 		Eventually(hits, harness.ExitTimeout).Should(gexec.Exit(0))
@@ -131,6 +133,21 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 			HaveKeyWithValue("path", passLog(env, a.MainSeptember.ID)),
 			HaveKeyWithValue("line", BeEquivalentTo(1)),
 		)))
+	})
+
+	It("decodes paths in a store reached through a symlink, whether or not the path goes through it", func() {
+		link := filepath.Join(GinkgoT().TempDir(), "link")
+		Expect(os.Symlink(env.Getenv("LG_HOME"), link)).To(Succeed())
+		log := passLog(env, a.MainSeptember.ID)
+		repo := "/data/github.com/rosenhouse/Lg"
+		hits := env.Sh(fmt.Sprintf(`set -e
+LG_HOME='%[1]s' lg where '%[3]s'
+cd '%[1]s%[4]s' && grep -rn 'foo bar' runs/2026-09-10 | env -u PWD LG_HOME='%[1]s' lg where
+cd '%[1]s%[4]s' && grep -rn 'foo bar' runs/2026-09-10 | LG_HOME='%[2]s' lg where`, link, env.Getenv("LG_HOME"), log, repo))
+		Eventually(hits, harness.ExitTimeout).Should(gexec.Exit(0))
+		mainSeptember := HaveKeyWithValue("run_id", BeEquivalentTo(a.MainSeptember.ID))
+		hit := SatisfyAll(mainSeptember, HaveKeyWithValue("line", BeEquivalentTo(1)))
+		Expect(decoded(hits)).To(HaveExactElements(SatisfyAll(mainSeptember, HaveKeyWithValue("path", log)), hit, hit))
 	})
 
 	It("decodes an artifact of a run whose attempt is not on disk from artifact.json and fetch.json", func() {

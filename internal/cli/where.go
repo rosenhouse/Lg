@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path in the store, absolute or relative to it, or a line rg or grep printed. Without any, lines are read from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path in the store, absolute, or relative to the store, a repo dir in it, or the working directory; or a line rg or grep printed. Without any, lines are read from stdin."`
 }
 
 func (whereCmd) Help() string {
@@ -34,7 +35,8 @@ func (w whereCmd) Run(deps *Deps) error {
 	}
 	out := json.NewEncoder(deps.Stdout)
 	out.SetEscapeHTML(false)
-	finder := placeFinder{data: roots.Data, runs: map[string]runFacts{}}
+	finder := newPlaceFinder(roots.Data)
+	defer finder.lines.close()
 	var failed []error
 	err = eachInput(w.Hits, deps.Stdin, func(hit string) error {
 		p, err := finder.find(hit)
@@ -47,7 +49,8 @@ func (w whereCmd) Run(deps *Deps) error {
 	return errors.Join(append(failed, err)...)
 }
 
-// eachInput calls f with each of hits, or else with each line of stdin.
+// eachInput calls f with each of hits, or else with each line of stdin that
+// is neither blank nor rg's -- separator.
 func eachInput(hits []string, stdin io.Reader, f func(string) error) error {
 	if len(hits) > 0 {
 		for _, hit := range hits {
@@ -60,7 +63,8 @@ func eachInput(hits []string, stdin io.Reader, f func(string) error) error {
 	lines := bufio.NewReader(stdin)
 	for {
 		line, err := lines.ReadString('\n')
-		if line = strings.TrimSuffix(line, "\n"); line != "" {
+		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+		if strings.TrimSpace(line) != "" && line != "--" {
 			if err := f(line); err != nil {
 				return err
 			}
@@ -123,19 +127,63 @@ type runFacts struct {
 	err  error
 }
 
-// placeFinder decodes hits in the store at data, reading each run once.
+// placeFinder decodes hits in the store at data, reading each run once
+// unless its files change.
 type placeFinder struct {
 	data string
-	runs map[string]runFacts
+	// real is data with symlinks resolved.
+	real  string
+	repos []string
+	runs  map[string]runFacts
+	lines *lineReader
 }
 
-func (f placeFinder) find(hit string) (place, error) {
-	h, ok := layout.ParseHit(hit, func(path string) bool { _, ok := f.existing(path); return ok })
-	if !ok {
-		return place{}, fmt.Errorf("%s names no file", hit)
+func newPlaceFinder(data string) placeFinder {
+	// A missing data/ holds no path, so its real path need not be known.
+	real, _ := filepath.EvalSymlinks(data)
+	return placeFinder{data: data, real: real, repos: repoDirs(data), runs: map[string]runFacts{}, lines: &lineReader{}}
+}
+
+// repoDirs gives each data/<host>/<owner>/<repo>.
+func repoDirs(data string) []string {
+	dirs := []string{data}
+	for range 3 {
+		var below []string
+		for _, dir := range dirs {
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if e.IsDir() {
+					below = append(below, filepath.Join(dir, e.Name()))
+				}
+			}
+		}
+		dirs = below
 	}
-	path, _ := f.existing(h.Path)
-	rel, err := filepath.Rel(f.data, path)
+	return dirs
+}
+
+var leadingLine = regexp.MustCompile(`^[0-9]+:`)
+
+func (f placeFinder) find(hit string) (place, error) {
+	var path string
+	h, ok := layout.ParseHit(hit, func(p string) (found bool) {
+		path, found = f.existing(p)
+		return found
+	})
+	if !ok {
+		if leadingLine.MatchString(hit) {
+			return place{}, fmt.Errorf("%q names no file; run rg with -H to print file names", hit)
+		}
+		return place{}, fmt.Errorf("%q names no file", hit)
+	}
+	if h.Line > 0 && !f.lines.has(path, h.Line, h.Text) {
+		h.Line, h.Text = 0, hit[len(h.Path)+1:]
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return place{}, err
+	}
+	rel, err := filepath.Rel(f.real, real)
 	if err != nil || !filepath.IsLocal(rel) {
 		return place{}, fmt.Errorf("%s is outside the store %s", path, f.data)
 	}
@@ -152,19 +200,20 @@ func (f placeFinder) find(hit string) (place, error) {
 }
 
 // existing gives the file path names: path itself when absolute, else path
-// relative to data/, else path relative to the working directory.
+// relative to data/, the working directory or a repo dir. It checks each
+// before cleaning it, so that a .. in a hit's text cannot reach a parent dir.
 func (f placeFinder) existing(path string) (string, bool) {
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
-		abs, err := filepath.Abs(path)
-		candidates = []string{filepath.Join(f.data, path)}
-		if err == nil {
-			candidates = append(candidates, abs)
+		candidates = []string{f.data + string(filepath.Separator) + path, path}
+		for _, repo := range f.repos {
+			candidates = append(candidates, repo+string(filepath.Separator)+path)
 		}
 	}
 	for _, c := range candidates {
 		if _, err := os.Lstat(c); err == nil {
-			return filepath.Clean(c), true
+			abs, err := filepath.Abs(c)
+			return abs, err == nil
 		}
 	}
 	return "", false
@@ -172,11 +221,19 @@ func (f placeFinder) existing(path string) (string, bool) {
 
 func (f placeFinder) describe(loc layout.Location) (place, error) {
 	runDir := filepath.Join(f.data, loc.RunDir)
-	facts, ok := f.runs[runDir]
-	if !ok {
-		facts.rows, facts.err = index.IndexRun(runDir)
-		f.runs[runDir] = facts
+	if facts, ok := f.runs[runDir]; ok {
+		if p, err := f.describeWith(loc, facts); err == nil {
+			return p, nil
+		}
 	}
+	var facts runFacts
+	facts.rows, facts.err = index.IndexRun(runDir)
+	f.runs[runDir] = facts
+	return f.describeWith(loc, facts)
+}
+
+func (f placeFinder) describeWith(loc layout.Location, facts runFacts) (place, error) {
+	runDir := filepath.Join(f.data, loc.RunDir)
 	rows := facts.rows
 	run := rows.Run
 	p := place{
@@ -185,19 +242,10 @@ func (f placeFinder) describe(loc layout.Location) (place, error) {
 		PRs: append([]int{}, run.PRNumbers...), CreatedAt: run.CreatedAt,
 	}
 	unread := func(what string) error {
-		return errors.Join(fmt.Errorf("%s: cannot read %s", filepath.Join(f.data, loc.RunDir), what), facts.err)
+		return errors.Join(fmt.Errorf("%s: cannot read %s", runDir, what), facts.err)
 	}
 	if run.RunID == 0 {
 		return place{}, unread("the run")
-	}
-	var htmlFrom string
-	switch {
-	case loc.JobDir != "":
-		htmlFrom = filepath.Join(f.data, loc.JobDir, "job.json")
-	case loc.AttemptDir != "":
-		htmlFrom = filepath.Join(f.data, loc.AttemptDir, "attempt.json")
-	case run.LatestAttempt > 0:
-		htmlFrom = filepath.Join(runDir, layout.AttemptDir("", run.LatestAttempt), "attempt.json")
 	}
 	if loc.JobDir != "" {
 		i := slices.IndexFunc(rows.Jobs, func(j index.Job) bool { return j.JobID == loc.JobID && j.Attempt == loc.Attempt })
@@ -213,7 +261,15 @@ func (f placeFinder) describe(loc layout.Location) (place, error) {
 		}
 		p.artifactPlace = artifactOf(rows.Artifacts[i])
 	}
-	if htmlFrom == "" {
+	var htmlFrom string
+	switch {
+	case loc.JobDir != "":
+		htmlFrom = filepath.Join(f.data, loc.JobDir, "job.json")
+	case loc.AttemptDir != "":
+		htmlFrom = filepath.Join(f.data, loc.AttemptDir, "attempt.json")
+	case run.LatestAttempt > 0:
+		htmlFrom = filepath.Join(runDir, layout.AttemptDir("", run.LatestAttempt), "attempt.json")
+	default:
 		return p, nil
 	}
 	var err error
@@ -227,7 +283,7 @@ func jobOf(runDir string, rows index.Rows, job index.Job) *jobPlace {
 		CarriedForward: job.Kind == model.CarriedForward, OriginalJobID: job.OriginalJobID,
 	}
 	i := slices.IndexFunc(rows.Jobs, func(j index.Job) bool { return j.JobID == job.OriginalJobID })
-	if job.OriginalJobID != 0 && i >= 0 && rows.Jobs[i].HasLog {
+	if i >= 0 && rows.Jobs[i].HasLog {
 		p.OriginalLog = filepath.Join(runDir, rows.Jobs[i].Path, "log.txt")
 	}
 	return p
@@ -263,4 +319,42 @@ func readJSONFile(path string, v any) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil
+}
+
+// lineReader reads one file at a time, keeping its place, so that hits in
+// line order read the file once.
+type lineReader struct {
+	path string
+	file *os.File
+	r    *bufio.Reader
+	// n is the number of lines read, and line is the last of them.
+	n    int
+	line string
+}
+
+// has reports whether line n of the file at path holds text.
+func (l *lineReader) has(path string, n int, text string) bool {
+	if path != l.path || n < l.n {
+		l.close()
+		file, err := os.Open(path)
+		if err != nil {
+			return false
+		}
+		l.path, l.file, l.r = path, file, bufio.NewReader(file)
+	}
+	for l.n < n {
+		line, err := l.r.ReadString('\n')
+		if line == "" && err != nil {
+			return false
+		}
+		l.n, l.line = l.n+1, strings.TrimSuffix(line, "\n")
+	}
+	return strings.Contains(l.line, text)
+}
+
+func (l *lineReader) close() {
+	if l.file != nil {
+		l.file.Close()
+	}
+	*l = lineReader{}
 }
