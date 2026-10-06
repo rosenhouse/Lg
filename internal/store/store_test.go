@@ -75,13 +75,15 @@ var _ = Describe("Init", Label("store"), func() {
 		Expect(filepath.Join(root, "tmp", "trash")).To(BeADirectory())
 	})
 
-	It("claims a root holding only what lg writes before FORMAT, and lg's config.yaml", func() {
+	It("claims a root holding only what lg writes before FORMAT, a starting daemon's state and requests, and lg's config.yaml", func() {
 		Expect(os.MkdirAll(filepath.Join(root, "data"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "unit-1"), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, "tmp", "unit-1", "FORMAT"), nil, 0o644)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "tmp", "trash"), 0o755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(root, "state"), 0o755)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(root, "state", "write.lock"), []byte("1\n"), 0o644)).To(Succeed())
+		for _, name := range []string{"write.lock", "daemon.lock", "daemon.pid", "request.lock", "sync-request"} {
+			Expect(os.WriteFile(filepath.Join(root, "state", name), []byte("1\n"), 0o644)).To(Succeed())
+		}
 		Expect(os.WriteFile(filepath.Join(root, ".rgignore"), []byte("state/\n"), 0o644)).To(Succeed())
 		Expect(os.Mkdir(filepath.Join(root, "lost+found"), 0o700)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(root, ".DS_Store"), []byte("finder"), 0o644)).To(Succeed())
@@ -106,7 +108,7 @@ var _ = Describe("Init", Label("store"), func() {
 		Entry("a file at the top", "notes.txt"),
 		Entry("a dir at the top", "Documents/notes.txt"),
 		Entry("a file in data/", "data/notes.txt"),
-		Entry("a file in state/ other than write.lock", "state/notes.txt"),
+		Entry("a file in state/ other than a daemon's or a writer's", "state/notes.txt"),
 		Entry("a file in tmp/ that is not a unit", "tmp/project/notes.txt"),
 		Entry("a file in lost+found/", "lost+found/#12"),
 	)
