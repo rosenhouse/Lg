@@ -5,10 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/rosenhouse/lg/internal/auth"
@@ -42,7 +39,7 @@ func (syncCmd) Run(deps *Deps) error {
 	}
 	defer func() { _ = held.Release() }()
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := signalContext()
 	defer stop()
 	_, err = recordCycle(ctx, t, deps, func(*status.Cycle) {})
 	return err

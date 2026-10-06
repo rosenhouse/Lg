@@ -25,7 +25,7 @@ type daemonRunCmd struct{}
 
 func (daemonRunCmd) Run(deps *Deps) error {
 	// Handling signals before locking lets a signal at any point end the daemon cleanly.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := signalContext()
 	defer stop()
 	t, err := loadTarget(deps.Env)
 	if err != nil {
@@ -98,4 +98,14 @@ func retryAt(err error) time.Time {
 		return blocked.RetryAt
 	}
 	return time.Time{}
+}
+
+// signalContext is done on SIGINT, SIGTERM, or SIGHUP unless SIGHUP is
+// ignored, as nohup does.
+func signalContext() (context.Context, context.CancelFunc) {
+	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if !signal.Ignored(syscall.SIGHUP) {
+		signals = append(signals, syscall.SIGHUP)
+	}
+	return signal.NotifyContext(context.Background(), signals...)
 }

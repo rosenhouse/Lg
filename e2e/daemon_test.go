@@ -126,6 +126,16 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(filepath.Join(env.State(), "status.json")).NotTo(BeAnExistingFile())
 	}, daemonTimeout)
 
+	It("keeps running on SIGHUP when started with SIGHUP ignored, as by nohup", func(ctx SpecContext) {
+		running := env.Sh(`trap "" HUP; exec lg daemon run`)
+		DeferCleanup(func() { running.Kill().Wait(harness.ExitTimeout) })
+		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+
+		running.Signal(syscall.SIGHUP)
+
+		Consistently(ctx, running, 2*time.Second).ShouldNot(gexec.Exit())
+	}, daemonTimeout)
+
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(ctx SpecContext) {
 		env.GH().SetToken("gho_first")
 		fake.RequireToken("gho_first")
