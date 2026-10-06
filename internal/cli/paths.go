@@ -27,7 +27,7 @@ type pathsCmd struct {
 	Event      []string `sep:"none" help:"Only runs triggered by this event."`
 	Conclusion []string `sep:"none" help:"Only units that concluded so: the job, the attempt, or else the run's latest attempt."`
 	Since      moment   `placeholder:"TIME" help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
-	Until      moment   `placeholder:"TIME" help:"Only units until this time, inclusive."`
+	Until      moment   `placeholder:"TIME" help:"Only units until this time, inclusive. A date means its 00:00 UTC."`
 	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit (${enum}) instead of logs and extracted files."`
 	Null       bool     `short:"0" help:"Separate paths with NUL instead of newline."`
 }
