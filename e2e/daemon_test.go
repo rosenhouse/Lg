@@ -89,7 +89,8 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		running := env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 
-		Expect(os.RemoveAll(env.State())).To(Succeed())
+		// The daemon may still be writing lg.db.
+		Eventually(os.RemoveAll, cycleWait).WithContext(ctx).WithArguments(env.State()).Should(Succeed())
 
 		Eventually(running, cycleWait).WithContext(ctx).Should(gexec.Exit(1))
 		Expect(running.Err).To(gbytes.Say(`lg: \S+/state/daemon.lock was removed\n`))
