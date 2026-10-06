@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/rosenhouse/lg/internal/model"
 )
 
 // Filter selects units. Each field left empty selects every unit; values
@@ -127,12 +125,7 @@ func (ix *Index) Paths(ctx context.Context, f Filter, u Unit) ([]string, error) 
 		args = append(args, queryArgs...)
 	}
 	query := "SELECT unit, path FROM (" + strings.Join(queries, " UNION ALL ") + ") ORDER BY at, run, attempt, id, path"
-	dirs, err := ix.unitDirs(ctx, query, args)
-	var restarted error
-	if unreadable(err) {
-		restarted = ix.orStartOver(ctx, func() error { return err })
-		dirs, err = ix.unitDirs(ctx, query, args)
-	}
+	dirs, restarted, err := readOrStartOver(ctx, ix, func() ([]unitDir, error) { return ix.unitDirs(ctx, query, args) })
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
@@ -168,8 +161,29 @@ func (ix *Index) unitDirs(ctx context.Context, query string, args []any) ([]unit
 	return dirs, ix.dbError(errors.Join(rows.Err(), rows.Close()))
 }
 
+// readOrStartOver runs read. If SQLite cannot read lg.db, it indexes every
+// run into an empty db and runs read again, giving the error of starting over
+// as restarted.
+func readOrStartOver[T any](ctx context.Context, ix *Index, read func() (T, error)) (v T, restarted, err error) {
+	v, err = read()
+	if !unreadable(err) {
+		return v, nil, err
+	}
+	restarted = ix.orStartOver(ctx, func() error { return err })
+	v, err = read()
+	return v, restarted, err
+}
+
 // query selects the unit's dirs that f selects, with the columns Paths orders them by.
 func (s source) query(unit Unit, f Filter) (string, []any) {
+	w := s.where(f)
+	query := fmt.Sprintf("SELECT %s AS at, r.run_id AS run, %s AS attempt, %s AS id, '%s' AS unit, %s AS path FROM %s",
+		s.when, s.attempt, s.id, unit, s.path, s.from)
+	return query + w.clause(), w.args
+}
+
+// where gives the conditions that select the units f selects.
+func (s source) where(f Filter) where {
 	var w where
 	if len(f.Branches) > 0 {
 		w.add("NOT r.from_fork")
@@ -192,12 +206,7 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	if !f.Until.IsZero() {
 		w.add(s.when+" <= ?", timeText(f.Until))
 	}
-	query := fmt.Sprintf("SELECT %s AS at, r.run_id AS run, %s AS attempt, %s AS id, '%s' AS unit, %s AS path FROM %s",
-		s.when, s.attempt, s.id, unit, s.path, s.from)
-	if len(w.conditions) > 0 {
-		query += " WHERE " + strings.Join(w.conditions, " AND ")
-	}
-	return query, w.args
+	return w
 }
 
 // roundUp gives t, or the next whole second after it.
@@ -218,6 +227,14 @@ type where struct {
 func (w *where) add(condition string, args ...any) {
 	w.conditions = append(w.conditions, condition)
 	w.args = append(w.args, args...)
+}
+
+// clause is the WHERE clause, or "" when there are no conditions.
+func (w where) clause() string {
+	if len(w.conditions) == 0 {
+		return ""
+	}
+	return " WHERE " + strings.Join(w.conditions, " AND ")
 }
 
 // anyOf adds the condition, whose one ? is bound to the values as a JSON
@@ -307,11 +324,3 @@ func regular(dir string, names ...string) ([]string, error) {
 	}
 	return files, errors.Join(unread...)
 }
-
-// Flip is a rerun flip, with its run's head SHA.
-type Flip struct {
-	model.Flip
-	HeadSHA string
-}
-
-func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) { return nil, nil }

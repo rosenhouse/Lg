@@ -3,6 +3,7 @@ package index_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -24,7 +25,7 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 	BeforeEach(func(ctx SpecContext) {
 		env = harness.InProcess()
 		// In attempt 1 "flaky" and "pass" fail; attempt 2 re-runs "flaky", attempt 3 "pass".
-		r := scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), carried)
+		r := scenario.WithSHA(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), carried), strings.Repeat("2", 40))
 		r = scenario.SetJobConclusion(r, 1, r.JobIDs(1, "pass")[0], "failure")
 		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(scenario.AddRerunAttempt(r, "flaky"), "pass"))).To(Succeed())
 		syncStages(ctx, env, "after-attempt-1", "after-attempt-2", "after-attempt-3")
@@ -71,7 +72,7 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 	It("considers only the jobs the filter selects, as Paths does for UnitJob", func(ctx SpecContext) {
 		Expect(flips(ctx, index.Filter{Jobs: []string{"time*"}})).To(HaveEach(HaveField("Flip.Job", "timeout")))
 		Expect(flips(ctx, index.Filter{Jobs: []string{"time*"}})).To(HaveLen(2))
-		Expect(flips(ctx, index.Filter{SHAs: []string{"2"}})).To(BeEmpty())
+		Expect(flips(ctx, index.Filter{SHAs: []string{"2"}})).To(HaveEach(HaveField("Flip.RunID", BeEquivalentTo(carried))))
 		Expect(flips(ctx, index.Filter{Since: time.Date(2026, 10, 3, 14, 25, 0, 0, time.UTC)})).To(BeEmpty())
 	})
 })
