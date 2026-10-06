@@ -123,6 +123,18 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 		Entry("neutral", "neutral", outcomes(2, "success", 3, "failure")),
 	)
 
+	It("lists each log of a step flip once, though the job has two steps of its name", func() {
+		flips := model.RerunFlips([]model.AttemptJob{
+			job(1, 1, 11, "test", "failure", "check", "failure", "check", "failure"),
+			job(1, 2, 21, "test", "success", "check", "success", "check", "success"),
+		})
+
+		Expect(flips).To(HaveExactElements(
+			HaveField("Logs", []string{"attempt-1/11/log.txt", "attempt-2/21/log.txt"}),
+			HaveField("Logs", []string{"attempt-1/11/log.txt", "attempt-2/21/log.txt"}),
+		))
+	})
+
 	It("lists the logs of a flip without the jobs that have none", func() {
 		noLog := job(1, 2, 21, "test", "success")
 		noLog.Log = ""

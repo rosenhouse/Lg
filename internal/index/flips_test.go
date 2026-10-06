@@ -21,7 +21,12 @@ import (
 )
 
 var _ = Describe("index.RerunFlips", Label("flakes"), func() {
-	const carried = 2
+	const (
+		carried   = 2
+		twoSteps  = 3
+		stepEmit  = "Emit log markers"
+		stepBuild = "Build nested archives"
+	)
 	var (
 		env *harness.InProcessEnv
 		ix  *index.Index
@@ -35,6 +40,13 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 		r = scenario.SetJobConclusion(r, 1, r.JobIDs(1, "pass")[0], "failure")
 		env.Fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, "flaky")[0]), fakegithub.Fault{Status: http.StatusNotFound})
 		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(scenario.AddRerunAttempt(r, "flaky"), "pass"))).To(Succeed())
+		// In attempt 1 two steps of "pass" fail; attempt 2 re-runs it.
+		r = scenario.WithSHA(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), twoSteps), strings.Repeat("3", 40))
+		pass := r.JobIDs(1, "pass")[0]
+		r = scenario.SetStepConclusion(r, 1, pass, stepBuild, "failure")
+		r = scenario.SetStepConclusion(r, 1, pass, stepEmit, "failure")
+		r = scenario.SetJobConclusion(r, 1, pass, "failure")
+		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(r, "pass"))).To(Succeed())
 		syncStages(ctx, env, "after-attempt-1", "after-attempt-2", "after-attempt-3")
 		var err error
 		ix, err = index.Open(ctx, dbPath(env), env.Data(), nil)
@@ -88,6 +100,14 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 			SatisfyAll(flaky(), HaveField("Flip.Logs", SatisfyAll(HaveLen(2), HaveEach(BeARegularFile())))),
 			SatisfyAll(HaveField("Flip.RunID", BeEquivalentTo(carried)), HaveField("Flip.Step", ""),
 				HaveField("Flip.Logs", HaveExactElements(SatisfyAll(ContainSubstring("attempt-2"), BeARegularFile())))),
+		))
+	})
+
+	It("orders failing steps and step flips by step number", func(ctx SpecContext) {
+		Expect(flips(ctx, index.Filter{SHAs: []string{"3"}})).To(HaveExactElements(
+			SatisfyAll(HaveField("Flip.Step", ""), HaveField("Flip.FailingSteps", []string{stepEmit, stepBuild})),
+			HaveField("Flip.Step", stepEmit),
+			HaveField("Flip.Step", stepBuild),
 		))
 	})
 
