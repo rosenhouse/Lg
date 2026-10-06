@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -204,6 +205,32 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(decoded()).To(HaveExactElements(HaveKeyWithValue("path", filepath.Join(job, "log.txt"))))
 	})
 
+	It("lists each dir once for hits in it, whatever their text holds", func() {
+		text := strings.Repeat("-:", 100)
+		log := filepath.Join(job, "log.txt")
+		Expect(os.WriteFile(log, []byte(text+"\n"), 0o644)).To(Succeed())
+		listed := map[string]int{}
+		readDir := func(dir string) ([]fs.DirEntry, error) {
+			listed[dir]++
+			return os.ReadDir(dir)
+		}
+
+		Expect(cli.FindPlaces(filepath.Join(c.Home, "data"), readDir, log+":1:"+text, log+"-1-"+text, log+":"+text)).To(Succeed())
+		Expect(listed).To(SatisfyAll(HaveKeyWithValue(job+"/", 1), HaveEach(1)))
+	})
+
+	It("decodes a hit in a file created after where listed its dir", func() {
+		created := filepath.Join(job, "created.txt")
+		c.Stdin = io.MultiReader(
+			strings.NewReader(filepath.Join(job, "log.txt")+":1:x\n"),
+			onRead(func() { Expect(os.WriteFile(created, []byte("x\n"), 0o644)).To(Succeed()) }),
+			strings.NewReader(created+":1:x\n"),
+		)
+
+		Expect(c.Main("where")).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveExactElements(HaveKey("path"), HaveKeyWithValue("path", created)))
+	})
+
 	It("re-reads a run whose files change while it reads stdin", func() {
 		Expect(c.Fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Expect(c.Main("sync")).To(Equal(0))
@@ -377,6 +404,40 @@ var _ = Describe("LineReader", Label("where"), func() {
 
 		Expect(readTwice(files[:16])).To(BeNumerically("<", 16*len(content)*11/10))
 		Expect(readTwice(files)).To(BeNumerically(">", 17*len(content)*19/10))
+	})
+})
+
+var _ = Describe("DirCache", Label("where"), func() {
+	It("lists each dir once, however many of its names it is asked about", func() {
+		dir := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "file"), nil, 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(dir, "dir"), 0o755)).To(Succeed())
+		Expect(os.Symlink("dir", filepath.Join(dir, "dir-link"))).To(Succeed())
+		Expect(os.Symlink("file", filepath.Join(dir, "file-link"))).To(Succeed())
+		Expect(os.Symlink("gone", filepath.Join(dir, "dangling"))).To(Succeed())
+		listed := map[string]int{}
+		c := cli.NewDirCache(func(dir string) ([]fs.DirEntry, error) {
+			listed[dir]++
+			return os.ReadDir(dir)
+		})
+		stat := func(name string) []bool {
+			isDir, exists := c.Stat(dir + "/" + name)
+			return []bool{isDir, exists}
+		}
+
+		for range 2 {
+			Expect(stat("file")).To(Equal([]bool{false, true}))
+			Expect(stat("dir")).To(Equal([]bool{true, true}))
+			Expect(stat("dir-link")).To(Equal([]bool{true, true}))
+			Expect(stat("file-link")).To(Equal([]bool{false, true}))
+			Expect(stat("dangling")).To(Equal([]bool{false, false}))
+			Expect(stat("missing")).To(Equal([]bool{false, false}))
+			Expect(stat("missing/file")).To(Equal([]bool{false, false}))
+			Expect(stat("dir/.")).To(Equal([]bool{true, true}))
+			Expect(stat("dir/..")).To(Equal([]bool{true, true}))
+			Expect(stat("file/.")).To(Equal([]bool{false, false}))
+		}
+		Expect(listed).To(Equal(map[string]int{dir + "/": 1, dir + "/missing/": 2}))
 	})
 })
 

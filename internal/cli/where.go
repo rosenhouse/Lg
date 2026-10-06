@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -144,6 +145,7 @@ type placeFinder struct {
 	// real is data with symlinks resolved.
 	real  string
 	repos []string
+	dirs  *dirCache
 	// runs are the runs hits were last in, the latest last.
 	runs  []runFacts
 	lines *lineReader
@@ -152,7 +154,7 @@ type placeFinder struct {
 func newPlaceFinder(data string) *placeFinder {
 	// A missing data/ holds no path, so its real path need not be known.
 	real, _ := filepath.EvalSymlinks(data)
-	return &placeFinder{data: data, real: real, repos: repoDirs(data), lines: newLineReader(openFile)}
+	return &placeFinder{data: data, real: real, repos: repoDirs(data), dirs: newDirCache(os.ReadDir), lines: newLineReader(openFile)}
 }
 
 // repoDirs gives each data/<host>/<owner>/<repo>.
@@ -177,10 +179,17 @@ var leadingLine = regexp.MustCompile(`^[0-9]+:`)
 
 func (f *placeFinder) find(hit string) (place, error) {
 	var path string
-	h, ok := layout.ParseHit(hit, func(p string) (isDir, found bool) {
-		path, isDir, found = f.existing(p)
-		return isDir, found
-	})
+	parse := func(stat func(string) (isDir, exists bool)) (layout.Hit, bool) {
+		return layout.ParseHit(hit, func(p string) (isDir, found bool) {
+			path, isDir, found = f.existing(p, stat)
+			return isDir, found
+		})
+	}
+	h, ok := parse(f.dirs.stat)
+	if !ok {
+		// f.dirs lacks files created since it listed their dirs.
+		h, ok = parse(stat)
+	}
 	if !ok {
 		if leadingLine.MatchString(hit) {
 			return place{}, fmt.Errorf("%q names no file; run rg with -H to print file names", hit)
@@ -238,7 +247,7 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 // existing gives the file path names: path itself when absolute, else path
 // relative to the working directory, data/ or a repo dir. It checks each
 // before cleaning it, so that a .. in a hit's text cannot reach a parent dir.
-func (f *placeFinder) existing(path string) (abs string, isDir, found bool) {
+func (f *placeFinder) existing(path string, stat func(string) (isDir, exists bool)) (abs string, isDir, found bool) {
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
 		candidates = []string{path, f.data + string(filepath.Separator) + path}
@@ -247,15 +256,54 @@ func (f *placeFinder) existing(path string) (abs string, isDir, found bool) {
 		}
 	}
 	for _, c := range candidates {
-		if info, err := os.Lstat(c); err == nil {
-			if info.Mode()&fs.ModeSymlink != 0 {
-				info, err = os.Stat(c)
-			}
-			abs, absErr := filepath.Abs(c)
-			return abs, err == nil && info.IsDir(), absErr == nil
+		if isDir, exists := stat(c); exists {
+			abs, err := filepath.Abs(c)
+			return abs, isDir, err == nil
 		}
 	}
 	return "", false, false
+}
+
+// dirCache tells whether paths exist from one listing of each one's dir.
+type dirCache struct {
+	readDir func(dir string) ([]fs.DirEntry, error)
+	// types[dir][name] is the type of the file dir+name.
+	types map[string]map[string]fs.FileMode
+}
+
+func newDirCache(readDir func(dir string) ([]fs.DirEntry, error)) *dirCache {
+	return &dirCache{readDir: readDir, types: map[string]map[string]fs.FileMode{}}
+}
+
+// stat is like the stat func, but misses files created since it listed their dir.
+func (c *dirCache) stat(path string) (isDir, exists bool) {
+	dir, name := filepath.Split(path)
+	if name == "." || name == ".." {
+		return stat(path)
+	}
+	types, ok := c.types[dir]
+	if !ok {
+		entries, err := c.readDir(cmp.Or(dir, "."))
+		if err != nil {
+			return false, false
+		}
+		types = map[string]fs.FileMode{}
+		for _, e := range entries {
+			types[e.Name()] = e.Type()
+		}
+		c.types[dir] = types
+	}
+	mode, exists := types[name]
+	if mode&fs.ModeSymlink != 0 {
+		return stat(path)
+	}
+	return mode.IsDir(), exists
+}
+
+// stat tells whether path exists and is a dir, following symlinks.
+func stat(path string) (isDir, exists bool) {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir(), err == nil
 }
 
 func (f *placeFinder) describe(loc layout.Location) (place, error) {
