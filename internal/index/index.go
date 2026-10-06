@@ -129,7 +129,8 @@ func (ix *Index) open(ctx context.Context) error {
 	if ix.path == "" {
 		uri = "file::memory:"
 	}
-	db, err := sql.Open("sqlite", fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_txlock=immediate", uri, busyTimeout.Milliseconds()))
+	// temp_store(2) keeps sorts from spilling to $TMPDIR, which may be full while data/ is readable.
+	db, err := sql.Open("sqlite", fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=temp_store(2)&_txlock=immediate", uri, busyTimeout.Milliseconds()))
 	if err != nil {
 		return err
 	}
