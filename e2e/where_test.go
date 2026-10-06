@@ -89,6 +89,7 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 		Expect(where(env, job)).To(HaveExactElements(SatisfyAll(
 			HaveKeyWithValue("path", job),
 			HaveKeyWithValue("attempt", BeEquivalentTo(2)),
+			HaveKeyWithValue("created_at", "2026-09-02T12:00:00Z"),
 			HaveKeyWithValue("job_id", BeEquivalentTo(8111221662305)),
 			HaveKeyWithValue("job", "build (ubuntu-latest, 1.23)"),
 			HaveKeyWithValue("carried_forward", true),
