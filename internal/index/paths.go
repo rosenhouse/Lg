@@ -19,7 +19,7 @@ type Filter struct {
 	// SHAs are prefixes of a head SHA.
 	SHAs []string
 	PRs  []int
-	// Workflows are workflow names.
+	// Workflows are names. A run matches when any run of its workflow has one.
 	Workflows []string
 	// Jobs are globs of job names. A unit above a job matches when it holds one that matches.
 	Jobs   []string
@@ -142,7 +142,7 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	}
 	anyOf(&w, `r.head_sha LIKE ? ESCAPE '\'`, likePrefixes(f.SHAs))
 	anyOf(&w, "EXISTS (SELECT 1 FROM json_each(r.pr_numbers) WHERE value = ?)", f.PRs)
-	anyOf(&w, "r.workflow_name = ?", f.Workflows)
+	anyOf(&w, "r.workflow_id IN (SELECT workflow_id FROM runs WHERE workflow_name = ?)", f.Workflows)
 	anyOf(&w, "r.event = ?", f.Events)
 	anyOf(&w, s.conclusion+" = ?", f.Conclusions)
 	if s.jobs == "" {

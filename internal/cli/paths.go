@@ -21,7 +21,7 @@ type pathsCmd struct {
 	Branch     []string `sep:"none" help:"Only runs on this branch, and not from a fork."`
 	SHA        []string `sep:"none" name:"sha" help:"Only runs whose head SHA starts with this."`
 	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request. Runs from a fork list none."`
-	Workflow   []string `sep:"none" help:"Only runs of this workflow name."`
+	Workflow   []string `sep:"none" help:"Only runs of the workflow that has, or had, this name."`
 	Job        []string `sep:"none" help:"Only jobs whose name matches this glob, and the attempts and runs holding one."`
 	Event      []string `sep:"none" help:"Only runs triggered by this event."`
 	Conclusion []string `sep:"none" help:"Only units that concluded so: the job, the attempt, or else the run's latest attempt."`
