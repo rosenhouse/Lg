@@ -106,13 +106,33 @@ var _ = Describe("Request", Label("daemon"), func() {
 		Expect(daemon.Requested(state)).To(Equal(int64(n)))
 	})
 
-	It("names state/sync-request when it does not hold a number", func() {
+	It("names state/sync-request in Requested when it does not hold a number", func() {
 		path := filepath.Join(state, "sync-request")
 		Expect(os.WriteFile(path, []byte("many\n"), 0o644)).To(Succeed())
 
 		_, err := daemon.Requested(state)
 		Expect(err).To(MatchError(ContainSubstring(path)))
-		_, err = daemon.Request(state, clock.Real{})
-		Expect(err).To(MatchError(ContainSubstring(path)))
+	})
+
+	DescribeTable("numbers a request after status.json's served_request, whatever state/sync-request holds",
+		func(content string) {
+			Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 7}`), 0o644)).To(Succeed())
+			if content != "" {
+				Expect(os.WriteFile(filepath.Join(state, "sync-request"), []byte(content), 0o644)).To(Succeed())
+			}
+
+			Expect(daemon.Request(state, clock.Real{})).To(Equal(int64(8)))
+			Expect(daemon.Requested(state)).To(Equal(int64(8)))
+		},
+		Entry("nothing, after a reset", ""),
+		Entry("a lower number", "2\n"),
+		Entry("no number", "many\n"),
+	)
+
+	It("numbers a request after a higher state/sync-request than status.json's served_request", func() {
+		Expect(os.WriteFile(filepath.Join(state, "status.json"), []byte(`{"served_request": 7}`), 0o644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(state, "sync-request"), []byte("9\n"), 0o644)).To(Succeed())
+
+		Expect(daemon.Request(state, clock.Real{})).To(Equal(int64(10)))
 	})
 })

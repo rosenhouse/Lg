@@ -12,6 +12,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -61,16 +62,17 @@ func (l *InstanceLock) Release() error {
 }
 
 // Request adds a sync request to state/sync-request under state/request.lock,
-// and gives its number.
+// and gives its number. The number follows status.json's served_request too,
+// so a removed or garbled state/sync-request never makes a request look served.
 func Request(state string, clk clock.Clock) (int64, error) {
 	held, err := lock.Wait(filepath.Join(state, "request.lock"), requestWait, clk, func(string) {})
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = held.Release() }()
-	n, err := Requested(state)
-	if err != nil {
-		return 0, err
+	n, _ := Requested(state)
+	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil {
+		n = max(n, st.ServedRequest)
 	}
 	n++
 	return n, store.ReplaceFileFS(store.OSFS{}, requestFile(state), fmt.Appendf(nil, "%d\n", n))
