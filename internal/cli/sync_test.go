@@ -15,6 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
@@ -127,10 +128,11 @@ var _ = DescribeTable("lg sync --timeout", Label("sync"),
 		code := make(chan int, 1)
 		go func() {
 			code <- cli.Main(append([]string{"sync"}, args...), cli.Deps{
-				Env:    map[string]string{"LG_HOME": home, "LG_CONFIG": config},
-				Stdout: &bytes.Buffer{},
-				Stderr: &stderr,
-				Clock:  clk,
+				Env:     map[string]string{"LG_HOME": home, "LG_CONFIG": config},
+				Stdout:  &bytes.Buffer{},
+				Stderr:  &stderr,
+				Clock:   clk,
+				StoreFS: store.OSFS{},
 			})
 		}()
 

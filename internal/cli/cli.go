@@ -74,7 +74,7 @@ func Main(args []string, deps Deps) (code int) {
 	stdout := &errWriter{w: deps.Stdout}
 	parser := kong.Must(&commands{},
 		kong.Name("lg"),
-		kong.Vars{"write_lock_wait": writeLockWait.String()},
+		kong.Vars{"write_lock_wait": writeLockWait.String(), "cycle_wait": cycleWait.String()},
 		kong.Writers(stdout, deps.Stderr),
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 	defer func() {

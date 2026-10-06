@@ -18,9 +18,15 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-type syncCmd struct{}
+// cycleWait bounds how long sync --wait waits for the daemon's cycle.
+const cycleWait = 15 * time.Minute
 
-func (syncCmd) Run(deps *Deps) error {
+type syncCmd struct {
+	Wait    bool           `help:"With a daemon running, wait for a cycle that starts after this request, and exit as that cycle did."`
+	Timeout *time.Duration `help:"How long to wait for another lg writing the store (default ${write_lock_wait}), or with --wait for the daemon's cycle (default ${cycle_wait})."`
+}
+
+func (c syncCmd) Run(deps *Deps) error {
 	t, err := loadTarget(deps.Env)
 	if err != nil {
 		return err
@@ -30,9 +36,13 @@ func (syncCmd) Run(deps *Deps) error {
 		return failure.FromErrno(err)
 	}
 	if running {
-		return requestSync(t.roots, deps)
+		n, err := requestSync(t.roots, deps)
+		if err != nil || !c.Wait {
+			return err
+		}
+		return failure.FromErrno(daemon.WaitForCycle(t.roots.State, n, c.timeout(cycleWait), deps.Clock))
 	}
-	held, err := lockWrites(context.Background(), t.roots, deps, writeLockWait)
+	held, err := lockWrites(context.Background(), t.roots, deps, c.timeout(writeLockWait))
 	if err != nil {
 		return failure.FromErrno(err)
 	}
@@ -44,14 +54,21 @@ func (syncCmd) Run(deps *Deps) error {
 	return err
 }
 
-// requestSync asks the running daemon for a cycle.
-func requestSync(roots config.Roots, deps *Deps) error {
+func (c syncCmd) timeout(fallback time.Duration) time.Duration {
+	if c.Timeout == nil {
+		return fallback
+	}
+	return *c.Timeout
+}
+
+// requestSync asks the running daemon for a cycle, and gives the request's number.
+func requestSync(roots config.Roots, deps *Deps) (int64, error) {
 	n, err := daemon.Request(deps.StoreFS, roots.State, deps.Clock)
 	if err != nil {
-		return failure.FromErrno(err)
+		return 0, failure.FromErrno(err)
 	}
 	_, err = fmt.Fprintf(deps.Stderr, "lg: sent sync request %d to the running daemon\n", n)
-	return err
+	return n, err
 }
 
 // target is what a cycle syncs, from config.yaml.
