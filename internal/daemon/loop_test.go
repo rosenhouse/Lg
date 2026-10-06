@@ -72,6 +72,20 @@ func (e *loopEnv) run() (cancel func(), returned <-chan struct{}) {
 	return cancel, done
 }
 
+// set moves the clock to now once the loop waits on it, since an After
+// that the loop takes after a Set would wait from the new time.
+func (e *loopEnv) set(now time.Time) {
+	GinkgoHelper()
+	e.waiting()
+	e.clk.Set(now)
+}
+
+// waiting waits until the loop waits on the clock.
+func (e *loopEnv) waiting() {
+	GinkgoHelper()
+	Eventually(e.clk.Waiting, time.Second).Should(Equal(1))
+}
+
 func (e *loopEnv) expectCycle(at time.Time, served int64) {
 	GinkgoHelper()
 	Eventually(e.cycles, time.Second).Should(Receive(Equal(started{At: at, Served: served})))
@@ -95,13 +109,13 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.run()
 
 		e.expectCycle(t0, 0)
-		e.clk.Set(t0.Add(10*time.Minute - time.Second))
+		e.set(t0.Add(10*time.Minute - time.Second))
 		e.expectNoCycle()
-		e.clk.Set(t0.Add(10 * time.Minute))
+		e.set(t0.Add(10 * time.Minute))
 		e.expectCycle(t0.Add(10*time.Minute), 0)
-		e.clk.Set(t0.Add(20 * time.Minute))
+		e.set(t0.Add(20 * time.Minute))
 		e.expectNoCycle()
-		e.clk.Set(t0.Add(30 * time.Minute))
+		e.set(t0.Add(30 * time.Minute))
 		e.expectCycle(t0.Add(30*time.Minute), 0)
 	})
 
@@ -110,8 +124,9 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.run()
 		e.expectCycle(t0, 0)
 
+		e.waiting()
 		e.requested.Store(1)
-		e.clk.Set(t0.Add(time.Second))
+		e.set(t0.Add(time.Second))
 
 		e.expectCycle(t0.Add(time.Second), 1)
 	})
@@ -123,10 +138,11 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.run()
 		e.expectCycle(t0, 0)
 
+		e.waiting()
 		e.requested.Store(1)
-		e.clk.Set(t0.Add(time.Second))
+		e.set(t0.Add(time.Second))
 		e.expectNoCycle()
-		e.clk.Set(t0.Add(5 * time.Minute))
+		e.set(t0.Add(5 * time.Minute))
 
 		e.expectCycle(t0.Add(5*time.Minute), 1)
 	})
@@ -144,7 +160,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 
 		e.expectCycle(t0, 0)
 		e.expectCycle(t0, 3)
-		e.clk.Set(t0.Add(time.Second))
+		e.set(t0.Add(time.Second))
 		e.expectNoCycle()
 	})
 
@@ -189,7 +205,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		}
 		e.run()
 		e.expectCycle(t0, 0)
-		e.clk.Set(t0.Add(10 * time.Minute))
+		e.set(t0.Add(10 * time.Minute))
 		e.expectCycle(t0.Add(10*time.Minute), 0)
 
 		Eventually(func() []string {
