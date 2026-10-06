@@ -25,6 +25,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/matchers"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 const (
@@ -46,13 +47,17 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 	})
 
 	It("syncs at start, and after the fake advances to after-attempt-2 and `lg sync` writes a request, publishes attempt-2", func(ctx SpecContext) {
-		env.Start("daemon", "run")
+		running := env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(attemptDir(env, 1)).To(BeADirectory())
+		before := treesnap.Snapshot(env.Data())
 
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
-		Eventually(attemptDir, cycleWait).WithContext(ctx).WithArguments(env, 2).Should(BeADirectory())
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		Expect(attemptDir(env, 2)).To(BeADirectory())
+		expectServedBy(env, running, 1)
+		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
 	}, daemonTimeout)
 
 	It("warns that it never synced without telling itself to run lg sync", func(ctx SpecContext) {
@@ -200,7 +205,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(ctx SpecContext) {
 		env.GH().SetToken("gho_first")
 		fake.RequireToken("gho_first")
-		env.Start("daemon", "run")
+		running := env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(env.Status()).To(HaveKeyWithValue("blocked", BeNil()))
 
@@ -210,16 +215,19 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(env.Status()).To(HaveKeyWithValue("blocked", BeNil()))
+		expectServedBy(env, running, 1)
 		Expect(env.GH().Calls()).To(HaveLen(2))
 	}, daemonTimeout)
 
 	It("reconciles state/lg.db after each cycle, so lg.db lists attempt-2 before any reader runs", func(ctx SpecContext) {
 		env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		before := treesnap.Snapshot(env.Data())
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
 		Eventually(indexedAttempts(ctx, env), cycleWait).WithContext(ctx).Should(ConsistOf(1, 2))
+		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
 	}, daemonTimeout)
 })
 
@@ -416,6 +424,14 @@ func cycle(env *harness.Env) func() float64 {
 		}
 		return st.Cycle
 	}
+}
+
+// expectServedBy expects env's status.json to say that the running daemon served request n.
+func expectServedBy(env *harness.Env, running *gexec.Session, n int) {
+	GinkgoHelper()
+	Expect(env.Status()).To(And(
+		HaveKeyWithValue("served_request", float64(n)),
+		HaveKeyWithValue("daemon_pid", float64(running.Command.Process.Pid))))
 }
 
 // held reports whether a process holds the lock state/<name>.
