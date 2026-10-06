@@ -14,6 +14,7 @@ import (
 	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/status"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -92,11 +93,13 @@ type daemonCycle struct {
 }
 
 // run reads config.yaml after it takes write.lock, so it syncs with an edit
-// made while it waited.
+// made while it waited. It skips the cycle when that wait times out, so the
+// daemon retries a request. Another lock error counts as the cycle, so the
+// daemon does not retry it every second.
 func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
-		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: true}
+		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: errors.Is(err, lock.ErrTimeout)}
 	}
 	defer func() { _ = held.Release() }()
 	fresh, configErr := loadTarget(d.deps.Env)

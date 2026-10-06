@@ -189,7 +189,7 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(5*time.Minute), 1)
 	})
 
-	It("retries a request a second after a cycle that did not run, as when it could not take write.lock", func() {
+	It("retries a request a second after a cycle that did not run, as when its wait for write.lock timed out", func() {
 		skipped := outcomeAt(t0.Add(time.Second))
 		skipped.Skipped = true
 		e := newLoopEnv(outcomeAt(t0), skipped, outcomeAt(t0.Add(2*time.Second)))
