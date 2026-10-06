@@ -46,8 +46,9 @@ var _ = Describe("Manager", Label("install"), func() {
 			unitPath, activeState = "systemctl --user show -p UnitPath --value", "systemctl --user show -p ActiveState --value lg.service"
 		})
 
-		It("writes the systemd unit and starts it", func() {
-			path, err := manager("linux").Install(context.Background(), unit)
+		It("writes the systemd unit and starts it, running systemctl in the user's env", func() {
+			m := manager("linux")
+			path, err := m.Install(context.Background(), unit)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(path).To(Equal(filepath.Join(systemd, "lg.service")))
@@ -56,6 +57,7 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(os.ReadFile(path)).To(Equal(want))
 			Expect(runner.Calls()).To(Equal([]string{unitPath, activeState, "systemctl --user daemon-reload", "systemctl --user enable --now lg.service"}))
 			Expect(runner.Files()).To(Equal([][]string{nil, nil, {"lg.service"}, {"lg.service"}}))
+			Expect(runner.Envs()).To(HaveEach(Equal(m.Env)))
 		})
 
 		It("restarts a running service whose unit it rewrites", func() {
@@ -235,8 +237,9 @@ var _ = Describe("Manager", Label("install"), func() {
 			print, bootout = fmt.Sprintf("launchctl print gui/%d/%s", uid, label), fmt.Sprintf("launchctl bootout gui/%d/%s", uid, label)
 		})
 
-		It("writes the plist, creates the log's dir, and bootstraps it", func() {
-			path, err := manager("darwin").Install(context.Background(), unit)
+		It("writes the plist, creates the log's dir, and bootstraps it, running launchctl in the user's env", func() {
+			m := manager("darwin")
+			path, err := m.Install(context.Background(), unit)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(path).To(Equal(filepath.Join(agents, label+".plist")))
@@ -245,6 +248,7 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(os.ReadFile(path)).To(Equal(want))
 			Expect(filepath.Dir(unit.Log)).To(BeADirectory())
 			Expect(runner.Calls()).To(Equal([]string{print, fmt.Sprintf("launchctl bootstrap gui/%d %s", uid, path)}))
+			Expect(runner.Envs()).To(HaveEach(Equal(m.Env)))
 		})
 
 		It("boots out a loaded agent, and waits for it to unload, before it rewrites and bootstraps it", func() {
