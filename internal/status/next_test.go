@@ -276,12 +276,14 @@ var _ = Describe("Next", Label("status"), func() {
 })
 
 var _ = DescribeTable("Pending names its unit before its error", Label("status"),
-	func(unit status.Unit, want string) {
-		Expect(status.Pending{Unit: unit, Error: "502"}.String()).To(Equal(want))
+	func(unit status.Unit, since time.Time, want string) {
+		Expect(status.Pending{Unit: unit, Error: "502", Since: since}.String()).To(Equal(want))
 	},
-	Entry("an attempt", status.Unit{Run: 1, Attempt: 2}, "run 1 attempt 2: 502"),
-	Entry("an artifact", status.Unit{Run: 1, Artifact: 7}, "run 1 artifact 7: 502"),
-	Entry("a run", status.Unit{Run: 1}, "run 1: 502"),
+	Entry("an attempt", status.Unit{Run: 1, Attempt: 2}, time.Time{}, "run 1 attempt 2: 502"),
+	Entry("an artifact", status.Unit{Run: 1, Artifact: 7}, time.Time{}, "run 1 artifact 7: 502"),
+	Entry("a run", status.Unit{Run: 1}, time.Time{}, "run 1: 502"),
+	Entry("a unit with its since", status.Unit{Run: 1, Attempt: 2}, time.Date(2026, 10, 3, 17, 1, 0, 0, time.UTC),
+		"run 1 attempt 2, pending since 2026-10-03T17:01:00Z: 502"),
 )
 
 var _ = Describe("Remeasured", Label("status"), func() {
