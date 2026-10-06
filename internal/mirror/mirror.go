@@ -57,7 +57,7 @@ type UnitError struct {
 	Err error
 }
 
-func (u UnitError) Error() string { return u.Unit.String() + ": " + u.Err.Error() }
+func (u UnitError) Error() string { return u.String() + ": " + u.Err.Error() }
 
 func (u UnitError) Unwrap() error { return u.Err }
 
