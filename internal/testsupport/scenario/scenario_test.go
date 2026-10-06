@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -478,11 +479,13 @@ var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
 			HaveKeyWithValue("same name", []model.JobKind{model.CarriedForward, model.CarriedForward}),
 		))
 		_, firstJobs := attemptOf(rerun, 1)
+		var ids []int64
 		for i, job := range jobs {
 			Expect(job.Name).To(Equal(firstJobs[i].Name))
 			Expect(job.ID).NotTo(BeElementOf(run.JobIDs(1, job.Name)))
-			Expect(jobs).To(HaveEach(Not(BeIdenticalTo(job))))
+			ids = append(ids, job.ID)
 		}
+		Expect(slices.Compact(slices.Sorted(slices.Values(ids)))).To(HaveLen(len(ids)))
 		Expect(run.Files).NotTo(HaveKey("attempt-2/jobs.json"))
 	})
 
@@ -517,7 +520,7 @@ var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
 		}
 	})
 
-	It("re-runs a job carried forward by an earlier re-run after the attempt starts", func() {
+	It("re-runs, in attempt 3, a job attempt 2 carried forward", func() {
 		twice := scenario.AddRerunAttempt(scenario.AddRerunAttempt(run, "flaky"), "pass")
 
 		Expect(field(twice, "run.json", "run_attempt")).To(BeEquivalentTo(3))
