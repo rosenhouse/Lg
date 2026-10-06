@@ -356,6 +356,27 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(strings.Count(c.Stderr.String(), filepath.Join(attempt, "attempt.json"))).To(Equal(2))
 	})
 
+	It("gives the conclusion of the hit's attempt, or of the attempt its artifact is attributed to", func() {
+		Expect(c.Fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
+		Expect(c.Main("sync")).To(Equal(0))
+		run := filepath.Dir(attempt)
+
+		Expect(c.Main("where",
+			filepath.Join(job, "log.txt"),
+			filepath.Join(run, "attempt-2", "jobs.json"),
+			filepath.Join(run, "artifacts", "11276401837_flaky-report", "artifact.zip"),
+			filepath.Join(run, "artifacts", "11276052917_rerun-only-attempt-2", "artifact.zip"),
+			run,
+		)).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveExactElements(
+			HaveKeyWithValue("conclusion", "failure"),
+			HaveKeyWithValue("conclusion", "success"),
+			HaveKeyWithValue("conclusion", "failure"),
+			HaveKeyWithValue("conclusion", "success"),
+			HaveKeyWithValue("conclusion", BeNil()),
+		))
+	})
+
 	It("gives a carried-forward job's original log only while it exists", func() {
 		Expect(c.Fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
 		Expect(c.Main("sync")).To(Equal(0))

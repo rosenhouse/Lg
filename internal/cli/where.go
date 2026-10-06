@@ -99,6 +99,9 @@ type place struct {
 	Event     string    `json:"event"`
 	PRs       []int     `json:"prs"`
 	CreatedAt time.Time `json:"created_at"`
+	// Conclusion is the hit's attempt's, or that of the attempt its artifact
+	// is attributed to.
+	Conclusion *string `json:"conclusion"`
 	*tombstonePlace
 	Line    int     `json:"line,omitempty"`
 	Text    string  `json:"text,omitempty"`
@@ -385,6 +388,7 @@ func describeRun(data string, loc layout.Location, facts runFacts) (place, error
 		}
 		p.artifactPlace = artifactOf(rows.Artifacts[i])
 	}
+	p.Conclusion = conclusionOf(rows, p)
 	if facts.err != nil {
 		return place{}, unread("the run")
 	}
@@ -402,6 +406,18 @@ func describeRun(data string, loc layout.Location, facts runFacts) (place, error
 	var err error
 	p.HTMLURL, err = htmlURL(htmlFrom)
 	return p, err
+}
+
+func conclusionOf(rows index.Rows, p place) *string {
+	attempt := p.Attempt
+	if p.artifactPlace != nil && p.AttributedAttempt != nil {
+		attempt = *p.AttributedAttempt
+	}
+	i := slices.IndexFunc(rows.Attempts, func(a index.Attempt) bool { return a.Attempt == attempt })
+	if i < 0 {
+		return nil
+	}
+	return &rows.Attempts[i].Conclusion
 }
 
 func jobOf(runDir string, rows index.Rows, job index.Job) *jobPlace {

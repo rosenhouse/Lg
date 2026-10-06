@@ -75,6 +75,7 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 			"event": "pull_request",
 			"prs": [42],
 			"created_at": "2026-09-28T12:00:00Z",
+			"conclusion": "failure",
 			"job_conclusion": "failure",
 			"line": 107,
 			"text": "2026-10-03T14:23:01.2367849Z LG_MARKER flaky failure attempt=1",
@@ -177,6 +178,7 @@ cd '%[1]s%[4]s' && grep -rn 'foo bar' runs/2026-09-10 | LG_HOME='%[2]s' lg where
 			HaveKeyWithValue("created_at", "2026-10-03T17:00:00Z"),
 			HaveKeyWithValue("attributed_attempt", BeNil()),
 			HaveKeyWithValue("attribution", "unknown"),
+			HaveKeyWithValue("conclusion", BeNil()),
 			Not(HaveKey("attempt")),
 		)))
 	})
