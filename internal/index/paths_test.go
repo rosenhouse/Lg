@@ -28,13 +28,14 @@ const (
 	sameTimeLow, sameTimeHigh = 20, 100
 	// renamed is a run of the Archaeology workflow under the name "renamed", with SHA aaaa….
 	renamed = 30
-	// steady has two attempts, and a job "steady" in attempt 2 only, with SHA bbbb….
+	// steady has attempts 1 and 12, and a job "steady" in attempt 12 only, with SHA bbbb….
 	steady = 40
 )
 
 // archaeology syncs the Archaeology runs and the runs above, writes an
 // extracted/ tree into the first artifact of Release3 and into every
-// artifact of Rerun, and gives the index of them.
+// artifact of Rerun, renumbers steady's attempt 2 to 12, and gives the index
+// of them.
 func archaeology(ctx context.Context) (*harness.InProcessEnv, *index.Index) {
 	GinkgoHelper()
 	env := harness.InProcess()
@@ -55,6 +56,7 @@ func archaeology(ctx context.Context) (*harness.InProcessEnv, *index.Index) {
 	for _, dir := range artifactDirs(env, scenario.Archaeology().Rerun.ID) {
 		writeExtracted(dir)
 	}
+	Expect(os.Rename(filepath.Join(runDir(env.Data(), steady), "attempt-2"), filepath.Join(runDir(env.Data(), steady), "attempt-12"))).To(Succeed())
 	ix, err := index.Open(ctx, dbPath(env), env.Data(), nil)
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(ix.Close)
@@ -222,7 +224,7 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 	)
 
 	It("--job selects only the attempts that hold a matching job", func() {
-		Expect(paths(index.Filter{Jobs: []string{"steady"}}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-2/*.json", steady)))
+		Expect(paths(index.Filter{Jobs: []string{"steady"}}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-12/*.json", steady)))
 	})
 
 	DescribeTable("--conclusion of a unit above a job is its attempt's, or else its run's latest attempt's",
