@@ -80,19 +80,6 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Eventually(done, time.Second).Should(Receive(BeNil()))
 	})
 
-	It("accepts no cycle that started before since, in the second before it", func() {
-		runDaemon()
-		writeStatus(`{"last_sync_started_at": "2026-10-03T17:59:59Z", "served_request": 3}`)
-		done := waitSince(3, t0.Add(500*time.Millisecond))
-		polling()
-		Expect(done).NotTo(Receive())
-
-		served(3)
-		clk.Set(t0.Add(time.Second))
-
-		Eventually(done, time.Second).Should(Receive(BeNil()))
-	})
-
 	It("gives up after its timeout", func() {
 		runDaemon()
 		served(2)

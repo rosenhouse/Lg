@@ -16,13 +16,11 @@ import (
 const waitPoll = 100 * time.Millisecond
 
 // WaitForCycle waits up to timeout from since for status.json to show a
-// finished cycle that started at or after since and served sync request n,
-// and gives that cycle's result. It fails at once when the daemon exits
-// first, or when the daemon is blocked past the timeout.
+// finished cycle that served sync request n, and gives that cycle's result.
+// It fails at once when the daemon exits first, or when the daemon is
+// blocked past the timeout.
 func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration, clk clock.Clock) error {
 	deadline := since.Add(timeout)
-	// status.json holds whole seconds.
-	since = since.Truncate(time.Second)
 	timedOut := clk.After(deadline.Sub(clk.Now()))
 	for {
 		// A daemon writes status.json before it lets go of daemon.lock, so
@@ -39,7 +37,7 @@ func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration,
 			return err
 		}
 		switch {
-		case st != nil && st.ServedRequest >= n && !st.LastSyncStartedAt.Before(since):
+		case st != nil && st.ServedRequest >= n:
 			return st.Err()
 		case !running:
 			return fmt.Errorf("the daemon exited before it served sync request %d", n)
