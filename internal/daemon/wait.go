@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/rosenhouse/lg/internal/clock"
-	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/status"
 )
@@ -41,11 +40,11 @@ func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration,
 		}
 		switch {
 		case st != nil && st.ServedRequest >= n && !st.LastSyncStartedAt.Before(since):
-			return result(st)
+			return st.Err()
 		case !running:
 			return fmt.Errorf("the daemon exited before it served sync request %d", n)
 		case st != nil && st.Blocked != nil && st.Blocked.RetryAt != nil && st.Blocked.RetryAt.After(deadline):
-			return blocked(*st.Blocked)
+			return st.Blocked.Failure()
 		}
 		select {
 		case <-timedOut:
@@ -53,24 +52,4 @@ func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration,
 		case <-clk.After(waitPoll):
 		}
 	}
-}
-
-// result is the error a one-shot sync would give for the cycle st records.
-func result(st *status.Status) error {
-	if st.Blocked != nil {
-		return blocked(*st.Blocked)
-	}
-	errs := make([]error, len(st.LastSyncErrors))
-	for i, line := range st.LastSyncErrors {
-		errs[i] = errors.New(line)
-	}
-	return errors.Join(errs...)
-}
-
-func blocked(b status.Blocked) failure.Blocked {
-	retryAt := time.Time{}
-	if b.RetryAt != nil {
-		retryAt = *b.RetryAt
-	}
-	return failure.Blocked{Kind: b.Kind, Detail: b.Detail, RetryAt: retryAt}
 }

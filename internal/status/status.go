@@ -72,6 +72,27 @@ func (b Blocked) String() string {
 	return s + ": " + OneLine(b.Detail)
 }
 
+// Failure is the error that blocked the cycle.
+func (b Blocked) Failure() failure.Blocked {
+	retryAt := time.Time{}
+	if b.RetryAt != nil {
+		retryAt = *b.RetryAt
+	}
+	return failure.Blocked{Kind: b.Kind, Detail: b.Detail, RetryAt: retryAt}
+}
+
+// Err is the error a one-shot sync gave for the cycle st records.
+func (st Status) Err() error {
+	if st.Blocked != nil {
+		return st.Blocked.Failure()
+	}
+	errs := make([]error, len(st.LastSyncErrors))
+	for i, line := range st.LastSyncErrors {
+		errs[i] = errors.New(line)
+	}
+	return errors.Join(errs...)
+}
+
 // OneLine gives s on one line, without terminal controls.
 func OneLine(s string) string {
 	s = strings.Map(func(r rune) rune {
