@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -214,4 +215,73 @@ func treeBytes(dir string) (n int64) {
 		return err
 	})).To(Succeed())
 	return n
+}
+
+var _ = Describe("lg paths after units stayed pending past twice sync_interval", Label("status"), func() {
+	It("warns '<N> units pending since <t>; run `lg status`' and still prints its paths", func() {
+		env, fake := withStuckLog()
+		env.SetNow(harness.DefaultNow().Add(22*time.Minute), fake)
+		Expect(env.Sync()).To(gexec.Exit(1))
+
+		session := env.Lg("paths")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(string(session.Err.Contents())).To(MatchRegexp("^lg: warning: 1 units pending since (\\S+); run `lg status`\n$"))
+		since := pendingSince(env)
+		Expect(since).To(BeTemporally("~", harness.DefaultNow().Add(time.Minute), harness.ExitTimeout))
+		Expect(string(session.Err.Contents())).To(ContainSubstring(" since " + since.Format(time.RFC3339) + ";"))
+		Expect(string(session.Out.Contents())).To(ContainSubstring(filepath.Join(fixtureRunDir, "attempt-1")))
+	})
+})
+
+var _ = Describe("lg paths while units are pending for less than twice sync_interval", Label("status"), func() {
+	It("prints no pending warning", func() {
+		env, fake := withStuckLog()
+		env.SetNow(harness.DefaultNow().Add(15*time.Minute), fake)
+		Expect(env.Sync()).To(gexec.Exit(1))
+
+		session := env.Lg("paths")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(session.Err.Contents()).To(BeEmpty())
+	})
+})
+
+var _ = Describe("lg status", Label("status"), func() {
+	It("prints each pending unit with the time it was first seen pending", func() {
+		env, fake := withStuckLog()
+		env.SetNow(harness.DefaultNow().Add(15*time.Minute), fake)
+		Expect(env.Sync()).To(gexec.Exit(1))
+
+		session := env.Lg("status")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(string(session.Out.Contents())).To(MatchRegexp(
+			`\n    run 37129390741 attempt 2, pending since ` + pendingSince(env).Format(time.RFC3339) + `: [^\n]*503[^\n]*\n`))
+	})
+})
+
+// withStuckLog gives an env synced at DefaultNow, then synced again a
+// minute later after attempt 2 appeared with one log the blob host answers
+// with 503.
+func withStuckLog() (*harness.Env, *fakegithub.Server) {
+	GinkgoHelper()
+	env := harness.New(lgPath)
+	fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+	env.WriteConfig(fake.URL())
+	Expect(env.Sync()).To(gexec.Exit(0))
+
+	Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
+	fake.Fail("blob", "/logs/111221661475.txt", fakegithub.Fault{Status: http.StatusServiceUnavailable})
+	env.SetNow(harness.DefaultNow().Add(time.Minute), fake)
+	Expect(env.Sync()).To(gexec.Exit(1))
+	return env, fake
+}
+
+// pendingSince gives the since of the one pending unit in env's status.json.
+func pendingSince(env *harness.Env) time.Time {
+	GinkgoHelper()
+	repo := env.Status()["repos"].(map[string]any)["github.com/rosenhouse/lg"].(map[string]any)
+	Expect(repo).To(HaveKeyWithValue("pending", HaveLen(1)))
+	return timeAt(repo["pending"].([]any)[0].(map[string]any), "since")
 }
