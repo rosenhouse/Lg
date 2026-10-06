@@ -75,7 +75,7 @@ func (l *Lock) Release() error {
 }
 
 // Held reports whether a holder has the lock on path. It takes a shared
-// lock for a moment, so a Wait that overlaps it needs a timeout of at least
+// lock for a moment, so a Wait that overlaps it needs a timeout longer than
 // one poll.
 func Held(path string) (bool, error) {
 	file, err := os.Open(path)
