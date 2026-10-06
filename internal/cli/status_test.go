@@ -363,6 +363,17 @@ var _ = Describe("lg status after a daemon rejected config.yaml", Label("status"
 	})
 })
 
+var _ = Describe("cli.Main after a daemon rejected config.yaml", Label("status"), func() {
+	It("warns 'config.yaml is invalid: ...'", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(strings.Replace(goodStatus, `"daemon_version": null,`,
+			`"daemon_version": null, "config_error": "config.yaml: sync_interval must be at least 1m: 30s; kept the last good config",`, 1))
+
+		Expect(s.Main("version")).To(Equal(0))
+		Expect(s.Stderr.String()).To(Equal("lg: warning: config.yaml is invalid: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config\n"))
+	})
+})
+
 var _ = Describe("lg status with a status.json it cannot parse", Label("status"), func() {
 	It("exits 1, naming the file once", func() {
 		s := harness.NewCLI()
