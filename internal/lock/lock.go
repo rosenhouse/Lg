@@ -88,7 +88,11 @@ func (l *Lock) Release() error {
 
 // Holder names the holder of the lock on path, or gives "" when it is free.
 func Holder(path string) (string, error) {
-	return "", nil
+	held, err := Held(path)
+	if !held || err != nil {
+		return "", err
+	}
+	return holder(path), nil
 }
 
 // Held reports whether a holder has the lock on path. It takes a shared

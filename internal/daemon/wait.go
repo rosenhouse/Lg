@@ -46,8 +46,19 @@ func WaitForCycle(state string, n int64, since time.Time, timeout time.Duration,
 		}
 		select {
 		case <-timedOut:
-			return fmt.Errorf("no cycle served sync request %d; %w after %s", n, lock.ErrTimeout, timeout)
+			return fmt.Errorf("no cycle served sync request %d; %s%w after %s", n, otherWriter(state), lock.ErrTimeout, timeout)
 		case <-clk.After(waitPoll):
 		}
 	}
+}
+
+// otherWriter names a process other than the daemon that holds
+// state/write.lock, or gives "".
+func otherWriter(state string) string {
+	path := filepath.Join(state, "write.lock")
+	holder, _ := lock.Holder(path)
+	if holder == "" || holder == runningPID(state) {
+		return ""
+	}
+	return fmt.Sprintf("%s is held by %s; ", path, holder)
 }
