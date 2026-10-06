@@ -142,7 +142,21 @@ func (s systemd) start(ctx context.Context, replacing bool) error {
 	return nil
 }
 
-func (s systemd) stop(ctx context.Context) error { return s.systemctl(ctx, "disable", "--now", s.unit) }
+// stop disables and stops the service. A unit systemd cannot disable, as
+// when it never loaded the unit, counts as stopped when it is not running.
+func (s systemd) stop(ctx context.Context) error {
+	err := s.systemctl(ctx, "disable", "--now", s.unit)
+	if err != nil && s.notRunning(ctx) {
+		return nil
+	}
+	return err
+}
+
+func (s systemd) notRunning(ctx context.Context) bool {
+	out, _, err := s.m.Runner.Run(ctx, "systemctl", []string{"--user", "show", "-p", "ActiveState", "--value", s.unit}, s.m.Env)
+	state := string(bytes.TrimSpace(out))
+	return err == nil && (state == "inactive" || state == "failed")
+}
 
 func (s systemd) removed(ctx context.Context) error { return s.systemctl(ctx, "daemon-reload") }
 

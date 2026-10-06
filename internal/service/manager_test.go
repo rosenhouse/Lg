@@ -16,7 +16,8 @@ import (
 )
 
 // fakeRunner logs each call, and the files then in dir. A call whose
-// arguments include a key of fail prints its value and fails. It models
+// arguments include a key of fail prints its value and fails; one whose
+// arguments include a key of out prints its value to stdout. It models
 // launchctl's one service: bootstrap loads it, bootout unloads it, and
 // print fails while it is not loaded.
 type fakeRunner struct {
@@ -24,6 +25,7 @@ type fakeRunner struct {
 	calls  []string
 	files  [][]string
 	fail   map[string]string
+	out    map[string]string
 	loaded bool
 }
 
@@ -38,6 +40,11 @@ func (f *fakeRunner) Run(_ context.Context, name string, args []string, env map[
 	for _, a := range args {
 		if msg, ok := f.fail[a]; ok {
 			return nil, []byte(msg + "\n"), errors.New("exit status 1")
+		}
+	}
+	for _, a := range args {
+		if out, ok := f.out[a]; ok {
+			return []byte(out + "\n"), nil, nil
 		}
 	}
 	if name == "launchctl" {
@@ -74,7 +81,7 @@ var _ = Describe("Manager", Label("install"), func() {
 		home = GinkgoT().TempDir()
 		systemd = filepath.Join(home, ".config", "systemd", "user")
 		agents = filepath.Join(home, "Library", "LaunchAgents")
-		runner = &fakeRunner{fail: map[string]string{}}
+		runner = &fakeRunner{fail: map[string]string{}, out: map[string]string{}}
 		unit = service.Unit{Name: "lg", Exe: "/opt/lg/bin/lg", Env: map[string]string{"LG_GH": "/opt/gh/bin/gh"}, Log: filepath.Join(home, "lg", "state", "daemon.log")}
 	})
 
@@ -137,6 +144,37 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(err).To(MatchError(And(ContainSubstring("systemctl --user disable --now lg.service"), ContainSubstring("Failed to connect to bus"))))
 			Expect(path).To(BeAnExistingFile())
 		})
+
+		DescribeTable("when it cannot disable the service, removes the unit only if systemd says the service is not running",
+			func(state string, removed bool) {
+				path, err := manager("linux").Install(context.Background(), unit)
+				Expect(err).NotTo(HaveOccurred())
+				runner.fail["disable"] = "Unit file lg.service does not exist"
+				if state == "" {
+					runner.fail["show"] = "Failed to connect to bus"
+				} else {
+					runner.out["show"] = state
+				}
+				runner.calls = nil
+
+				_, err = manager("linux").Uninstall(context.Background(), "lg")
+
+				Expect(runner.calls[1]).To(Equal("systemctl --user show -p ActiveState --value lg.service"))
+				if removed {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(path).NotTo(BeAnExistingFile())
+					Expect(runner.calls[2:]).To(Equal([]string{"systemctl --user daemon-reload"}))
+				} else {
+					Expect(err).To(MatchError(ContainSubstring("Unit file lg.service does not exist")))
+					Expect(path).To(BeAnExistingFile())
+				}
+			},
+			Entry(nil, "inactive", true),
+			Entry(nil, "failed", true),
+			Entry(nil, "active", false),
+			Entry(nil, "activating", false),
+			Entry("when systemctl show fails", "", false),
+		)
 
 		It("says why systemctl failed to start the unit, which it leaves in place", func() {
 			runner.fail["enable"] = "Failed to connect to bus: No medium found"
