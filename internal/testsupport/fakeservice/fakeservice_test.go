@@ -1,6 +1,7 @@
 package fakeservice_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,6 +144,21 @@ var _ = Describe("Runner", Label("install"), func() {
 		Expect(run("launchctl", "bootout", "gui/501/l")).To(BeEmpty())
 		Expect(print()).To(Succeed())
 		Expect(print()).NotTo(Succeed())
+	})
+
+	It("blocks a print of an agent that is not loaded until ctx ends, when Hang is set", func() {
+		r.Hang = true
+		ctx, cancel := context.WithCancel(GinkgoT().Context())
+		errs := make(chan error)
+
+		go func() {
+			_, _, err := r.Run(ctx, "launchctl", []string{"print", "gui/501/l"}, nil)
+			errs <- err
+		}()
+
+		Consistently(errs).ShouldNot(Receive())
+		cancel()
+		Eventually(errs).Should(Receive(MatchError(context.Canceled)))
 	})
 
 	It("fails a call with an argument Fail names, prints what Out names, and finds no command when Missing", func() {

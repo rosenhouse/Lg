@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/service"
 	"github.com/rosenhouse/lg/internal/testsupport/fakeservice"
 )
@@ -28,7 +29,7 @@ var _ = Describe("Manager", Label("install"), func() {
 	)
 
 	manager := func(goos string) service.Manager {
-		return service.Manager{GOOS: goos, Runner: runner, Env: map[string]string{"HOME": home}, UID: uid}
+		return service.Manager{GOOS: goos, Runner: runner, Env: map[string]string{"HOME": home}, UID: uid, Clock: clock.Real{}}
 	}
 
 	BeforeEach(func() {
@@ -306,22 +307,38 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(os.ReadFile(path)).To(ContainSubstring("/opt/lg2/bin/lg"))
 		})
 
-		It("keeps the old plist, and says so, when a booted-out agent does not unload", func() {
-			path, err := manager("darwin").Install(context.Background(), unit)
-			Expect(err).NotTo(HaveOccurred())
-			old, err := os.ReadFile(path)
-			Expect(err).NotTo(HaveOccurred())
-			runner.Lingering = 1 << 30
-			unit.Exe = "/opt/lg2/bin/lg"
-			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-			defer cancel()
+		DescribeTable("keeps the old plist, and says so, when a booted-out agent does not unload within 10s",
+			func(setup func(), waiters int) {
+				path, err := manager("darwin").Install(context.Background(), unit)
+				Expect(err).NotTo(HaveOccurred())
+				old, err := os.ReadFile(path)
+				Expect(err).NotTo(HaveOccurred())
+				setup()
+				unit.Exe = "/opt/lg2/bin/lg"
+				start := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+				clk := clock.NewFake(start)
+				m := manager("darwin")
+				m.Clock = clk
+				ctx, cancel := context.WithCancel(context.Background())
+				DeferCleanup(cancel)
+				errs := make(chan error, 1)
 
-			_, err = manager("darwin").Install(ctx, unit)
+				go func() {
+					_, err := m.Install(ctx, unit)
+					errs <- err
+				}()
+				Eventually(clk.Waiting).Should(Equal(waiters))
+				clk.Set(start.Add(10*time.Second - time.Nanosecond))
+				Consistently(errs).ShouldNot(Receive())
+				clk.Set(start.Add(10 * time.Second))
 
-			Expect(err).To(MatchError(ContainSubstring("still loaded")))
-			Expect(os.ReadFile(path)).To(Equal(old))
-			Expect(os.ReadDir(agents)).To(HaveLen(1))
-		})
+				Eventually(errs).Should(Receive(MatchError(ContainSubstring("still loaded"))))
+				Expect(os.ReadFile(path)).To(Equal(old))
+				Expect(os.ReadDir(agents)).To(HaveLen(1))
+			},
+			Entry("when print keeps finding it", func() { runner.Lingering = 1 << 30 }, 2),
+			Entry("when print hangs until it is killed", func() { runner.Hang = true }, 1),
+		)
 
 		It("leaves a loaded agent alone when it cannot create the log's dir", func() {
 			_, err := manager("darwin").Install(context.Background(), unit)

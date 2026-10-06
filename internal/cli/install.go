@@ -89,5 +89,5 @@ func executable(path string) (exe, file string, err error) {
 }
 
 func manager(deps *Deps) service.Manager {
-	return service.Manager{GOOS: deps.GOOS, Runner: deps.Runner, Env: deps.Env, UID: os.Getuid()}
+	return service.Manager{GOOS: deps.GOOS, Runner: deps.Runner, Env: deps.Env, UID: os.Getuid(), Clock: deps.Clock}
 }

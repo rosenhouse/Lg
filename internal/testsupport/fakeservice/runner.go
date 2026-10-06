@@ -20,7 +20,8 @@ import (
 // loaded from FragmentPath, which enable --now and restart start, and
 // disable and stop stop. It models one launchd agent, which bootstrap
 // loads, and bootout unloads after Lingering more prints; print fails while
-// the agent is not loaded.
+// the agent is not loaded. With Hang set, such a print blocks until ctx
+// ends, as one execx.Real kills at a deadline.
 type Runner struct {
 	Dir          string
 	Fail         map[string]string
@@ -31,6 +32,7 @@ type Runner struct {
 	Active       bool
 	Loaded       bool
 	Lingering    int
+	Hang         bool
 
 	mu        sync.Mutex
 	calls     []string
@@ -39,7 +41,18 @@ type Runner struct {
 	unloading int
 }
 
-func (r *Runner) Run(_ context.Context, name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
+func (r *Runner) Run(ctx context.Context, name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
+	stdout, stderr, err = r.run(name, args, env)
+	if errors.Is(err, errHang) {
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}
+	return stdout, stderr, err
+}
+
+var errHang = errors.New("hang")
+
+func (r *Runner) run(name string, args []string, env map[string]string) (stdout, stderr []byte, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, strings.Join(append([]string{name}, args...), " "))
@@ -105,6 +118,9 @@ func (r *Runner) launchctl(args []string) (stdout, stderr []byte, err error) {
 		if r.unloading > 0 {
 			r.unloading--
 			return nil, nil, nil
+		}
+		if !r.Loaded && r.Hang {
+			return nil, nil, errHang
 		}
 		if !r.Loaded {
 			return nil, []byte("Could not find service\n"), errors.New("exit status 113")

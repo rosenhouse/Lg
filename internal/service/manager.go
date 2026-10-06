@@ -28,7 +28,8 @@ type Manager struct {
 	// systemctl and launchctl run in it.
 	Env map[string]string
 	// UID names the launchd domain gui/<UID>.
-	UID int
+	UID   int
+	Clock clock.Clock
 }
 
 // Install writes u's unit file and starts it, restarting a service it
@@ -368,14 +369,21 @@ func (l launchd) stop(ctx context.Context) error {
 	if err := l.m.run(ctx, "launchctl", "bootout", l.target()); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, unloadWait)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	go func() {
+		select {
+		case <-l.m.Clock.After(unloadWait):
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	stillLoaded := fmt.Errorf("launchd has %s still loaded after bootout", l.target())
 	for l.loaded(ctx) {
 		select {
 		case <-ctx.Done():
 			return stillLoaded
-		case <-(clock.Real{}).After(100 * time.Millisecond):
+		case <-l.m.Clock.After(100 * time.Millisecond):
 		}
 	}
 	if ctx.Err() != nil {
