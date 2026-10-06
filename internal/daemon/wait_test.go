@@ -107,6 +107,25 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Expect(result(3)).To(Succeed())
 	})
 
+	It("waits while status.json does not parse, as the daemon will rewrite it", func() {
+		runDaemon()
+		writeStatus("{garbage")
+		done := wait(3)
+		polling()
+		Expect(done).NotTo(Receive())
+
+		served(3)
+		clk.Set(t0.Add(time.Second))
+
+		Eventually(done, time.Second).Should(Receive(BeNil()))
+	})
+
+	It("gives the parse error of status.json once the daemon has exited", func() {
+		writeStatus("{garbage")
+
+		Expect(result(3)).To(MatchError(ContainSubstring("status.json: invalid character 'g'")))
+	})
+
 	It("fails at once with the blocked reason when blocked.retry_at is past its deadline", func() {
 		runDaemon()
 		writeStatus(`{"served_request": 2, "blocked": {"kind": "rate_limit", "detail": "429", "retry_at": "2026-10-03T18:01:01Z"}}`)
@@ -136,16 +155,13 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Entry("blocked",
 			`{"served_request": 3, "last_sync_started_at": "2026-10-03T18:00:00Z", "blocked": {"kind": "auth", "detail": "401"}}`,
 			MatchError(failure.Blocked{Kind: failure.Auth, Detail: "401"})),
-		Entry("stopped early without blocking",
-			`{"served_request": 3, "last_sync_started_at": "2026-10-03T17:59:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T17:00:00Z"}`,
-			MatchError("the daemon's sync at 2026-10-03T17:59:00Z failed; its log says why")),
-		Entry("with no good sync yet",
-			`{"served_request": 3, "last_sync_started_at": "2026-10-03T17:59:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z"}`,
-			MatchError("the daemon's sync at 2026-10-03T17:59:00Z failed; its log says why")),
-		Entry("leaving pending units",
+		Entry("failed in the second its last good sync finished",
+			`{"served_request": 3, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "last_sync_errors": ["GET /actions/runs: 500"]}`,
+			MatchError("GET /actions/runs: 500")),
+		Entry("completed with errors",
 			`{"served_request": 3, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z",
-			  "repos": {"github.com/o/r": {"pending": [{"run": 1, "attempt": 2, "error": "502"}, {"run": 1, "artifact": 9, "error": "503"}]}}}`,
-			MatchError("run 1 attempt 2: 502\nrun 1 artifact 9: 503")),
+			  "last_sync_errors": ["watch.json: moved to watch.json.corrupt", "run 1 attempt 2: 502"]}`,
+			MatchError("watch.json: moved to watch.json.corrupt\nrun 1 attempt 2: 502")),
 		Entry("ok, serving a later request too", `{"served_request": 4, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z"}`, Succeed()),
 	)
 })
