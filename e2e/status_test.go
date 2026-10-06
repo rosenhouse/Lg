@@ -261,6 +261,28 @@ var _ = Describe("lg status", Label("status"), func() {
 	})
 })
 
+var _ = Describe("lg paths after a daemon left a log pending past twice sync_interval", Label("status"), func() {
+	It("warns that the unit is pending", func(ctx SpecContext) {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-2")
+		fake.Fail("blob", "/logs/111221661475.txt", fakegithub.Fault{Status: http.StatusServiceUnavailable})
+		env.WriteConfig(fake.URL())
+		first := env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		Eventually(first.Kill(), harness.ExitTimeout).Should(gexec.Exit())
+
+		env.SetNow(harness.DefaultNow().Add(21*time.Minute), fake)
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		session := env.Lg("paths")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		since := pendingSince(env)
+		Expect(since).To(BeTemporally("~", harness.DefaultNow(), harness.ExitTimeout))
+		Expect(string(session.Err.Contents())).To(Equal("lg: warning: 1 units pending since " + since.Format(time.RFC3339) + "; run `lg status`\n"))
+	}, daemonTimeout)
+})
+
 // withStuckLog gives an env synced at DefaultNow, then synced again a
 // minute later after attempt 2 appeared with one log the blob host answers
 // with 503.
