@@ -59,7 +59,7 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
 
 		st := env.Status()
-		Expect(timeAt(st, "next_sync_at")).To(BeTemporally("~", timeAt(st, "last_sync_started_at").Add(10*time.Minute), time.Second))
+		Expect(timeAt(st, "next_sync_at")).To(Equal(timeAt(st, "last_sync_started_at").Add(10 * time.Minute)))
 	}, daemonTimeout)
 
 	It("starts after the previous daemon was killed with SIGKILL", func(SpecContext) {
@@ -151,13 +151,13 @@ var _ = Describe("lg daemon run after config.yaml changes sync_interval from 1h 
 		env.WriteConfig(fake.URL(), "sync_interval: 1h")
 		env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
-		Expect(untilNext(env.Status())).To(BeNumerically("~", time.Hour, time.Second))
+		Expect(untilNext(env.Status())).To(Equal(time.Hour))
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m")
 		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
 
 		Eventually(cycle(env), cycleWait).Should(Equal(2.0))
-		Expect(untilNext(env.Status())).To(BeNumerically("~", 2*time.Minute, time.Second))
+		Expect(untilNext(env.Status())).To(Equal(2 * time.Minute))
 	}, daemonTimeout)
 })
 
@@ -176,7 +176,7 @@ var _ = Describe("lg daemon run after config.yaml changes while it waits for wri
 		Expect(writer.Release()).To(Succeed())
 
 		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
-		Expect(untilNext(env.Status())).To(BeNumerically("~", 2*time.Minute, time.Second))
+		Expect(untilNext(env.Status())).To(Equal(2 * time.Minute))
 	}, daemonTimeout)
 })
 
@@ -194,7 +194,7 @@ var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemo
 		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
 
 		Eventually(cycle(env), cycleWait).Should(Equal(2.0))
-		Expect(untilNext(env.Status())).To(BeNumerically("~", time.Hour, time.Second))
+		Expect(untilNext(env.Status())).To(Equal(time.Hour))
 		Expect(env.Status()).To(HaveKeyWithValue("config_error", ContainSubstring("colour")))
 	}, daemonTimeout)
 })

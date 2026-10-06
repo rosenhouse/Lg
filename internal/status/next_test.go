@@ -69,7 +69,7 @@ var _ = Describe("Next", Label("status"), func() {
 	It("records a daemon's pid, version, next sync, served request and config error", func() {
 		c := good(started)
 		c.Daemon = &status.Daemon{PID: 4242, Version: "v1.2.3"}
-		c.NextSyncAt = started.Add(10*time.Minute + 500*time.Millisecond)
+		c.NextSyncAt = started.Add(10 * time.Minute)
 		c.ServedRequest = 7
 		c.ConfigError = errors.New("config.yaml:\n unknown key colour")
 
@@ -77,7 +77,7 @@ var _ = Describe("Next", Label("status"), func() {
 
 		Expect(st.DaemonPID).To(Equal(ptr(4242)))
 		Expect(st.DaemonVersion).To(Equal(ptr("v1.2.3")))
-		Expect(st.NextSyncAt).To(Equal(ptr(started.Add(10*time.Minute + 500*time.Millisecond).UTC())))
+		Expect(st.NextSyncAt).To(Equal(ptr(started.Add(10 * time.Minute).UTC())))
 		Expect(st.ServedRequest).To(Equal(int64(7)))
 		Expect(st.ConfigError).To(Equal(ptr("config.yaml: unknown key colour")))
 	})
