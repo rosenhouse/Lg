@@ -23,8 +23,8 @@ type Unit struct {
 	Log string
 }
 
-// Label is the launchd label of the service named name.
-func Label(name string) string { return "com.github.rosenhouse." + name }
+// label is the launchd label of the service named name.
+func label(name string) string { return "com.github.rosenhouse." + name }
 
 // RenderSystemd gives u as a systemd user unit.
 func RenderSystemd(u Unit) ([]byte, error) {
@@ -62,7 +62,7 @@ func RenderLaunchd(u Unit) ([]byte, error) {
 <dict>
 	<key>Label</key>
 `)
-	fmt.Fprintf(&b, "\t<string>%s</string>\n", xmlText(Label(u.Name)))
+	fmt.Fprintf(&b, "\t<string>%s</string>\n", xmlText(label(u.Name)))
 	b.WriteString("\t<key>ProgramArguments</key>\n\t<array>\n")
 	for _, arg := range []string{u.Exe, "daemon", "run"} {
 		fmt.Fprintf(&b, "\t\t<string>%s</string>\n", xmlText(arg))

@@ -117,7 +117,7 @@ func (m Manager) backend(name string) (backend, error) {
 		}
 		return systemd{m: m, unit: name + ".service", dir: filepath.Join(config, "systemd", "user")}, nil
 	case "darwin":
-		return launchd{m: m, label: Label(name), dir: filepath.Join(home, "Library", "LaunchAgents")}, nil
+		return launchd{m: m, label: label(name), dir: filepath.Join(home, "Library", "LaunchAgents")}, nil
 	}
 	return nil, fmt.Errorf("lg daemon install supports linux and darwin, not %s", m.GOOS)
 }
