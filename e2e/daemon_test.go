@@ -47,23 +47,23 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 
 	It("syncs at start, and after the fake advances to after-attempt-2 and `lg sync` writes a request, publishes attempt-2", func(ctx SpecContext) {
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(attemptDir(env, 1)).To(BeADirectory())
 
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
-		Eventually(ctx, env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
-		Eventually(ctx, attemptDir, cycleWait).WithArguments(env, 2).Should(BeADirectory())
+		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
+		Eventually(attemptDir, cycleWait).WithContext(ctx).WithArguments(env, 2).Should(BeADirectory())
 	}, daemonTimeout)
 
 	It("warns that it never synced without telling itself to run lg sync", func(ctx SpecContext) {
 		running := env.Start("daemon", "run")
 
-		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say("^lg: warning: never synced\n"))
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("^lg: warning: never synced\n"))
 	}, daemonTimeout)
 
 	It("sets next_sync_at 10m after last_sync_started_at when sync_interval is unset", func(ctx SpecContext) {
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 
 		st := env.Status()
 		Expect(timeAt(st, "next_sync_at")).To(Equal(timeAt(st, "last_sync_started_at").Add(10 * time.Minute)))
@@ -71,11 +71,11 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 
 	It("starts after the previous daemon was killed with SIGKILL", func(ctx SpecContext) {
 		first := env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
-		Eventually(ctx, first.Kill(), harness.ExitTimeout).Should(gexec.Exit())
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		Eventually(first.Kill(), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit())
 
 		second := env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(2.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(env.Status()).To(HaveKeyWithValue("daemon_pid", float64(second.Command.Process.Pid)))
 		Expect(second).NotTo(gexec.Exit())
 	}, daemonTimeout)
@@ -89,11 +89,11 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		env.Start("daemon", "run")
-		Eventually(ctx, held(env, "daemon.lock"), cycleWait).Should(BeTrue())
-		Consistently(ctx, dead, 2*time.Second).Should(BeADirectory())
+		Eventually(held(env, "daemon.lock"), cycleWait).WithContext(ctx).Should(BeTrue())
+		Consistently(dead, 2*time.Second).WithContext(ctx).Should(BeADirectory())
 
 		Expect(writer.Release()).To(Succeed())
-		Eventually(ctx, env.Tmp(), cycleWait).Should(matchers.BeSwept())
+		Eventually(env.Tmp(), cycleWait).WithContext(ctx).Should(matchers.BeSwept())
 	}, daemonTimeout)
 
 	It("exits 0 on SIGTERM mid-cycle, releases its locks and leaves no partial unit", func(ctx SpecContext) {
@@ -101,11 +101,11 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(env.State(), "sync-request"), []byte("7\n"), 0o644)).To(Succeed())
 		running := env.Start("daemon", "run")
-		Eventually(ctx, fake.Requests, cycleWait).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
+		Eventually(fake.Requests, cycleWait).WithContext(ctx).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
 
 		running.Signal(syscall.SIGTERM)
 
-		Eventually(ctx, running, harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(running, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 		Expect(env.Status()).To(HaveKeyWithValue("served_request", 0.0))
 		Expect(filepath.Join(env.State(), "daemon.pid")).NotTo(BeAnExistingFile())
 		Expect(os.ReadFile(filepath.Join(env.State(), "daemon.lock"))).To(BeEmpty())
@@ -120,27 +120,27 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(writer.Release)
 		running := env.Start("daemon", "run")
-		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say("waiting for .*write.lock"))
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("waiting for .*write.lock"))
 
 		running.Signal(syscall.SIGTERM)
 
-		Eventually(ctx, running, harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(running, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 		Expect(filepath.Join(env.State(), "status.json")).NotTo(BeAnExistingFile())
 	}, daemonTimeout)
 
 	It("keeps running on SIGHUP when started with SIGHUP ignored, as by nohup", func(ctx SpecContext) {
 		running := env.Sh(`trap "" HUP; exec lg daemon run`)
 		DeferCleanup(func() { running.Kill().Wait(harness.ExitTimeout) })
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 
 		running.Signal(syscall.SIGHUP)
 
-		Consistently(ctx, running, 2*time.Second).ShouldNot(gexec.Exit())
+		Consistently(running, 2*time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
 	}, daemonTimeout)
 
 	It("keeps its schedule after a cycle that cannot take write.lock", func(ctx SpecContext) {
 		running := env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		writeLock := filepath.Join(env.State(), "write.lock")
 		Expect(os.Remove(writeLock)).To(Succeed())
 		Expect(os.Mkdir(writeLock, 0o755)).To(Succeed())
@@ -148,8 +148,8 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
 
 		failed := regexp.MustCompile(`lg: sync at (\S+): open \S+/write.lock: is a directory; next sync at (\S+)\n`)
-		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say(failed.String()))
-		Consistently(ctx, func() int { return len(failed.FindAll(running.Err.Contents(), -1)) }, 2*time.Second).Should(Equal(1))
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say(failed.String()))
+		Consistently(func() int { return len(failed.FindAll(running.Err.Contents(), -1)) }, 2*time.Second).WithContext(ctx).Should(Equal(1))
 		times := failed.FindSubmatch(running.Err.Contents())
 		started, err := time.Parse(time.RFC3339, string(times[1]))
 		Expect(err).NotTo(HaveOccurred())
@@ -163,35 +163,35 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		running := env.Sh(fmt.Sprintf(`exec lg daemon run 2>>'%s'`, log))
 		DeferCleanup(func() { running.Kill().Wait(harness.ExitTimeout) })
 
-		Eventually(ctx, func() (string, error) {
+		Eventually(func() (string, error) {
 			content, err := os.ReadFile(log)
 			return string(content), err
-		}, cycleWait).Should(MatchRegexp(`^lg: sync at \S+: ok; next sync at \S+\n$`))
+		}, cycleWait).WithContext(ctx).Should(MatchRegexp(`^lg: sync at \S+: ok; next sync at \S+\n$`))
 	}, daemonTimeout)
 
 	It("asks gh for a token every cycle, so a rotated token is used next time", func(ctx SpecContext) {
 		env.GH().SetToken("gho_first")
 		fake.RequireToken("gho_first")
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(env.Status()).To(HaveKeyWithValue("blocked", BeNil()))
 
 		env.GH().SetToken("gho_rotated")
 		fake.RequireToken("gho_rotated")
-		Eventually(ctx, env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(2.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(env.Status()).To(HaveKeyWithValue("blocked", BeNil()))
 		Expect(env.GH().Calls()).To(HaveLen(2))
 	}, daemonTimeout)
 
 	It("reconciles state/lg.db after each cycle, so lg.db lists attempt-2 before any reader runs", func(ctx SpecContext) {
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
-		Eventually(ctx, env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
-		Eventually(ctx, indexedAttempts(ctx, env), cycleWait).Should(ConsistOf(1, 2))
+		Eventually(indexedAttempts(ctx, env), cycleWait).WithContext(ctx).Should(ConsistOf(1, 2))
 	}, daemonTimeout)
 })
 
@@ -199,13 +199,13 @@ var _ = Describe("lg daemon run after config.yaml changes sync_interval from 1h 
 	It("sets next_sync_at 2m after the next cycle starts", func(ctx SpecContext) {
 		env, fake := newDaemonEnv("sync_interval: 1h")
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(untilNext(env.Status())).To(Equal(time.Hour))
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m")
-		Eventually(ctx, env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(2.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(untilNext(env.Status())).To(Equal(2 * time.Minute))
 	}, daemonTimeout)
 })
@@ -217,12 +217,12 @@ var _ = Describe("lg daemon run after config.yaml changes while it waits for wri
 		writer, err := lock.Wait(filepath.Join(env.State(), "write.lock"), time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
 		running := env.Start("daemon", "run")
-		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say("waiting for .*write.lock"))
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say("waiting for .*write.lock"))
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m")
 		Expect(writer.Release()).To(Succeed())
 
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(untilNext(env.Status())).To(Equal(2 * time.Minute))
 	}, daemonTimeout)
 })
@@ -231,14 +231,14 @@ var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemo
 	It("keeps the last good config and records the error in status.json", func(ctx SpecContext) {
 		env, fake := newDaemonEnv("sync_interval: 1h")
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		Expect(env.Status()).To(HaveKeyWithValue("config_error", BeNil()))
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m", "colour: blue")
 		// lg sync refuses an invalid config.yaml, so the spec requests the cycle itself.
 		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
 
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(2.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		Expect(untilNext(env.Status())).To(Equal(time.Hour))
 		Expect(env.Status()).To(HaveKeyWithValue("config_error", ContainSubstring("colour")))
 	}, daemonTimeout)
@@ -248,11 +248,11 @@ var _ = Describe("a second lg daemon run on the same store", Label("daemon"), fu
 	It("exits 1 printing `already running (pid N)`", func(ctx SpecContext) {
 		env, _ := newDaemonEnv()
 		first := env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 
 		second := env.Lg("daemon", "run")
 
-		Eventually(ctx, second, harness.ExitTimeout).Should(gexec.Exit(1))
+		Eventually(second, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(1))
 		Expect(second.Err).To(gbytes.Say(`already running \(pid %d\)`, first.Command.Process.Pid))
 		Expect(first).NotTo(gexec.Exit())
 	}, daemonTimeout)
@@ -264,7 +264,7 @@ var _ = Describe("lg daemon run when rate limited", Label("daemon"), func() {
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "1800"}})
 
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 
 		st := env.Status()
 		Expect(st["blocked"]).To(HaveKeyWithValue("kind", "rate_limit"))
@@ -281,17 +281,17 @@ var _ = Describe("lg daemon run restarted while rate limited", Label("daemon"), 
 		env, fake := newDaemonEnv()
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "3600"}})
 		first := env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		first.Signal(syscall.SIGTERM)
-		Eventually(ctx, first, harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(first, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 		dead := filepath.Join(env.Tmp(), "dead-writer")
 		Expect(os.MkdirAll(dead, 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(dead, "log.txt"), []byte("partial"), 0o644)).To(Succeed())
 
 		env.Start("daemon", "run")
 
-		Eventually(ctx, env.Tmp(), cycleWait).Should(matchers.BeSwept())
-		Consistently(ctx, cycle(env), 3*time.Second).Should(Equal(1.0))
+		Eventually(env.Tmp(), cycleWait).WithContext(ctx).Should(matchers.BeSwept())
+		Consistently(cycle(env), 3*time.Second).WithContext(ctx).Should(Equal(1.0))
 	}, daemonTimeout)
 })
 
@@ -302,7 +302,7 @@ var _ = Describe("lg daemon run with a recorded retry_at over a day away", Label
 
 		running := env.Start("daemon", "run")
 
-		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say(`lg: blocked until 2026-10-04T18:00:\d\dZ; first sync then\n`))
+		Eventually(running.Err, cycleWait).WithContext(ctx).Should(gbytes.Say(`lg: blocked until 2026-10-04T18:00:\d\dZ; first sync then\n`))
 	}, daemonTimeout)
 })
 
@@ -311,11 +311,11 @@ var _ = Describe("lg sync without --wait, with a daemon running", Label("daemon"
 		env, fake := newDaemonEnv()
 		DeferCleanup(fake.Hold(heldLog))
 		env.Start("daemon", "run")
-		Eventually(ctx, fake.Requests, cycleWait).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
+		Eventually(fake.Requests, cycleWait).WithContext(ctx).Should(ContainElement(HaveField("Path", HaveSuffix(heldLog))))
 
 		session := env.Lg("sync")
 
-		Eventually(ctx, session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(session, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 		Expect(os.ReadFile(filepath.Join(env.State(), "sync-request"))).To(Equal([]byte("1\n")))
 	}, daemonTimeout)
 })
@@ -324,12 +324,12 @@ var _ = Describe("lg sync with a daemon running and an invalid config.yaml", Lab
 	It("exits 2 naming the error, as without a daemon, and sends no request", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		env.WriteConfig(fake.URL(), "sync_interval: 30s")
 
 		session := env.Lg("sync")
 
-		Eventually(ctx, session, harness.ExitTimeout).Should(gexec.Exit(2))
+		Eventually(session, harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(2))
 		Expect(session.Err).To(gbytes.Say("sync_interval must be at least 1m"))
 		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
 	}, daemonTimeout)
@@ -340,13 +340,13 @@ var _ = Describe("lg sync with a daemon blocked until a future retry_at", Label(
 		env, fake := newDaemonEnv()
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "8"}, Times: 1})
 		env.Start("daemon", "run")
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
 		retryAt := timeAt(env.Status()["blocked"].(map[string]any), "retry_at")
 
-		Eventually(ctx, env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(env.Lg("sync"), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit(0))
 
-		Consistently(ctx, cycle(env), 3*time.Second).Should(Equal(1.0))
-		Eventually(ctx, cycle(env), cycleWait).Should(Equal(2.0))
+		Consistently(cycle(env), 3*time.Second).WithContext(ctx).Should(Equal(1.0))
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
 		st := env.Status()
 		Expect(timeAt(st, "last_sync_started_at")).To(BeTemporally(">=", retryAt.Truncate(time.Second)))
 		Expect(st).To(HaveKeyWithValue("served_request", 1.0))
