@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
@@ -132,15 +133,20 @@ var _ = DescribeTable("lg paths --since and --until, relative to LG_TEST_NOW 202
 	Entry("a duration back to after the start", "--until", "3h", true),
 )
 
-var _ = Describe("lg paths --job", Label("paths"), func() {
-	It("takes a comma as part of the glob", func() {
+var _ = DescribeTable("lg paths takes a comma as part of the value of", Label("paths"),
+	func(flag, value string, printed types.GomegaMatcher) {
 		c := harness.NewCLI()
+		comma := scenario.RenameWorkflow(scenario.OnBranch(scenario.Clone(scenario.Recorded(fixtureRun, "after-attempt-1"), 1), "fix,retry"), 1, "ci, nightly")
+		Expect(c.Fake.AddRun(comma)).To(Succeed())
 		Expect(c.Main("sync")).To(Equal(0))
 
-		Expect(c.Main("paths", "--job", "build (ubuntu-latest, 1.22)")).To(Equal(0))
-		Expect(strings.Fields(c.Stdout.String())).To(ConsistOf(HaveSuffix("_build-ubuntu-latest-1.22/log.txt")))
-	})
-})
+		Expect(c.Main("paths", flag, value)).To(Equal(0))
+		Expect(strings.Fields(c.Stdout.String())).To(printed)
+	},
+	Entry("--branch fix,retry", "--branch", "fix,retry", And(HaveLen(10), HaveEach(ContainSubstring("/1_")))),
+	Entry("--workflow 'ci, nightly'", "--workflow", "ci, nightly", HaveLen(20)),
+	Entry("--job 'build (ubuntu-latest, 1.22)'", "--job", "build (ubuntu-latest, 1.22)", And(HaveLen(2), HaveEach(HaveSuffix("_build-ubuntu-latest-1.22/log.txt")))),
+)
 
 var _ = DescribeTable("lg paths exits 2", Label("paths"),
 	func(args []string, message string) {
