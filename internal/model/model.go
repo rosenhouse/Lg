@@ -17,16 +17,18 @@ type Run struct {
 	HeadSHA    string    `json:"head_sha"`
 	CreatedAt  time.Time `json:"created_at"`
 	// RunStartedAt is when the latest attempt, or the one fetched, started.
-	RunStartedAt time.Time     `json:"run_started_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
-	Status       string        `json:"status"`
-	Conclusion   string        `json:"conclusion"`
-	RunAttempt   int           `json:"run_attempt"`
-	Repository   Repository    `json:"repository"`
-	WorkflowID   int64         `json:"workflow_id"`
-	Event        string        `json:"event"`
-	PullRequests []PullRequest `json:"pull_requests"`
-	DisplayTitle string        `json:"display_title"`
+	RunStartedAt time.Time  `json:"run_started_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	Status       string     `json:"status"`
+	Conclusion   string     `json:"conclusion"`
+	RunAttempt   int        `json:"run_attempt"`
+	Repository   Repository `json:"repository"`
+	// HeadRepository is nil for a run from a deleted fork.
+	HeadRepository *Repository   `json:"head_repository,omitempty"`
+	WorkflowID     int64         `json:"workflow_id"`
+	Event          string        `json:"event"`
+	PullRequests   []PullRequest `json:"pull_requests"`
+	DisplayTitle   string        `json:"display_title"`
 }
 
 type PullRequest struct {
@@ -34,8 +36,12 @@ type PullRequest struct {
 }
 
 type Repository struct {
+	ID       int64  `json:"id,omitempty"`
 	FullName string `json:"full_name"`
 }
+
+// FromFork reports whether the run's head repository is another than its repository.
+func (r Run) FromFork() bool { return false }
 
 type Job struct {
 	ID          int64      `json:"id"`
@@ -94,9 +100,14 @@ type Artifact struct {
 
 // ArtifactRun is the run an artifact lists itself under.
 type ArtifactRun struct {
-	HeadBranch string `json:"head_branch"`
-	HeadSHA    string `json:"head_sha"`
+	RepositoryID     int64  `json:"repository_id"`
+	HeadRepositoryID int64  `json:"head_repository_id"`
+	HeadBranch       string `json:"head_branch"`
+	HeadSHA          string `json:"head_sha"`
 }
+
+// FromFork reports whether the run's head repository is another than its repository.
+func (r ArtifactRun) FromFork() bool { return false }
 
 // ArtifactAction is what lg does with a listed artifact.
 type ArtifactAction string
