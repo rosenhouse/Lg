@@ -24,6 +24,8 @@ type Outcome struct {
 	Interval time.Duration
 	RetryAt  time.Time
 	Err      error
+	// Skipped is whether the cycle did not run, so it served no request.
+	Skipped bool
 }
 
 // Loop runs Cycle at once, and then when each Outcome says the next is due, or when
@@ -52,13 +54,14 @@ func (l *Loop) Run(ctx context.Context) error {
 	}
 	var served int64
 	for ctx.Err() == nil {
+		serving := served
 		if n, err := l.Requested(); err != nil {
 			l.logf("%s", err)
 		} else {
-			served = n
+			serving = n
 		}
 		l.truncateLog()
-		out := l.Cycle(ctx, served)
+		out := l.Cycle(ctx, serving)
 		if ctx.Err() != nil {
 			l.logf("stopped")
 			return nil
@@ -72,7 +75,13 @@ func (l *Loop) Run(ctx context.Context) error {
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
-		if err := l.wait(ctx, served, next, out.RetryAt); err != nil {
+		retryAt := out.RetryAt
+		if !out.Skipped {
+			served = serving
+		} else if soonest := l.Clock.Now().Add(pollInterval); soonest.After(retryAt) {
+			retryAt = soonest
+		}
+		if err := l.wait(ctx, served, next, retryAt); err != nil {
 			return err
 		}
 	}

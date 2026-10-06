@@ -96,7 +96,7 @@ type daemonCycle struct {
 func (d *daemonCycle) run(ctx context.Context, served int64) daemon.Outcome {
 	held, err := lockWrites(ctx, d.target.roots, d.deps, writeLockWait)
 	if err != nil {
-		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err}
+		return daemon.Outcome{Started: d.deps.Clock.Now(), Interval: time.Duration(d.target.cfg.SyncInterval), Err: err, Skipped: true}
 	}
 	defer func() { _ = held.Release() }()
 	fresh, configErr := loadTarget(d.deps.Env)

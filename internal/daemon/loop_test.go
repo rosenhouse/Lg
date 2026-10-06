@@ -189,6 +189,24 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(5*time.Minute), 1)
 	})
 
+	It("retries a request a second after a cycle that did not run, as when it could not take write.lock", func() {
+		skipped := outcomeAt(t0.Add(time.Second))
+		skipped.Skipped = true
+		e := newLoopEnv(outcomeAt(t0), skipped, outcomeAt(t0.Add(2*time.Second)))
+		e.run()
+		e.expectCycle(t0, 0)
+		e.waiting()
+		e.requested.Store(1)
+		e.set(t0.Add(time.Second))
+		e.expectCycle(t0.Add(time.Second), 1)
+
+		e.waiting()
+		e.expectNoCycle()
+		e.set(t0.Add(2 * time.Second))
+
+		e.expectCycle(t0.Add(2*time.Second), 1)
+	})
+
 	It("coalesces requests during a cycle into one follow-up, which serves them all", func() {
 		e := newLoopEnv(outcomeAt(t0))
 		e.during = func(context.Context) {
