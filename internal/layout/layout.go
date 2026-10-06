@@ -118,4 +118,37 @@ type Location struct {
 	File string
 }
 
-func Parse(path string) (Location, error) { return Location{}, nil }
+// Parse decodes a path relative to data/ that is a run dir or below one.
+func Parse(path string) (Location, error) {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(path)), "/")
+	if filepath.IsAbs(path) || len(parts) < 6 || isDots(parts[0]) || !IsRepo(parts[1]+"/"+parts[2]) || parts[3] != "runs" {
+		return Location{}, fmt.Errorf("%s is not in a run dir", path)
+	}
+	runID, ok := DirID(parts[5])
+	if _, err := time.Parse(time.DateOnly, parts[4]); err != nil || !ok {
+		return Location{}, fmt.Errorf("%s is not in a run dir", path)
+	}
+	loc := Location{Host: parts[0], Repo: parts[1] + "/" + parts[2], RunID: runID, RunDir: filepath.Join(parts[:6]...)}
+	rest := parts[6:]
+	switch {
+	case len(rest) == 0:
+	case rest[0] == "artifacts" && len(rest) > 1:
+		if loc.ArtifactID, ok = DirID(rest[1]); !ok {
+			return Location{}, fmt.Errorf("%s: %s is not an artifact dir", path, rest[1])
+		}
+		loc.ArtifactDir, rest = filepath.Join(parts[:8]...), rest[2:]
+	case rest[0] != "artifacts":
+		if loc.Attempt, ok = AttemptNumber(rest[0]); !ok {
+			return Location{}, fmt.Errorf("%s: %s is not an attempt dir", path, rest[0])
+		}
+		loc.AttemptDir, rest = filepath.Join(parts[:7]...), rest[1:]
+		if len(rest) > 1 && rest[0] == "jobs" {
+			if loc.JobID, ok = DirID(rest[1]); !ok {
+				return Location{}, fmt.Errorf("%s: %s is not a job dir", path, rest[1])
+			}
+			loc.JobDir, rest = filepath.Join(parts[:9]...), rest[2:]
+		}
+	}
+	loc.File = filepath.Join(rest...)
+	return loc, nil
+}
