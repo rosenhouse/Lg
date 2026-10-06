@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -32,6 +34,20 @@ type pathsCmd struct {
 
 func (pathsCmd) Help() string {
 	return "A unit must match every flag given, and any value of a flag given more than once."
+}
+
+// Validate refuses an empty value, which a filter would take as matching every
+// run or none.
+func (p pathsCmd) Validate() error {
+	flags := map[string][]string{
+		"branch": p.Branch, "sha": p.SHA, "workflow": p.Workflow, "job": p.Job, "event": p.Event, "conclusion": p.Conclusion,
+	}
+	for _, flag := range slices.Sorted(maps.Keys(flags)) {
+		if slices.Contains(flags[flag], "") {
+			return fmt.Errorf("--%s must not be empty", flag)
+		}
+	}
+	return nil
 }
 
 // moment is a --since or --until: a duration before now, or a time.
