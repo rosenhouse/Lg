@@ -28,6 +28,8 @@ func (daemonRunCmd) Run(deps *Deps) error {
 	// Handling signals before locking lets a signal at any point end the daemon cleanly.
 	ctx, stop := signalContext()
 	defer stop()
+	// A closed stderr, as when a journal's stream breaks, then gives EPIPE, which logging ignores.
+	signal.Ignore(syscall.SIGPIPE)
 	t, err := loadTarget(deps.Env)
 	if err != nil {
 		return err

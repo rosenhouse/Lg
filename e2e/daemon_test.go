@@ -138,6 +138,19 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Consistently(running, 2*time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
 	}, daemonTimeout)
 
+	It("keeps running after the reader of its stderr exits", func(ctx SpecContext) {
+		piped := env.Sh(`lg daemon run 2>&1 >/dev/null | head -n 1`)
+		DeferCleanup(func() { piped.Kill().Wait(harness.ExitTimeout) })
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
+		DeferCleanup(syscall.Kill, int(env.Status()["daemon_pid"].(float64)), syscall.SIGKILL)
+		Eventually(piped.Out, cycleWait).WithContext(ctx).Should(gbytes.Say("\n"))
+
+		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
+
+		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		Consistently(held(env, "daemon.lock"), 2*time.Second).WithContext(ctx).Should(BeTrue())
+	}, daemonTimeout)
+
 	It("keeps its schedule after a cycle that cannot take write.lock", func(ctx SpecContext) {
 		running := env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(1.0))
