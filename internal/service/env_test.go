@@ -55,6 +55,13 @@ var _ = Describe("FindGH", Label("install"), func() {
 			Expect(os.Chmod(gh, 0o644)).To(Succeed())
 			return map[string]string{"LG_GH": gh}
 		}),
+		Entry("with gh only in a relative PATH dir", func() map[string]string {
+			wd, err := os.Getwd()
+			Expect(err).NotTo(HaveOccurred())
+			rel, err := filepath.Rel(wd, dir)
+			Expect(err).NotTo(HaveOccurred())
+			return map[string]string{"PATH": rel}
+		}),
 		Entry("with LG_GH naming a dir", func() map[string]string { return map[string]string{"LG_GH": dir} }),
 	)
 })
