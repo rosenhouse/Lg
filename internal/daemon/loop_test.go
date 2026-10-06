@@ -103,9 +103,9 @@ func outcomeAt(at time.Time) daemon.Outcome {
 
 var _ = Describe("Loop", Label("daemon"), func() {
 	It("runs the first cycle at once, and each next at its outcome's Next", func() {
-		blocked := outcomeAt(t0.Add(10 * time.Minute))
-		blocked.RetryAt, blocked.Next = t0.Add(30*time.Minute), t0.Add(30*time.Minute)
-		e := newLoopEnv(outcomeAt(t0), blocked, outcomeAt(t0.Add(30*time.Minute)))
+		late := outcomeAt(t0.Add(10 * time.Minute))
+		late.Next = t0.Add(30 * time.Minute)
+		e := newLoopEnv(outcomeAt(t0), late, outcomeAt(t0.Add(30*time.Minute)))
 		e.run()
 
 		e.expectCycle(t0, 0)
