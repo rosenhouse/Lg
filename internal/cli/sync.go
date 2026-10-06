@@ -25,20 +25,16 @@ import (
 type syncCmd struct{}
 
 func (syncCmd) Run(deps *Deps) error {
-	roots, err := config.Locations(deps.Env)
+	t, err := loadTarget(deps.Env)
 	if err != nil {
 		return err
 	}
-	running, err := lock.Held(filepath.Join(roots.State, "daemon.lock"))
+	running, err := lock.Held(filepath.Join(t.roots.State, "daemon.lock"))
 	if err != nil {
 		return failure.FromErrno(err)
 	}
 	if running {
-		return requestSync(roots, deps)
-	}
-	t, err := loadTarget(deps.Env)
-	if err != nil {
-		return err
+		return requestSync(t.roots, deps)
 	}
 	held, err := lockWrites(context.Background(), t.roots, deps, writeLockWait)
 	if err != nil {

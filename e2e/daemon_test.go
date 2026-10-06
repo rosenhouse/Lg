@@ -17,6 +17,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
@@ -189,7 +190,8 @@ var _ = Describe("lg daemon run after config.yaml becomes invalid", Label("daemo
 		Expect(env.Status()).To(HaveKeyWithValue("config_error", BeNil()))
 
 		env.WriteConfig(fake.URL(), "sync_interval: 2m", "colour: blue")
-		Eventually(env.Lg("sync"), harness.ExitTimeout).Should(gexec.Exit(0))
+		// lg sync refuses an invalid config.yaml, so the spec requests the cycle itself.
+		Expect(daemon.Request(env.State(), clock.Real{})).To(Equal(int64(1)))
 
 		Eventually(cycle(env), cycleWait).Should(Equal(2.0))
 		Expect(untilNext(env.Status())).To(BeNumerically("~", time.Hour, time.Second))
@@ -243,6 +245,23 @@ var _ = Describe("lg sync without --wait, with a daemon running", Label("daemon"
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(os.ReadFile(filepath.Join(env.State(), "sync-request"))).To(Equal([]byte("1\n")))
+	}, daemonTimeout)
+})
+
+var _ = Describe("lg sync with a daemon running and an invalid config.yaml", Label("daemon"), func() {
+	It("exits 2 naming the error, as without a daemon, and sends no request", func(SpecContext) {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
+		env.WriteConfig(fake.URL(), "sync_interval: 30s")
+
+		session := env.Lg("sync")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(2))
+		Expect(session.Err).To(gbytes.Say("sync_interval must be at least 1m"))
+		Expect(filepath.Join(env.State(), "sync-request")).NotTo(BeAnExistingFile())
 	}, daemonTimeout)
 })
 
