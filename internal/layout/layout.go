@@ -152,3 +152,13 @@ func Parse(path string) (Location, error) {
 	loc.File = filepath.Join(rest...)
 	return loc, nil
 }
+
+// Hit is a line rg or grep printed: a path, and the line number and text that
+// follow it when they do.
+type Hit struct {
+	Path string
+	Line int
+	Text string
+}
+
+func ParseHit(hit string, exists func(path string) bool) (Hit, bool) { return Hit{}, false }
