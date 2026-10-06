@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"path/filepath"
 
 	"github.com/rosenhouse/lg/internal/model"
 )
@@ -28,21 +27,31 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	w := jobSource.where(Filter{Jobs: f.Jobs})
 	runs := flipRuns.where(f)
 	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
-	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.has_log, x.path, s.name, s.conclusion FROM " +
+	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
 		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY x.path, s.number"
 	jobs, restarted, err := readOrStartOver(ctx, ix, func() (attemptJobs, error) { return ix.attemptJobs(ctx, query, w.args) })
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
+	unread := []error{restarted}
+	for i, dir := range jobs.dirs {
+		logs, err := regular(dir, "log.txt")
+		if len(logs) > 0 {
+			jobs.jobs[i].Log = logs[0]
+		}
+		unread = append(unread, err)
+	}
 	var flips []Flip
 	for _, flip := range model.RerunFlips(jobs.jobs) {
 		flips = append(flips, Flip{Flip: flip, HeadSHA: jobs.headSHAs[flip.RunID]})
 	}
-	return flips, restarted
+	return flips, errors.Join(unread...)
 }
 
+// attemptJobs holds jobs read from the index, without their logs, and the dir of each.
 type attemptJobs struct {
 	jobs     []model.AttemptJob
+	dirs     []string
 	headSHAs map[int64]string
 }
 
@@ -58,17 +67,14 @@ func (ix *Index) attemptJobs(ctx context.Context, query string, args []any) (att
 		var (
 			j                        model.AttemptJob
 			sha, path                string
-			hasLog                   bool
 			stepName, stepConclusion sql.NullString
 		)
-		if err := rows.Scan(&j.RunID, &sha, &j.Attempt, &j.Job.ID, &j.Job.Name, &j.Kind, &j.Job.Conclusion, &hasLog, &path, &stepName, &stepConclusion); err != nil {
+		if err := rows.Scan(&j.RunID, &sha, &j.Attempt, &j.Job.ID, &j.Job.Name, &j.Kind, &j.Job.Conclusion, &path, &stepName, &stepConclusion); err != nil {
 			return attemptJobs{}, errors.Join(ix.dbError(err), rows.Close())
 		}
 		if path != lastPath {
-			if hasLog {
-				j.Log = filepath.Join(path, "log.txt")
-			}
 			read.jobs = append(read.jobs, j)
+			read.dirs = append(read.dirs, path)
 			read.headSHAs[j.RunID] = sha
 			lastPath = path
 		}

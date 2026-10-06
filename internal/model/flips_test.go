@@ -123,6 +123,14 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 		Entry("neutral", "neutral", outcomes(2, "success", 3, "failure")),
 	)
 
+	It("lists the logs of a flip without the jobs that have none", func() {
+		noLog := job(1, 2, 21, "test", "success")
+		noLog.Log = ""
+		flips := model.RerunFlips([]model.AttemptJob{job(1, 1, 11, "test", "failure"), noLog})
+
+		Expect(flips).To(HaveExactElements(HaveField("Logs", []string{"attempt-1/11/log.txt"})))
+	})
+
 	It("reports nothing for a name that only failed, or only passed and was skipped", func() {
 		Expect(model.RerunFlips([]model.AttemptJob{
 			job(1, 1, 11, "broken", "failure"),

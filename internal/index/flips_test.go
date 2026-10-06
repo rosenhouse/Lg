@@ -2,6 +2,9 @@ package index_test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,14 +15,13 @@ import (
 
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
 var _ = Describe("index.RerunFlips", Label("flakes"), func() {
-	const (
-		carried = 2
-	)
+	const carried = 2
 	var (
 		env *harness.InProcessEnv
 		ix  *index.Index
@@ -28,8 +30,10 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 	BeforeEach(func(ctx SpecContext) {
 		env = harness.InProcess()
 		// In attempt 1 "flaky" and "pass" fail; attempt 2 re-runs "flaky", attempt 3 "pass".
+		// GitHub has deleted the log of attempt 1's "flaky".
 		r := scenario.WithSHA(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), carried), strings.Repeat("2", 40))
 		r = scenario.SetJobConclusion(r, 1, r.JobIDs(1, "pass")[0], "failure")
+		env.Fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, "flaky")[0]), fakegithub.Fault{Status: http.StatusNotFound})
 		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(scenario.AddRerunAttempt(r, "flaky"), "pass"))).To(Succeed())
 		syncStages(ctx, env, "after-attempt-1", "after-attempt-2", "after-attempt-3")
 		var err error
@@ -74,6 +78,17 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 			jobFlip(carried, "pass", model.Outcome{Attempt: 1, Conclusion: "failure"}, model.Outcome{Attempt: 3, Conclusion: "success"}),
 			HaveField("Flip.Logs", HaveLen(2)),
 		)))
+	})
+
+	It("lists only logs that are regular files", func(ctx SpecContext) {
+		removed := filepath.Join(runDir(env.Data(), runID), "attempt-2", "jobs", "111221661475_flaky", "log.txt")
+		Expect(os.Remove(removed)).To(Succeed())
+
+		Expect(flips(ctx, index.Filter{Jobs: []string{"flaky"}})).To(ContainElements(
+			SatisfyAll(flaky(), HaveField("Flip.Logs", SatisfyAll(HaveLen(2), HaveEach(BeARegularFile())))),
+			SatisfyAll(HaveField("Flip.RunID", BeEquivalentTo(carried)), HaveField("Flip.Step", ""),
+				HaveField("Flip.Logs", HaveExactElements(SatisfyAll(ContainSubstring("attempt-2"), BeARegularFile())))),
+		))
 	})
 
 	It("selects job names with Filter.Jobs, and runs with the rest of it, comparing every attempt of a run selected", func(ctx SpecContext) {
