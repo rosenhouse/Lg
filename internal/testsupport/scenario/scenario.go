@@ -512,6 +512,124 @@ func (r Run) editJob(attempt int, jobID int64, edit func(map[string]any)) Run {
 	return out
 }
 
-// AddRerunAttempt adds an attempt after the latest that re-runs the jobs
-// named and carries every other job forward.
-func AddRerunAttempt(r Run, jobs ...string) Run { return r.copy() }
+// AddRerunAttempt adds an attempt, a minute after the latest ends, that
+// re-runs the jobs named and carries every other job forward. Each job gets
+// a new id and its log; the re-run jobs and all their steps succeed.
+func AddRerunAttempt(r Run, jobs ...string) Run {
+	out := r.copy()
+	var run struct {
+		RunAttempt int `json:"run_attempt"`
+	}
+	mustUnmarshal(out.Files["run.json"].Data, &run)
+	latest, next := run.RunAttempt, run.RunAttempt+1
+	for _, name := range jobs {
+		if len(out.JobIDs(latest, name)) == 0 {
+			panic(fmt.Sprintf("attempt %d has no job named %q", latest, name))
+		}
+	}
+	var ended struct {
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	mustUnmarshal(out.Files[attemptFile(latest, "attempt.json")].Data, &ended)
+	started := ended.UpdatedAt.Add(time.Minute)
+	completed := started
+
+	var listing map[string]any
+	mustUnmarshal(out.Files[attemptFile(latest, "jobs.json")].Data, &listing)
+	id := out.maxJobID()
+	conclusion := "success"
+	for _, j := range listing["jobs"].([]any) {
+		job := j.(map[string]any)
+		id++
+		old, renumbered := job["id"].(json.Number).String(), strconv.FormatInt(id, 10)
+		job["id"], job["run_attempt"] = json.Number(renumbered), next
+		for _, key := range []string{"url", "html_url", "check_run_url"} {
+			job[key] = strings.Replace(job[key].(string), old, renumbered, 1)
+		}
+		if slices.Contains(jobs, job["name"].(string)) {
+			completed = laterOf(completed, rerunJob(job, started.Add(2*time.Second)))
+		}
+		if failing(job["conclusion"]) {
+			conclusion = "failure"
+		}
+		out.copyLog(latest, old, next, renumbered)
+	}
+	out.Files[attemptFile(next, "jobs.json")] = &fstest.MapFile{Data: mustMarshal(listing)}
+
+	var attempt map[string]any
+	mustUnmarshal(out.Files[attemptFile(latest, "attempt.json")].Data, &attempt)
+	for _, key := range []string{"jobs_url", "logs_url"} {
+		attempt[key] = strings.Replace(attempt[key].(string), fmt.Sprintf("/attempts/%d/", latest), fmt.Sprintf("/attempts/%d/", next), 1)
+	}
+	out.Files[attemptFile(next, "attempt.json")] = &fstest.MapFile{Data: mustMarshal(attempt)}
+	conclude := func(run map[string]any) {
+		run["run_attempt"], run["status"], run["conclusion"] = next, "completed", conclusion
+		run["run_started_at"], run["updated_at"] = started.Format(time.RFC3339), completed.Add(5*time.Second).Format(time.RFC3339)
+	}
+	out.edit(attemptFile(next, "attempt.json"), conclude)
+	out.edit("run.json", conclude)
+	return out
+}
+
+// rerunJob moves the job's times so that it starts at start, concludes it
+// and its steps success, and gives when it completed.
+func rerunJob(job map[string]any, start time.Time) time.Time {
+	delta := start.Sub(parseTime(job["started_at"]))
+	rerun := func(m map[string]any) {
+		for _, key := range []string{"created_at", "started_at", "completed_at"} {
+			if _, ok := m[key].(string); ok {
+				m[key] = parseTime(m[key]).Add(delta).Format(time.RFC3339)
+			}
+		}
+		m["conclusion"] = "success"
+	}
+	rerun(job)
+	for _, step := range job["steps"].([]any) {
+		rerun(step.(map[string]any))
+	}
+	return parseTime(job["completed_at"])
+}
+
+func parseTime(v any) time.Time {
+	t, err := time.Parse(time.RFC3339, v.(string))
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+func failing(conclusion any) bool {
+	return slices.Contains([]any{"failure", "cancelled", "timed_out"}, conclusion)
+}
+
+// copyLog serves job old's log of attempt from as job id's of attempt to, with the same statuses.
+func (r Run) copyLog(from int, old string, to int, id string) {
+	log := r.Files[attemptFile(from, "logs/"+old+".txt")]
+	line := regexp.MustCompile(`(?m)^(\S+) jobs/` + old + `/logs$`).FindSubmatch(r.Files["status.txt"].Data)
+	if log == nil || line == nil {
+		return
+	}
+	r.Files[attemptFile(to, "logs/"+id+".txt")] = &fstest.MapFile{Data: bytes.Clone(log.Data)}
+	status := r.Files["status.txt"]
+	status.Data = fmt.Appendf(status.Data, "%s jobs/%s/logs\n", line[1], id)
+}
+
+// maxJobID is the highest id of any job of any attempt of r.
+func (r Run) maxJobID() int64 {
+	var highest int64
+	for n := 1; r.Files[attemptFile(n, "jobs.json")] != nil; n++ {
+		var listing struct{ Jobs []struct{ ID int64 } }
+		mustUnmarshal(r.Files[attemptFile(n, "jobs.json")].Data, &listing)
+		for _, job := range listing.Jobs {
+			highest = max(highest, job.ID)
+		}
+	}
+	return highest
+}
