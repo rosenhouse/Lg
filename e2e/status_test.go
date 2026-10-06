@@ -270,8 +270,10 @@ var _ = Describe("lg paths after a daemon left a log pending past twice sync_int
 		Eventually(first.Kill(), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit())
 
 		env.SetNow(harness.DefaultNow().Add(21*time.Minute), fake)
-		env.Start("daemon", "run")
+		second := env.Start("daemon", "run")
 		Eventually(cycle(env), cycleWait).WithContext(ctx).Should(Equal(2.0))
+		// Its reconcile would hold lg.db.lock, which lg paths says it waits for.
+		Eventually(second.Kill(), harness.ExitTimeout).WithContext(ctx).Should(gexec.Exit())
 		session := env.Lg("paths")
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
