@@ -216,7 +216,7 @@ func Next(prev *Status, c Cycle) Status {
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
-	repo.Pending = oneLineErrors(c.Pending, st.LastSyncStartedAt)
+	repo.Pending = stillPending(c.Pending, last.Pending, st.LastSyncStartedAt)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
@@ -295,12 +295,16 @@ func lines(err error) []string {
 	return found
 }
 
-// oneLineErrors gives pending with each error passed through OneLine, pending
-// since started.
-func oneLineErrors(pending []Pending, started time.Time) []Pending {
+// stillPending gives pending with each error passed through OneLine, and
+// each unit pending since its since in last, else since started.
+func stillPending(pending, last []Pending, started time.Time) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
-		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: started})
+		since := started
+		if i := slices.IndexFunc(last, func(l Pending) bool { return l.Unit == p.Unit }); i >= 0 {
+			since = last[i].Since
+		}
+		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: since})
 	}
 	return found
 }
