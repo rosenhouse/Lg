@@ -51,23 +51,4 @@ var _ = DescribeTable("Warning", Label("status"),
 		"last successful sync was 20m1s ago, at 2026-10-03T17:39:59Z, over twice sync_interval 10m0s"),
 	Entry("at twice sync_interval", synced(20*time.Minute), ""),
 	Entry("fresh", synced(time.Minute), ""),
-	Entry("with units pending beyond twice sync_interval", pendingSince(now.Add(-time.Minute), now.Add(-21*time.Minute), now.Add(-30*time.Minute)),
-		"2 units pending since 2026-10-03T17:30:00Z; run `lg status`"),
-	Entry("with units pending for twice sync_interval", pendingSince(now.Add(-20*time.Minute)), ""),
-	Entry("stale and with units pending, as stale", func() *status.Status {
-		st := pendingSince(now.Add(-time.Hour))
-		st.LastSyncOKAt = ptr(now.Add(-time.Hour))
-		return st
-	}(), "last successful sync was 1h0m0s ago, at 2026-10-03T17:00:00Z, over twice sync_interval 10m0s"),
 )
-
-// pendingSince is a fresh status with a unit pending since each time.
-func pendingSince(times ...time.Time) *status.Status {
-	st := synced(time.Minute)
-	var pending []status.Pending
-	for i, since := range times {
-		pending = append(pending, status.Pending{Unit: status.Unit{Run: int64(i + 1)}, Error: "502", Since: since})
-	}
-	st.Repos = map[string]status.Repo{repo: {Pending: pending}}
-	return st
-}

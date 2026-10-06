@@ -58,27 +58,7 @@ func Warning(now time.Time, st *Status) string {
 	if age := now.Sub(*st.LastSyncOKAt); age > 2*interval {
 		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
 	}
-	if stuck, since := pendingBefore(st, now.Add(-2*interval)); stuck > 0 {
-		return fmt.Sprintf("%d units pending since %s; run `lg status`", stuck, since.Format(time.RFC3339))
-	}
 	return ""
-}
-
-// pendingBefore counts the units in st pending since before t, and gives
-// the earliest since.
-func pendingBefore(st *Status, t time.Time) (n int, earliest time.Time) {
-	for _, r := range st.Repos {
-		for _, p := range r.Pending {
-			if p.Since.IsZero() || !p.Since.Before(t) {
-				continue
-			}
-			n++
-			if earliest.IsZero() || p.Since.Before(earliest) {
-				earliest = p.Since
-			}
-		}
-	}
-	return n, earliest
 }
 
 // String gives b on one line, without the terminal controls that gh's
@@ -136,8 +116,7 @@ func (u Unit) String() string {
 // Pending is a unit that a cycle left for the next one, with its last error.
 type Pending struct {
 	Unit
-	Error string    `json:"error"`
-	Since time.Time `json:"since"`
+	Error string `json:"error"`
 }
 
 func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
@@ -217,7 +196,6 @@ func Next(prev *Status, c Cycle) Status {
 		repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published)...)
 		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
 	}
-	repo.Pending = firstSeen(repo.Pending, last.Pending, st.LastSyncStartedAt)
 	repo.PendingUnits = len(repo.Pending)
 	st.Repos = map[string]Repo{c.Repo: repo}
 	return st
@@ -276,19 +254,6 @@ func timeOrNil(t time.Time) *time.Time {
 	}
 	t = t.UTC()
 	return &t
-}
-
-// firstSeen gives pending with each unit's since from last, or else started.
-func firstSeen(pending, last []Pending, started time.Time) []Pending {
-	for i, p := range pending {
-		pending[i].Since = started
-		for _, l := range last {
-			if l.Unit == p.Unit && !l.Since.IsZero() {
-				pending[i].Since = l.Since
-			}
-		}
-	}
-	return pending
 }
 
 // oneLineErrors gives pending with each error passed through oneLine.
