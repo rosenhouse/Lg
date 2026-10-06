@@ -37,8 +37,6 @@ var (
 type FS interface {
 	Mkdir(path string) error
 	Create(path string) (File, error)
-	// Rewrite empties the existing file at path and opens it for writing.
-	Rewrite(path string) (File, error)
 	Rename(oldpath, newpath string) error
 	SyncDir(path string) error
 	RemoveAll(path string) error

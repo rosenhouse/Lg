@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -281,9 +280,7 @@ func Read(path string) (*Status, error) {
 }
 
 // Write replaces path through fsys, so readers see the old or the new file
-// whole. A disk too full for a temp file still has room to rewrite path in
-// place, where a reader may see it torn and warn. It writes <, > and & as
-// they are, so rg finds them.
+// whole. It writes <, > and & as they are, so rg finds them.
 func Write(fsys store.FS, path string, st Status) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -292,23 +289,7 @@ func Write(fsys store.FS, path string, st Status) error {
 	if err := enc.Encode(st); err != nil {
 		return err
 	}
-	err := store.ReplaceFileFS(fsys, path, buf.Bytes())
-	if (errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)) && rewrite(fsys, path, buf.Bytes()) == nil {
-		return nil
-	}
-	return err
-}
-
-func rewrite(fsys store.FS, path string, data []byte) error {
-	f, err := fsys.Rewrite(path)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(data)
-	if err == nil {
-		err = f.Sync()
-	}
-	return errors.Join(err, f.Close())
+	return store.ReplaceFileFS(fsys, path, buf.Bytes())
 }
 
 // Measure finds the runs of repo, as <host>/<owner>/<name> in any case, under

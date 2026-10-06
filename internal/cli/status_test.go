@@ -355,17 +355,3 @@ var _ = Describe("lg sync that cannot write status.json", Label("status"), func(
 		Expect(s.statusFile()).NotTo(BeAnExistingFile())
 	})
 })
-
-var _ = Describe("lg sync on a disk too full for status.json.tmp", Label("status"), func() {
-	It("still records blocked in status.json, leaving no temp file", func() {
-		s := newSyncEnv()
-		Expect(s.main("sync")).To(Equal(0))
-		s.fs.FailOnUnder("create", s.statusFile()+".tmp", syscall.ENOSPC)
-		s.runner = failingRunner{"not logged in"}
-
-		Expect(s.main("sync")).To(Equal(3))
-
-		Expect(s.status()).To(HaveKeyWithValue("blocked", HaveKeyWithValue("kind", "auth")))
-		Expect(s.statusFile() + ".tmp").NotTo(BeAnExistingFile())
-	})
-})

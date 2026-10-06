@@ -13,7 +13,7 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// Op is a journaled op: mkdir, create, rewrite, write, fsync, close, rename, remove or chmod.
+// Op is a journaled op: mkdir, create, write, fsync, close, rename, remove or chmod.
 type Op struct {
 	Name, Path, To string
 }
@@ -90,18 +90,6 @@ func (f *FS) Create(path string) (store.File, error) {
 	var file store.File
 	err := f.do(Op{Name: "create", Path: path}, func() (err error) {
 		file, err = f.inner.Create(path)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &faultFile{fs: f, path: path, inner: file}, nil
-}
-
-func (f *FS) Rewrite(path string) (store.File, error) {
-	var file store.File
-	err := f.do(Op{Name: "rewrite", Path: path}, func() (err error) {
-		file, err = f.inner.Rewrite(path)
 		return err
 	})
 	if err != nil {
