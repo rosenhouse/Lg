@@ -75,9 +75,15 @@ func parseMoment(s string) (moment, error) {
 		return moment{set: true, ago: ago}, nil
 	}
 	for _, layout := range []string{time.DateOnly, time.RFC3339} {
-		if at, err := time.Parse(layout, s); err == nil {
-			return moment{set: true, at: at}, nil
+		at, err := time.Parse(layout, s)
+		if err != nil {
+			continue
 		}
+		// The zero time.Time means a relative moment, and index.Filter's unset bound.
+		if at.Before(time.Unix(0, 0)) {
+			return moment{}, fmt.Errorf("want a time since 1970, not %q", s)
+		}
+		return moment{set: true, at: at}, nil
 	}
 	return moment{}, fmt.Errorf("want 30d, 12h, 2026-09-01 or an RFC 3339 time, not %q", s)
 }
