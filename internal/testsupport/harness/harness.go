@@ -110,7 +110,13 @@ func (e *Env) Tmp() string { return e.roots().Tmp }
 // Status decodes state/status.json.
 func (e *Env) Status() map[string]any {
 	ginkgo.GinkgoHelper()
-	raw, err := os.ReadFile(filepath.Join(e.State(), "status.json"))
+	return ReadStatus(filepath.Join(e.State(), "status.json"))
+}
+
+// ReadStatus decodes the status.json at path.
+func ReadStatus(path string) map[string]any {
+	ginkgo.GinkgoHelper()
+	raw, err := os.ReadFile(path)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	var st map[string]any
 	gomega.Expect(json.Unmarshal(raw, &st)).To(gomega.Succeed())
@@ -120,9 +126,15 @@ func (e *Env) Status() map[string]any {
 // WriteStatus initializes the store and replaces its state/status.json with raw.
 func (e *Env) WriteStatus(raw string) {
 	ginkgo.GinkgoHelper()
-	gomega.Expect(store.Init(e.Store())).To(gomega.Succeed())
-	gomega.Expect(os.MkdirAll(e.State(), 0o755)).To(gomega.Succeed())
-	gomega.Expect(os.WriteFile(filepath.Join(e.State(), "status.json"), []byte(raw), 0o644)).To(gomega.Succeed())
+	writeStatus(e.Store(), filepath.Join(e.State(), "status.json"), raw)
+}
+
+// writeStatus initializes the store at root and replaces the status.json at path with raw.
+func writeStatus(root, path, raw string) {
+	ginkgo.GinkgoHelper()
+	gomega.Expect(store.Init(root)).To(gomega.Succeed())
+	gomega.Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(gomega.Succeed())
+	gomega.Expect(os.WriteFile(path, []byte(raw), 0o644)).To(gomega.Succeed())
 }
 
 func (e *Env) roots() config.Roots {
