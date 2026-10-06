@@ -50,6 +50,7 @@ type commands struct {
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored job logs."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
+	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.

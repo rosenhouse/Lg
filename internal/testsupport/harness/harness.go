@@ -174,3 +174,10 @@ func NewLive(lgPath string) *Env {
 func (e *Env) WriteLiveConfig(lines ...string) {
 	e.writeConfig(append([]string{"repo: rosenhouse/lg"}, lines...))
 }
+
+// Start starts lg with args, and kills it when the spec ends.
+func (e *Env) Start(args ...string) *gexec.Session {
+	session := e.Lg(args...)
+	ginkgo.DeferCleanup(func() { session.Kill().Wait(ExitTimeout) })
+	return session
+}
