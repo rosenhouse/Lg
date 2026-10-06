@@ -2,6 +2,7 @@ package scenario_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -357,5 +358,67 @@ var _ = Describe("QueuedRun", Label("discovery"), func() {
 			HaveKeyWithValue("status", "queued"),
 			HaveKeyWithValue("conclusion", BeNil()),
 		))
+	})
+})
+
+var _ = Describe("job conclusions", Label("flakes"), func() {
+	var run scenario.Run
+
+	BeforeEach(func() {
+		run = scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), 7)
+	})
+
+	// jobOf is the attempt's job of that id.
+	jobOf := func(r scenario.Run, attempt string, id int64) map[string]any {
+		GinkgoHelper()
+		for _, job := range jobs(r, attempt) {
+			if job["id"] == float64(id) {
+				return job
+			}
+		}
+		Fail(fmt.Sprintf("%s has no job %d", attempt, id))
+		return nil
+	}
+
+	stepOf := func(job map[string]any, name string) map[string]any {
+		GinkgoHelper()
+		for _, step := range job["steps"].([]any) {
+			if step := step.(map[string]any); step["name"] == name {
+				return step
+			}
+		}
+		Fail(fmt.Sprintf("job %v has no step %q", job["id"], name))
+		return nil
+	}
+
+	Describe("JobIDs", func() {
+		It("lists the ids of the attempt's jobs of that name in listing order", func() {
+			Expect(run.JobIDs(1, "same name")).To(Equal([]int64{7111221289952, 7111221289997}))
+			Expect(run.JobIDs(1, "flaky")).To(Equal([]int64{7111221289888}))
+			Expect(run.JobIDs(1, "none")).To(BeEmpty())
+		})
+	})
+
+	Describe("SetJobConclusion", func() {
+		It("concludes only the attempt's job of that id so, leaving the run given unchanged", func() {
+			first, second := run.JobIDs(1, "same name")[0], run.JobIDs(1, "same name")[1]
+			concluded := scenario.SetJobConclusion(run, 1, first, "failure")
+
+			Expect(jobOf(concluded, "attempt-1", first)).To(HaveKeyWithValue("conclusion", "failure"))
+			Expect(jobOf(concluded, "attempt-1", second)).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(jobOf(run, "attempt-1", first)).To(HaveKeyWithValue("conclusion", "success"))
+		})
+	})
+
+	Describe("SetStepConclusion", func() {
+		It("concludes only the step of that name in the attempt's job of that id so, leaving the run given unchanged", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			concluded := scenario.SetStepConclusion(run, 1, pass, "Build nested archives", "failure")
+
+			Expect(stepOf(jobOf(concluded, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "failure"))
+			Expect(stepOf(jobOf(concluded, "attempt-1", pass), "Emit log markers")).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(jobOf(concluded, "attempt-1", pass)).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(stepOf(jobOf(run, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "success"))
+		})
 	})
 })
