@@ -122,6 +122,16 @@ var _ = Describe("lg where", Ordered, ContinueOnFailure, Label("where"), func() 
 		Expect(decoded(hits)).To(ConsistOf(hitOf(a.MainSeptember.ID), hitOf(a.Release3.ID)))
 	})
 
+	It("resolves a relative path against the working directory when data/ has no such path, as in W4", func() {
+		repo := filepath.Join(env.Data(), "github.com", "rosenhouse", "Lg")
+		hits := env.Sh("cd '" + repo + "' && grep -rn 'foo bar' runs/2026-09-10 | lg where")
+		Eventually(hits, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(decoded(hits)).To(HaveExactElements(SatisfyAll(
+			HaveKeyWithValue("path", passLog(env, a.MainSeptember.ID)),
+			HaveKeyWithValue("line", BeEquivalentTo(1)),
+		)))
+	})
+
 	It("decodes an artifact of a run whose attempt is not on disk from artifact.json and fetch.json", func() {
 		Expect(filepath.Glob(filepath.Join(runDirOf(env, 9), "attempt-*"))).To(BeEmpty())
 		zip := glob(runDirOf(env, 9), "artifacts", "9011276401837_*", "artifact.zip")[0]
