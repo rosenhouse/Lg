@@ -50,3 +50,5 @@ func FindPlaces(data string, readDir func(dir string) ([]fs.DirEntry, error), hi
 	}
 	return nil
 }
+
+var PrintFlipJSON = printFlipJSON
