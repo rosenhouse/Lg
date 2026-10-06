@@ -42,7 +42,7 @@ type Loop struct {
 // Run returns when ctx is done, after any cycle in progress returns.
 func (l *Loop) Run(ctx context.Context) {
 	var served int64
-	for {
+	for ctx.Err() == nil {
 		if n, err := l.Requested(); err != nil {
 			l.logf("%s", err)
 		} else {
@@ -62,26 +62,24 @@ func (l *Loop) Run(ctx context.Context) {
 		if err := l.Reconcile(ctx); err != nil {
 			l.logf("reconcile lg.db: %s", err)
 		}
-		if !l.wait(ctx, served, next, out.RetryAt) {
-			return
-		}
+		l.wait(ctx, served, next, out.RetryAt)
 	}
 }
 
 // wait waits until next, or, once a request after served comes, until
-// retryAt. It reports false when ctx is done first.
-func (l *Loop) wait(ctx context.Context, served int64, next, retryAt time.Time) bool {
+// retryAt, or until ctx is done.
+func (l *Loop) wait(ctx context.Context, served int64, next, retryAt time.Time) {
 	for {
 		if n, err := l.Requested(); err == nil && n > served {
 			next = retryAt
 		}
 		now := l.Clock.Now()
 		if !now.Before(next) {
-			return true
+			return
 		}
 		select {
 		case <-ctx.Done():
-			return false
+			return
 		case <-l.Clock.After(min(PollInterval, next.Sub(now))):
 		}
 	}

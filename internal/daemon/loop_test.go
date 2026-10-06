@@ -164,16 +164,39 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectNoCycle()
 	})
 
-	It("returns after the current cycle when ctx is cancelled", func() {
+	It("returns after the current cycle when ctx is cancelled, without reconciling or serving a request", func() {
 		e := newLoopEnv(every(t0))
 		proceed := make(chan struct{})
 		e.during = func(context.Context) { <-proceed }
+		var reconciled atomic.Bool
+		e.loop.Reconcile = func(context.Context) error {
+			reconciled.Store(true)
+			return nil
+		}
 		cancel, returned := e.run()
 		e.expectCycle(t0, 0)
 
 		cancel()
+		e.requested.Store(1)
 		Consistently(returned, 100*time.Millisecond).ShouldNot(BeClosed())
 		close(proceed)
+
+		Eventually(returned, time.Second).Should(BeClosed())
+		Expect(e.cycles).NotTo(Receive())
+		Expect(reconciled.Load()).To(BeFalse())
+	})
+
+	It("starts no cycle for a request once ctx is cancelled during the reconcile", func() {
+		e := newLoopEnv(every(t0))
+		cancels := make(chan context.CancelFunc, 1)
+		e.loop.Reconcile = func(context.Context) error {
+			e.requested.Store(1)
+			(<-cancels)()
+			return nil
+		}
+		cancel, returned := e.run()
+		cancels <- cancel
+		e.expectCycle(t0, 0)
 
 		Eventually(returned, time.Second).Should(BeClosed())
 		Expect(e.cycles).NotTo(Receive())
