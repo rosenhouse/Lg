@@ -93,15 +93,20 @@ func xmlText(s string) string {
 	return b.String()
 }
 
-// check refuses control characters and invalid UTF-8, which neither format can carry.
+// check refuses control characters and invalid UTF-8, which neither format
+// can carry. It names where it found one, since a value may hold a password.
 func (u Unit) check() error {
-	values := append([]string{u.Name, u.Exe, u.Log}, slices.Collect(maps.Keys(u.Env))...)
-	for _, v := range append(values, slices.Collect(maps.Values(u.Env))...) {
-		if strings.ContainsFunc(v, isControl) {
-			return fmt.Errorf("a service cannot carry a control character: %q", v)
+	type field struct{ where, value string }
+	fields := []field{{"the service name", u.Name}, {"the path of lg", u.Exe}, {"the log path", u.Log}}
+	for _, k := range slices.Sorted(maps.Keys(u.Env)) {
+		fields = append(fields, field{"a variable name", k}, field{k, u.Env[k]})
+	}
+	for _, f := range fields {
+		if strings.ContainsFunc(f.value, isControl) {
+			return fmt.Errorf("%s contains a control character, which a service cannot carry", f.where)
 		}
-		if !utf8.ValidString(v) {
-			return fmt.Errorf("a service cannot carry invalid UTF-8: %q", v)
+		if !utf8.ValidString(f.value) {
+			return fmt.Errorf("%s is not valid UTF-8, which a service cannot carry", f.where)
 		}
 	}
 	return nil

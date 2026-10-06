@@ -78,23 +78,23 @@ var _ = Describe("RenderSystemd", Label("install"), func() {
 	)
 })
 
-var _ = DescribeTable("a unit with a control character", Label("install"),
-	func(render func(service.Unit) ([]byte, error), u service.Unit) {
+var _ = DescribeTable("a unit with a control character names where, never the value", Label("install"),
+	func(render func(service.Unit) ([]byte, error), u service.Unit, where string) {
 		_, err := render(u)
-		Expect(err).To(MatchError(ContainSubstring("control character")))
+		Expect(err).To(MatchError(where + " contains a control character, which a service cannot carry"))
 	},
-	Entry("in Exe for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/opt/lg\n/lg"}),
-	Entry("in an env value for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"LG_HOME": "/a\tb"}}),
-	Entry("in an env name for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"A\x7f": "b"}}),
-	Entry("in Log for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/lg", Log: "/a\x00"}),
-	Entry("in Name for launchd", service.RenderLaunchd, service.Unit{Name: "l\rg", Exe: "/lg"}),
+	Entry("in Exe for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/opt/lg\n/lg"}, "the path of lg"),
+	Entry("in an env value for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"HTTPS_PROXY": "http://u:secret\tpw@p"}}, "HTTPS_PROXY"),
+	Entry("in an env name for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"A\x7f": "b"}}, "a variable name"),
+	Entry("in Log for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/lg", Log: "/a\x00"}, "the log path"),
+	Entry("in Name for launchd", service.RenderLaunchd, service.Unit{Name: "l\rg", Exe: "/lg"}, "the service name"),
 )
 
-var _ = DescribeTable("a unit with invalid UTF-8", Label("install"),
-	func(render func(service.Unit) ([]byte, error), u service.Unit) {
+var _ = DescribeTable("a unit with invalid UTF-8 names where, never the value", Label("install"),
+	func(render func(service.Unit) ([]byte, error), u service.Unit, where string) {
 		_, err := render(u)
-		Expect(err).To(MatchError(ContainSubstring("invalid UTF-8")))
+		Expect(err).To(MatchError(where + " is not valid UTF-8, which a service cannot carry"))
 	},
-	Entry("in an env value for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"LG_HOME": "/caf\xe9"}}),
-	Entry("in Exe for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/caf\xe9/lg"}),
+	Entry("in an env value for systemd", service.RenderSystemd, service.Unit{Name: "lg", Exe: "/lg", Env: map[string]string{"LG_HOME": "/caf\xe9"}}, "LG_HOME"),
+	Entry("in Exe for launchd", service.RenderLaunchd, service.Unit{Name: "lg", Exe: "/caf\xe9/lg"}, "the path of lg"),
 )
