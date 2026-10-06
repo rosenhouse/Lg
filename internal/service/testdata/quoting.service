@@ -1,0 +1,12 @@
+[Unit]
+Description=lg: mirror GitHub Actions runs
+
+[Service]
+ExecStart="/Users/a b/100%% $HOME & <bin>/lg" daemon run
+Environment="HTTPS_PROXY=http://u:p%%40$x\"\\@proxy:1"
+Environment="LG_GH=/opt/gh/bin/gh"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -185,3 +185,19 @@ func (e *Env) Start(args ...string) *gexec.Session {
 	ginkgo.DeferCleanup(func() { session.Kill().Wait(ExitTimeout) })
 	return session
 }
+
+// PrependPath puts dir first on PATH.
+func (e *Env) PrependPath(dir string) {
+	e.vars["PATH"] = dir + string(os.PathListSeparator) + e.vars["PATH"]
+}
+
+// PathWithout drops from PATH every dir that holds name.
+func (e *Env) PathWithout(name string) {
+	var kept []string
+	for _, dir := range filepath.SplitList(e.vars["PATH"]) {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			kept = append(kept, dir)
+		}
+	}
+	e.vars["PATH"] = strings.Join(kept, string(os.PathListSeparator))
+}

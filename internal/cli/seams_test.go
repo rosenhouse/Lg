@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,7 +54,26 @@ var _ = Describe("RealDeps", Label("failures"), func() {
 		Expect(reflect.ValueOf(cli.RealDeps().NewGitHub).Pointer()).To(Equal(reflect.ValueOf(github.NewDefault).Pointer()))
 	})
 
+	It("installs a service for the OS lg runs on, and for lg's own executable", Label("install"), func() {
+		Expect(cli.RealDeps().GOOS).To(Equal(runtime.GOOS))
+		exe, file, err := cli.RealDeps().Executable()
+		Expect(err).NotTo(HaveOccurred())
+		self, err := os.Executable()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sameFile(exe, self)).To(BeTrue())
+		Expect(filepath.EvalSymlinks(self)).To(Equal(file))
+	})
+
 	It("opens the store on the OS filesystem", Label("blocked"), func() {
 		Expect(cli.RealDeps().StoreFS).To(Equal(store.OSFS{}))
 	})
 })
+
+func sameFile(a, b string) bool {
+	GinkgoHelper()
+	ai, err := os.Stat(a)
+	Expect(err).NotTo(HaveOccurred())
+	bi, err := os.Stat(b)
+	Expect(err).NotTo(HaveOccurred())
+	return os.SameFile(ai, bi)
+}

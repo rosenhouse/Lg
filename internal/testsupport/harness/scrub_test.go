@@ -1,6 +1,9 @@
 package harness_test
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -8,9 +11,9 @@ import (
 )
 
 var _ = Describe("Scrub", Label("cli"), func() {
-	It("drops lg, XDG, GitHub, HOME and proxy variables", func() {
+	It("drops lg, XDG, GitHub, HOME, proxy and CA bundle variables", func() {
 		Expect(harness.Scrub([]string{
-			"LG_HOME=/lg", "XDG_DATA_HOME=/x", "GH_TOKEN=t", "GITHUB_TOKEN=t", "HOME=/h",
+			"LG_HOME=/lg", "XDG_DATA_HOME=/x", "GH_TOKEN=t", "GITHUB_TOKEN=t", "HOME=/h", "SSL_CERT_FILE=/ca",
 			"HTTPS_PROXY=p", "https_proxy=p", "HTTP_PROXY=p", "http_proxy=p",
 			"NO_PROXY=n", "no_proxy=n", "ALL_PROXY=p", "all_proxy=p",
 			"LANG=C", "PATH=/usr/bin",
@@ -34,5 +37,20 @@ var _ = Describe("ScrubLive", Label("cli"), func() {
 			"SSL_CERT_FILE": "/ca", "GH_TOKEN": "t", "GITHUB_TOKEN": "T", "GH_CONFIG_DIR": "/gh", "HOME": "/h",
 			"LANG": "C", "PATH": "/bin/lg:/usr/bin",
 		}))
+	})
+})
+
+var _ = Describe("Env PATH helpers", Label("install"), func() {
+	It("puts a dir first with PrependPath, and drops every dir that holds a name with PathWithout", func() {
+		env := harness.New("/no/lg")
+		with, without := GinkgoT().TempDir(), GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(with, "gh"), nil, 0o755)).To(Succeed())
+		env.Setenv("PATH", with+":"+without+":"+with)
+
+		env.PrependPath("/first")
+		Expect(env.Getenv("PATH")).To(Equal("/first:" + with + ":" + without + ":" + with))
+
+		env.PathWithout("gh")
+		Expect(env.Getenv("PATH")).To(Equal("/first:" + without))
 	})
 })

@@ -1,0 +1,19 @@
+[Unit]
+Description=lg: mirror GitHub Actions runs
+
+[Service]
+ExecStart="/opt/lg/bin/lg" daemon run
+Environment="HTTPS_PROXY=http://proxy.example:3128"
+Environment="HTTP_PROXY=http://proxy.example:3128"
+Environment="LG_CONFIG=/etc/lg/config.yaml"
+Environment="LG_GH=/opt/gh/bin/gh"
+Environment="LG_HOME=/srv/lg"
+Environment="NO_PROXY=localhost,.example"
+Environment="PATH=/opt/gh/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="SSL_CERT_FILE=/etc/ssl/ca.pem"
+Environment="https_proxy=http://proxy.example:3128"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
