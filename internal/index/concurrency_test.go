@@ -77,7 +77,7 @@ var _ = Describe("index users sharing lg.db", Label("index"), func() {
 		Consistently(opened, "200ms").ShouldNot(Receive())
 
 		Expect(index.Reset(ctx, tx)).To(Succeed())
-		_, err = tx.ExecContext(ctx, "INSERT INTO runs (run_id) VALUES (1)")
+		_, err = tx.ExecContext(ctx, "INSERT INTO runs (run_id, from_fork) VALUES (1, 0)")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tx.Commit()).To(Succeed())
 		Eventually(opened, waitTimeout).Should(Receive(Succeed()))

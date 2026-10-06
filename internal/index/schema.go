@@ -5,7 +5,7 @@ var tables = []string{"runs", "attempts", "jobs", "steps", "artifacts", "tombsto
 
 const schema = `
 CREATE TABLE runs (host TEXT, repo TEXT, run_id INTEGER, created_at TEXT, date_dir TEXT, path TEXT,
-	workflow_id INTEGER, workflow_name TEXT, head_branch TEXT, head_sha TEXT, from_fork INTEGER, event TEXT, pr_numbers TEXT,
+	workflow_id INTEGER, workflow_name TEXT, head_branch TEXT, head_sha TEXT, from_fork INTEGER NOT NULL, event TEXT, pr_numbers TEXT,
 	display_title TEXT, latest_attempt INTEGER);
 CREATE TABLE attempts (run_id INTEGER, attempt INTEGER, path TEXT, status TEXT, conclusion TEXT,
 	run_started_at TEXT, completed_at TEXT);
