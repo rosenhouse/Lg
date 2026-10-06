@@ -15,6 +15,8 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 )
 
+const neverSynced = "lg: warning: never synced; run `lg sync`\n"
+
 var _ = Describe("Main", Label("cli"), func() {
 	var stdout, stderr *bytes.Buffer
 
@@ -29,21 +31,21 @@ var _ = Describe("Main", Label("cli"), func() {
 	It("exits 1 and prints the error when a command fails", func() {
 		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{errDiskFull}, Stderr: stderr, Clock: clock.Real{}})
 		Expect(code).To(Equal(1))
-		Expect(stderr.String()).To(HaveSuffix("\nlg: disk full\n"))
+		Expect(stderr.String()).To(Equal(neverSynced + "lg: disk full\n"))
 	})
 
 	It("exits 3 and prints the error when a command is blocked", Label("blocked"), func() {
 		blocked := fmt.Errorf("sync: %w", failure.Blocked{Kind: failure.Auth, Detail: "401 Unauthorized"})
 		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failingWriter{blocked}, Stderr: stderr, Clock: clock.Real{}})
 		Expect(code).To(Equal(3))
-		Expect(stderr.String()).To(HaveSuffix("\nlg: sync: blocked (auth): 401 Unauthorized\n"))
+		Expect(stderr.String()).To(Equal(neverSynced + "lg: sync: blocked (auth): 401 Unauthorized\n"))
 	})
 
 	It("prefixes every line of a multi-line error", func() {
 		failing := failingWriter{errors.Join(errors.New("run 1: 502 Bad Gateway"), errors.New("run 2: 503 Service Unavailable"))}
 		code := cli.Main([]string{"root"}, cli.Deps{Env: map[string]string{"LG_HOME": "/lg"}, Stdout: failing, Stderr: stderr, Clock: clock.Real{}})
 		Expect(code).To(Equal(1))
-		Expect(stderr.String()).To(HaveSuffix("\nlg: run 1: 502 Bad Gateway\nlg: run 2: 503 Service Unavailable\n"))
+		Expect(stderr.String()).To(Equal(neverSynced + "lg: run 1: 502 Bad Gateway\nlg: run 2: 503 Service Unavailable\n"))
 	})
 
 	It("exits 2 and prints the error for a config error", func() {
