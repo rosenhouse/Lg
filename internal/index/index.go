@@ -3,7 +3,9 @@ package index
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,7 +25,7 @@ import (
 	"github.com/rosenhouse/lg/internal/lock"
 )
 
-// Format is meta.format. Open empties a db of any other format.
+// Format is meta.format. Open empties a db of any other format or schema.
 const Format = 1
 
 // busyTimeout is how long a transaction waits for another's write lock.
@@ -115,10 +117,17 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// isCurrent reports whether the db has format Format and this schema.
 func isCurrent(ctx context.Context, q querier) bool {
 	var format int
-	err := q.QueryRowContext(ctx, "SELECT format FROM meta").Scan(&format)
-	return err == nil && format == Format
+	var sum string
+	err := q.QueryRowContext(ctx, "SELECT format, schema FROM meta").Scan(&format, &sum)
+	return err == nil && format == Format && sum == schemaSum()
+}
+
+func schemaSum() string {
+	sum := sha256.Sum256([]byte(schema))
+	return hex.EncodeToString(sum[:])
 }
 
 // reset drops every table, then creates the schema.
@@ -146,7 +155,7 @@ func reset(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO meta (format) VALUES (?)", Format)
+	_, err = tx.ExecContext(ctx, "INSERT INTO meta (format, schema) VALUES (?, ?)", Format, schemaSum())
 	return err
 }
 

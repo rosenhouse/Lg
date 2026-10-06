@@ -15,7 +15,7 @@ import (
 var columns = map[string][]string{
 	"runs": {
 		"host", "repo", "run_id", "created_at", "date_dir", "path", "workflow_id",
-		"workflow_name", "head_branch", "head_sha", "event", "pr_numbers", "display_title", "latest_attempt",
+		"workflow_name", "head_branch", "head_sha", "from_fork", "event", "pr_numbers", "display_title", "latest_attempt",
 	},
 	"attempts": {"run_id", "attempt", "path", "status", "conclusion", "run_started_at", "completed_at"},
 	"jobs": {
@@ -60,7 +60,7 @@ func (in inserter) insert(ctx context.Context, runDir string, rows Rows) error {
 	at := func(rel string) string { return filepath.Join(runDir, rel) }
 	r := rows.Run
 	if _, err := in["runs"].ExecContext(ctx, r.Host, r.Repo, r.RunID, timeText(r.CreatedAt), r.DateDir, runDir,
-		r.WorkflowID, r.WorkflowName, r.HeadBranch, r.HeadSHA, r.Event, jsonText(r.PRNumbers),
+		r.WorkflowID, r.WorkflowName, r.HeadBranch, r.HeadSHA, r.FromFork, r.Event, jsonText(r.PRNumbers),
 		r.DisplayTitle, nullZero(r.LatestAttempt)); err != nil {
 		return err
 	}

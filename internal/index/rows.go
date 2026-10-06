@@ -118,6 +118,7 @@ type fetch struct {
 type attemptFiles struct {
 	n      int
 	run    model.Run
+	repos  model.RunRepositories
 	jobs   []model.Job
 	listed []model.Artifact
 	fetch  fetch
@@ -185,6 +186,7 @@ func readAttempt(dir string, n int) (attemptFiles, error) {
 	a := attemptFiles{n: n}
 	return a, errors.Join(
 		readJSON(filepath.Join(dir, "attempt.json"), &a.run),
+		readJSON(filepath.Join(dir, "attempt.json"), &a.repos),
 		readJSON(filepath.Join(dir, "jobs.json"), &a.jobs),
 		readJSON(filepath.Join(dir, "artifacts.json"), &a.listed),
 		readJSON(filepath.Join(dir, "fetch.json"), &a.fetch))
@@ -213,7 +215,7 @@ func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
 			Host: latest.fetch.Host, Repo: latest.fetch.Repo, RunID: latest.run.ID,
 			CreatedAt: latest.fetch.RunCreatedAt, DateDir: latest.fetch.RunCreatedAt.UTC().Format(time.DateOnly),
 			WorkflowID: latest.run.WorkflowID, WorkflowName: latest.run.Name,
-			HeadBranch: latest.run.HeadBranch, HeadSHA: latest.run.HeadSHA, Event: latest.run.Event,
+			HeadBranch: latest.run.HeadBranch, HeadSHA: latest.run.HeadSHA, FromFork: latest.repos.FromFork(), Event: latest.run.Event,
 			PRNumbers: union(prs), DisplayTitle: latest.run.DisplayTitle, LatestAttempt: latest.n,
 		}
 	}
@@ -232,7 +234,8 @@ func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
 		Host: f.Host, Repo: f.Repo, RunID: f.RunID,
 		CreatedAt: f.RunCreatedAt, DateDir: f.RunCreatedAt.UTC().Format(time.DateOnly),
 		WorkflowID: f.WorkflowID, WorkflowName: f.WorkflowName,
-		HeadBranch: last.artifact.WorkflowRun.HeadBranch, HeadSHA: last.artifact.WorkflowRun.HeadSHA, Event: f.Event,
+		HeadBranch: last.artifact.WorkflowRun.HeadBranch, HeadSHA: last.artifact.WorkflowRun.HeadSHA,
+		FromFork: last.artifact.WorkflowRun.FromFork(), Event: f.Event,
 		PRNumbers: union(prs), DisplayTitle: f.DisplayTitle,
 	}
 }
