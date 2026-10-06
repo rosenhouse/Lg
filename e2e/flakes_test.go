@@ -42,18 +42,12 @@ func syncRuns(env *harness.Env, runs ...scenario.Run) {
 	Expect(env.Sync()).To(gexec.Exit(0))
 }
 
-// lgOK runs lg with args to exit 0.
-func lgOK(env *harness.Env, args ...string) *gexec.Session {
-	GinkgoHelper()
-	session := env.Lg(args...)
-	Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-	return session
-}
-
 // flakes runs lg flakes --json with args to exit 0 and decodes what it printed.
 func flakes(env *harness.Env, args ...string) []map[string]any {
 	GinkgoHelper()
-	return decoded(lgOK(env, append([]string{"flakes", "--json"}, args...)...))
+	session := env.Lg(append([]string{"flakes", "--json"}, args...)...)
+	Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+	return decoded(session)
 }
 
 // finding matches a finding of the job, or of its step unless step is "".
@@ -62,24 +56,17 @@ func finding(job, step string, attempts []int, conclusions ...string) types.Gome
 	if step != "" {
 		stepValue = Equal(step)
 	}
-	var attemptValues []any
-	for _, a := range attempts {
-		attemptValues = append(attemptValues, BeEquivalentTo(a))
+	var wantAttempts, wantConclusions []any
+	for i, a := range attempts {
+		wantAttempts = append(wantAttempts, float64(a))
+		wantConclusions = append(wantConclusions, conclusions[i])
 	}
 	return SatisfyAll(
 		HaveKeyWithValue("job", job),
 		HaveKeyWithValue("step", stepValue),
-		HaveKeyWithValue("attempts", HaveExactElements(attemptValues...)),
-		HaveKeyWithValue("conclusions", HaveExactElements(toAny(conclusions)...)),
+		HaveKeyWithValue("attempts", wantAttempts),
+		HaveKeyWithValue("conclusions", wantConclusions),
 	)
-}
-
-func toAny(values []string) []any {
-	out := make([]any, len(values))
-	for i, v := range values {
-		out[i] = v
-	}
-	return out
 }
 
 // findingsOf keeps the findings of the job, leaving out its steps' unless steps.
@@ -139,7 +126,7 @@ var _ = Describe("lg flakes after syncing run 37129390741 through after-attempt-
 	})
 
 	It("reports flaky (1:failure 2:success 3:success, failing step named) and timeout (1:cancelled 2:success 3:success), and the steps flaky / 'Fail on first attempt only' and timeout / 'Time out on first attempt only' with the same outcomes", func() {
-		Expect(outputLines(lgOK(env, "flakes"))).To(ContainElements(
+		Expect(lines(env, "flakes")).To(ContainElements(
 			`run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"`,
 			`run 37129390741 (sha 1a51097): "flaky" / "Fail on first attempt only": 1:failure 2:success 3:success`,
 			`run 37129390741 (sha 1a51097): "timeout": 1:cancelled 2:success 3:success; failing steps: "Time out on first attempt only"`,
