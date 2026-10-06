@@ -33,6 +33,7 @@ type Status struct {
 	DaemonVersion       *string         `json:"daemon_version"`
 	ServedRequest       int64           `json:"served_request"`
 	ConfigError         *string         `json:"config_error"`
+	LastSyncErrors      []string        `json:"last_sync_errors"`
 	Repos               map[string]Repo `json:"repos"`
 }
 

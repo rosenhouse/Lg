@@ -63,7 +63,15 @@ var _ = Describe("Next", Label("status"), func() {
 				RetentionDays:               90,
 				DiskCapBytes:                50e9,
 			}},
+			LastSyncErrors: []string{},
 		}))
+	})
+
+	It("records each line of the cycle's error, without terminal controls", func() {
+		c := good(started)
+		c.Err = errors.Join(errors.New("run 1: no created_at"), errors.New("watch.json:\x1b]0;x\a moved"))
+
+		Expect(status.Next(nil, c).LastSyncErrors).To(Equal([]string{"run 1: no created_at", "watch.json: ]0;x moved"}))
 	})
 
 	It("records a daemon's pid, version, next sync, served request and config error", func() {
