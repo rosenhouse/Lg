@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/daemon"
 )
 
@@ -27,7 +28,7 @@ var _ = Describe("Next", Label("daemon"), func() {
 
 	DescribeTable("carries no monotonic reading, so a wait compares wall clocks across a suspend",
 		func(retryAfter time.Duration) {
-			now := time.Now()
+			now := clock.Real{}.Now()
 			Expect(daemon.Next(now, 10*time.Minute, now.Add(retryAfter)).String()).NotTo(ContainSubstring("m="))
 		},
 		Entry("not blocked", time.Duration(0)),
