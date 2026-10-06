@@ -3,16 +3,21 @@ package cli_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
@@ -198,3 +203,22 @@ var _ = DescribeTable("lg paths prints the paths it can read, then exits 1 namin
 		return jobs[0], jobs[0]
 	}),
 )
+
+var _ = Describe("lg paths", Label("paths"), func() {
+	It("says that it waits for lg.db.lock, and whom for", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		dbLock := filepath.Join(c.Home, "state", "lg.db.lock")
+		held, err := lock.Wait(dbLock, time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		stderr := gbytes.NewBuffer()
+		code := make(chan int, 1)
+		go func() {
+			code <- cli.Main([]string{"paths"}, cli.Deps{Env: map[string]string{"LG_HOME": c.Home}, Stdout: io.Discard, Stderr: stderr, Clock: clock.Real{}})
+		}()
+
+		Eventually(stderr, 5*time.Second).Should(gbytes.Say(regexp.QuoteMeta(fmt.Sprintf("lg: waiting for %s (held by pid %d)\n", dbLock, os.Getpid()))))
+		Expect(held.Release()).To(Succeed())
+		Eventually(code, 5*time.Second).Should(Receive(Equal(0)))
+	})
+})
