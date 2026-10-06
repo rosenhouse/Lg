@@ -33,6 +33,9 @@ const (
 	steady = 40
 )
 
+// rerunStarted is the run_started_at of Rerun's attempt 2.
+var rerunStarted = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+
 // archaeology syncs the Archaeology runs and the runs above, writes an
 // extracted/ tree into the first artifact of Release3 and into every
 // artifact of Rerun, renumbers steady's attempt 2 to 12, and gives the index
@@ -209,6 +212,12 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		Entry("--conclusion of a job", index.Filter{Conclusions: []string{"failure"}, SHAs: []string{"8"}}, func() []string {
 			return under(env, "attempt-1/jobs/*_flaky/log.txt", a.Rerun.ID)
 		}),
+		Entry("a fractional --since excludes a unit of its whole second", index.Filter{SHAs: []string{"8"}, Since: rerunStarted.Add(time.Second / 2)}, func() []string {
+			return nil
+		}),
+		Entry("a fractional --until includes a unit of its whole second", index.Filter{SHAs: []string{"8"}, Until: rerunStarted.Add(time.Second / 2)}, func() []string {
+			return logsOf(env, a.Rerun.ID)
+		}),
 	)
 
 	DescribeTable("--job selects a unit above a job when the unit holds a matching job",
@@ -287,7 +296,7 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 	})
 
 	It("compares --until against the unit's time too, inclusive", func() {
-		started := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+		started := rerunStarted
 		Expect(paths(index.Filter{SHAs: []string{"8"}, Until: started}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-*/*.json", a.Rerun.ID)))
 		Expect(paths(index.Filter{SHAs: []string{"8"}, Until: started.Add(-time.Second)}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-1/*.json", a.Rerun.ID)))
 		Expect(paths(index.Filter{SHAs: []string{"8"}, Since: started}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-2/*.json", a.Rerun.ID)))

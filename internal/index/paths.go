@@ -183,8 +183,9 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 	} else {
 		anyOf(&w, "EXISTS (SELECT 1 FROM jobs j JOIN json_each(?) g ON j.name GLOB g.value WHERE "+below("j.path", s.jobs)+")", f.Jobs)
 	}
+	// Unit times are whole seconds, as timeText formats the bounds.
 	if !f.Since.IsZero() {
-		w.add(s.when+" >= ?", timeText(f.Since))
+		w.add(s.when+" >= ?", timeText(roundUp(f.Since)))
 	}
 	if !f.Until.IsZero() {
 		w.add(s.when+" <= ?", timeText(f.Until))
@@ -195,6 +196,15 @@ func (s source) query(unit Unit, f Filter) (string, []any) {
 		query += " WHERE " + strings.Join(w.conditions, " AND ")
 	}
 	return query, w.args
+}
+
+// roundUp gives t, or the next whole second after it.
+func roundUp(t time.Time) time.Time {
+	whole := t.Truncate(time.Second)
+	if whole.Equal(t) {
+		return t
+	}
+	return whole.Add(time.Second)
 }
 
 // where collects the conditions of a WHERE clause and their arguments.
