@@ -27,8 +27,9 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	w := jobSource.where(Filter{Jobs: f.Jobs})
 	runs := flipRuns.where(f)
 	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
+	// Ordering by run first lets SQLite find each run's jobs by path range.
 	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
-		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY x.path, s.number"
+		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY r.path, x.path, s.number"
 	jobs, restarted, err := readOrStartOver(ctx, ix, func() (attemptJobs, error) { return ix.readAttemptJobs(ctx, query, w.args) })
 	if err != nil {
 		return nil, errors.Join(restarted, err)

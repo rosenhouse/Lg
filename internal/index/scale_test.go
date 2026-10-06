@@ -79,3 +79,23 @@ var _ = Describe("a store of 9,000 runs and 100,000 files", Label("scale"), func
 		Expect(count(db, "SELECT count(*) FROM jobs")).To(Equal(18_500))
 	}, NodeTimeout(5*time.Minute))
 })
+
+var _ = Describe("rerun flips over a store of 9,000 runs", Label("scale"), func() {
+	It("gives them in under 2s", func(ctx SpecContext) {
+		data := filepath.Join(GinkgoT().TempDir(), "data")
+		writeScaleStore(data, 9_000)
+		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), data, nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+
+		start := clock.Real{}.Now()
+		flips, err := ix.RerunFlips(ctx, index.Filter{})
+		took := clock.Real{}.Now().Sub(start)
+		AddReportEntry("timings", fmt.Sprintf("rerun flips %s", took))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(flips).To(BeEmpty())
+		Expect(took).To(BeNumerically("<", 2*time.Second))
+	}, NodeTimeout(5*time.Minute))
+})
