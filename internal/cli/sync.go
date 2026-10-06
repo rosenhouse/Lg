@@ -29,8 +29,12 @@ func (syncCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	if running, err := lock.Held(filepath.Join(roots.State, "daemon.lock")); err != nil || running {
-		return errors.Join(err, requestSync(roots, deps))
+	running, err := lock.Held(filepath.Join(roots.State, "daemon.lock"))
+	if err != nil {
+		return failure.FromErrno(err)
+	}
+	if running {
+		return requestSync(roots, deps)
 	}
 	t, err := loadTarget(deps.Env)
 	if err != nil {
