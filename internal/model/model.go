@@ -41,7 +41,9 @@ type Repository struct {
 }
 
 // FromFork reports whether the run's head repository is another than its repository.
-func (r Run) FromFork() bool { return false }
+func (r Run) FromFork() bool {
+	return r.HeadRepository == nil || r.HeadRepository.ID != r.Repository.ID
+}
 
 type Job struct {
 	ID          int64      `json:"id"`
@@ -107,7 +109,7 @@ type ArtifactRun struct {
 }
 
 // FromFork reports whether the run's head repository is another than its repository.
-func (r ArtifactRun) FromFork() bool { return false }
+func (r ArtifactRun) FromFork() bool { return r.HeadRepositoryID != r.RepositoryID }
 
 // ArtifactAction is what lg does with a listed artifact.
 type ArtifactAction string
