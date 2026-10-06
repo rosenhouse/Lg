@@ -122,6 +122,16 @@ var _ = DescribeTable("lg paths --since and --until, relative to LG_TEST_NOW 202
 	Entry("a duration back to after the start", "--until", "3h", true),
 )
 
+var _ = Describe("lg paths --job", Label("paths"), func() {
+	It("takes a comma as part of the glob", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+
+		Expect(c.Main("paths", "--job", "build (ubuntu-latest, 1.22)")).To(Equal(0))
+		Expect(strings.Fields(c.Stdout.String())).To(ConsistOf(HaveSuffix("_build-ubuntu-latest-1.22/log.txt")))
+	})
+})
+
 var _ = DescribeTable("lg paths exits 2", Label("paths"),
 	func(args []string, message string) {
 		c := harness.NewCLI()
