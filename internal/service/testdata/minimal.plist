@@ -12,8 +12,8 @@
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>LG_GH</key>
-		<string>/opt/gh/bin/gh</string>
+		<key>PATH</key>
+		<string>/opt/gh/bin:/usr/local/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>RunAtLoad</key>
 	<true/>

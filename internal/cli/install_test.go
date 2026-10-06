@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -100,6 +101,33 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		))
 	})
 
+	It("bakes in PATH with gh's dir first, and no LG_GH when LG_GH is unset", func() {
+		delete(env, "LG_GH")
+		env["PATH"] = "/nowhere:" + filepath.Dir(gh)
+
+		Expect(run("darwin", "daemon", "install")).To(Equal(0), stderr.String())
+
+		plist, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "com.github.rosenhouse.lg.plist"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(plist)).To(ContainSubstring("<key>PATH</key>\n\t\t<string>" + filepath.Dir(gh) + ":/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>"))
+		Expect(string(plist)).NotTo(ContainSubstring("LG_GH"))
+	})
+
+	It("installs a unit in whose env lg refuses a loopback api_url, so the real gh's token never reaches a local port, when LG_GH is unset", func() {
+		delete(env, "LG_GH")
+		env["PATH"] = filepath.Dir(gh)
+		Expect(run("linux", "daemon", "install")).To(Equal(0), stderr.String())
+		config := filepath.Join(home, ".config", "lg", "config.yaml")
+		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\napi_url: http://127.0.0.1:1\n"), 0o644)).To(Succeed())
+
+		env = unitEnv(filepath.Join(home, ".config", "systemd", "user", "lg.service"))
+		env["HOME"] = home
+		stderr.Reset()
+
+		Expect(run("linux", "sync")).To(Equal(2))
+		Expect(stderr.String()).To(ContainSubstring("api_url may be on a loopback address only when LG_GH is set"))
+	})
+
 	It("bakes in the XDG dirs that chose config.yaml and the store", func() {
 		xdg := GinkgoT().TempDir()
 		config := filepath.Join(xdg, "config", "lg", "config.yaml")
@@ -150,3 +178,18 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Expect(runner.Calls()).To(BeEmpty())
 	})
 })
+
+// unitEnv gives the variables a systemd unit sets, whose values hold nothing to unquote.
+func unitEnv(unit string) map[string]string {
+	GinkgoHelper()
+	content, err := os.ReadFile(unit)
+	Expect(err).NotTo(HaveOccurred())
+	env := map[string]string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		if kv, ok := strings.CutPrefix(line, `Environment="`); ok {
+			k, v, _ := strings.Cut(strings.TrimSuffix(kv, `"`), "=")
+			env[k] = v
+		}
+	}
+	return env
+}

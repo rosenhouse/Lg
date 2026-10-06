@@ -10,18 +10,20 @@ import (
 	"github.com/rosenhouse/lg/internal/service"
 )
 
-// units are the env cases of the golden files under testdata.
+// units are the env cases of the golden files under testdata. Of these,
+// minimal is from an install with LG_GH unset, and full with LG_GH set.
 var units = map[string]service.Unit{
 	"minimal": {
 		Name: "lg",
 		Exe:  "/opt/lg/bin/lg",
-		Env:  map[string]string{"LG_GH": "/opt/gh/bin/gh"},
+		Env:  map[string]string{"PATH": "/opt/gh/bin:/usr/local/bin:/usr/bin:/bin"},
 		Log:  "/Users/u/.local/share/lg/state/daemon.log",
 	},
 	"full": {
 		Name: "lg",
 		Exe:  "/opt/lg/bin/lg",
 		Env: map[string]string{
+			"PATH":          "/opt/gh/bin:/usr/local/bin:/usr/bin:/bin",
 			"LG_GH":         "/opt/gh/bin/gh",
 			"LG_HOME":       "/srv/lg",
 			"LG_CONFIG":     "/etc/lg/config.yaml",

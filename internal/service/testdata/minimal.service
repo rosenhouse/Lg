@@ -3,7 +3,7 @@ Description=lg: mirror GitHub Actions runs
 
 [Service]
 ExecStart="/opt/lg/bin/lg" daemon run
-Environment="LG_GH=/opt/gh/bin/gh"
+Environment="PATH=/opt/gh/bin:/usr/local/bin:/usr/bin:/bin"
 Restart=on-failure
 RestartSec=30
 

@@ -67,8 +67,8 @@ var _ = Describe("FindGH", Label("install"), func() {
 })
 
 var _ = Describe("Env", Label("install"), func() {
-	It("bakes in LG_GH as gh, and only those of LG_HOME, LG_CONFIG, XDG_DATA_HOME, XDG_CONFIG_HOME, GH_CONFIG_DIR, SSL_CERT_FILE and the upper- or lowercase proxy variables that are set", func() {
-		Expect(service.Env(map[string]string{
+	It("bakes in PATH, LG_GH as gh when LG_GH is set, and only those of LG_HOME, LG_CONFIG, XDG_DATA_HOME, XDG_CONFIG_HOME, GH_CONFIG_DIR, SSL_CERT_FILE and the upper- or lowercase proxy variables that are set", func() {
+		Expect(service.Env("linux", map[string]string{
 			"LG_GH":           "gh",
 			"LG_HOME":         "/srv/lg",
 			"LG_CONFIG":       "",
@@ -87,9 +87,10 @@ var _ = Describe("Env", Label("install"), func() {
 			"GH_CONFIG_DIR":   "/gh",
 			"LG_TEST_NOW":     "2026-10-03T18:00:00Z",
 			"HOME":            "/home/u",
-			"PATH":            "/usr/bin",
-		}, "/opt/gh")).To(Equal(map[string]string{
-			"LG_GH":           "/opt/gh",
+			"PATH":            "/home/u/bin:/usr/bin",
+		}, "/opt/gh/bin/gh")).To(Equal(map[string]string{
+			"PATH":            "/opt/gh/bin:/usr/local/bin:/usr/bin:/bin",
+			"LG_GH":           "/opt/gh/bin/gh",
 			"LG_HOME":         "/srv/lg",
 			"XDG_DATA_HOME":   "/xdg/data",
 			"XDG_CONFIG_HOME": "/xdg/config",
@@ -102,17 +103,35 @@ var _ = Describe("Env", Label("install"), func() {
 		}))
 	})
 
+	DescribeTable("bakes in no LG_GH unless LG_GH is set, since a set LG_GH permits a loopback api_url",
+		func(env map[string]string) {
+			Expect(service.Env("linux", env, "/opt/gh/bin/gh")).NotTo(HaveKey("LG_GH"))
+		},
+		Entry("when LG_GH is unset", map[string]string{"PATH": "/opt/gh/bin"}),
+		Entry("when LG_GH is empty", map[string]string{"LG_GH": "", "PATH": "/opt/gh/bin"}),
+	)
+
+	DescribeTable("bakes in PATH as gh's dir, then the platform's system dirs without repeats",
+		func(goos, gh, path string) {
+			Expect(service.Env(goos, nil, gh)).To(HaveKeyWithValue("PATH", path))
+		},
+		Entry(nil, "linux", "/opt/gh/bin/gh", "/opt/gh/bin:/usr/local/bin:/usr/bin:/bin"),
+		Entry(nil, "linux", "/usr/bin/gh", "/usr/bin:/usr/local/bin:/bin"),
+		Entry(nil, "darwin", "/opt/gh/bin/gh", "/opt/gh/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
+		Entry(nil, "darwin", "/opt/homebrew/bin/gh", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"),
+	)
+
 	It("makes a relative SSL_CERT_FILE or GH_CONFIG_DIR absolute, and drops a relative XDG dir, since a service runs elsewhere", func() {
 		wd, err := os.Getwd()
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(service.Env(map[string]string{
+		Expect(service.Env("linux", map[string]string{
 			"SSL_CERT_FILE":   "ca.pem",
 			"GH_CONFIG_DIR":   "ghconf",
 			"XDG_DATA_HOME":   "rel",
 			"XDG_CONFIG_HOME": "relc",
-		}, "/opt/gh")).To(Equal(map[string]string{
-			"LG_GH":         "/opt/gh",
+		}, "/opt/gh/bin/gh")).To(Equal(map[string]string{
+			"PATH":          "/opt/gh/bin:/usr/local/bin:/usr/bin:/bin",
 			"SSL_CERT_FILE": filepath.Join(wd, "ca.pem"),
 			"GH_CONFIG_DIR": filepath.Join(wd, "ghconf"),
 		}))

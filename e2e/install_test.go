@@ -20,10 +20,10 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
-// The golden files name lg and gh by these paths.
+// The golden files name lg and the dir of gh by these paths.
 const (
-	goldenLg = "/opt/lg/bin/lg"
-	goldenGh = "/opt/gh/bin/gh"
+	goldenLg    = "/opt/lg/bin/lg"
+	goldenGhDir = "/opt/gh/bin"
 )
 
 var _ = Describe("lg daemon install on Linux", Label("install"), func() {
@@ -40,9 +40,14 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		env, systemctl, unit = newInstallEnv()
 	})
 
-	It("writes $XDG_CONFIG_HOME/systemd/user/lg.service (default ~/.config) equal to the golden file, with ExecStart=<abs lg> daemon run, Environment=LG_GH, Restart=on-failure and RestartSec=30", func() {
+	It("writes $XDG_CONFIG_HOME/systemd/user/lg.service (default ~/.config) equal to the golden file, with ExecStart=<abs lg> daemon run, Environment=PATH from gh's dir, Restart=on-failure and RestartSec=30", func() {
 		golden, err := os.ReadFile("../internal/service/testdata/minimal.service")
 		Expect(err).NotTo(HaveOccurred())
+		ghOnPath := func(env *harness.Env) {
+			env.Setenv("LG_GH", "")
+			env.PrependPath(filepath.Dir(env.GH().Path))
+		}
+		ghOnPath(env)
 
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(goldenPaths(env, unit)).To(Equal(string(golden)))
@@ -50,6 +55,7 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 
 		xdg := filepath.Join(GinkgoT().TempDir(), "xdg")
 		env, _, unit = newInstallEnv("XDG_CONFIG_HOME", xdg)
+		ghOnPath(env)
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(unit).To(Equal(filepath.Join(xdg, "systemd", "user", "lg.service")))
 		Expect(goldenPaths(env, unit)).To(Equal(strings.Replace(string(golden), "Restart=", `Environment="XDG_CONFIG_HOME=`+xdg+"\"\nRestart=", 1)))
@@ -275,10 +281,10 @@ func newInstallEnv(kv ...string) (*harness.Env, *fakeservice.Fake, string) {
 	return env, fakeservice.Systemctl(bin, dir), filepath.Join(dir, "lg.service")
 }
 
-// goldenPaths gives the file at path with env's lg and gh renamed as in the golden files.
+// goldenPaths gives the file at path with env's lg and gh's dir renamed as in the golden files.
 func goldenPaths(env *harness.Env, path string) string {
 	GinkgoHelper()
-	return strings.NewReplacer(lgPath, goldenLg, env.GH().Path, goldenGh).Replace(readFile(path))
+	return strings.NewReplacer(lgPath, goldenLg, filepath.Dir(env.GH().Path), goldenGhDir).Replace(readFile(path))
 }
 
 func readFile(path string) string {
