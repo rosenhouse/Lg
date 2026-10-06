@@ -301,7 +301,7 @@ func stillPending(pending, last []Pending, started time.Time) []Pending {
 	found := []Pending{}
 	for _, p := range pending {
 		since := started
-		if i := slices.IndexFunc(last, func(l Pending) bool { return l.Unit == p.Unit }); i >= 0 {
+		if i := slices.IndexFunc(last, func(l Pending) bool { return l.Unit == p.Unit }); i >= 0 && !last[i].Since.IsZero() {
 			since = last[i].Since
 		}
 		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: since})
