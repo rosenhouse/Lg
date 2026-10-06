@@ -30,6 +30,9 @@ type Deps struct {
 	Runner    execx.Runner
 	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
 	StoreFS   store.FS
+	GOOS      string
+	// Executable gives lg's own path.
+	Executable func() (string, error)
 }
 
 func RealDeps() Deps {
