@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/daemon"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/index"
@@ -42,6 +43,12 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer func() { _ = instance.Release() }()
+	if err := initOnStart(ctx, t.roots, deps); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
 	d := daemonCycle{deps: deps, target: t}
 	loop := daemon.Loop{
 		Clock:     deps.Clock,
@@ -61,6 +68,17 @@ func (daemonRunCmd) Run(deps *Deps) error {
 	}
 	loop.Run(ctx)
 	return nil
+}
+
+// initOnStart initializes the store and sweeps what dead writers left in
+// tmp/, even when a recorded retry_at defers the first cycle.
+func initOnStart(ctx context.Context, roots config.Roots, deps *Deps) error {
+	held, err := lockWrites(ctx, roots, deps, writeLockWait)
+	if err != nil {
+		return failure.FromErrno(err)
+	}
+	_, err = initAndSweep(deps.StoreFS, roots.Store)
+	return failure.FromErrno(errors.Join(err, held.Release()))
 }
 
 // daemonCycle runs a daemon's cycles with the last good config.yaml.

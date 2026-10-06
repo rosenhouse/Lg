@@ -244,17 +244,20 @@ var _ = Describe("lg daemon run when rate limited", Label("daemon"), func() {
 })
 
 var _ = Describe("lg daemon run restarted while rate limited", Label("daemon"), func() {
-	It("waits for the recorded retry_at before its first cycle", func(ctx SpecContext) {
+	It("sweeps tmp/ on start, and waits for the recorded retry_at before its first cycle", func(ctx SpecContext) {
 		env, fake := newDaemonEnv()
 		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "3600"}})
 		first := env.Start("daemon", "run")
 		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))
 		first.Signal(syscall.SIGTERM)
 		Eventually(ctx, first, harness.ExitTimeout).Should(gexec.Exit(0))
+		dead := filepath.Join(env.Tmp(), "dead-writer")
+		Expect(os.MkdirAll(dead, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dead, "log.txt"), []byte("partial"), 0o644)).To(Succeed())
 
 		env.Start("daemon", "run")
 
-		Eventually(ctx, held(env, "daemon.lock"), cycleWait).Should(BeTrue())
+		Eventually(ctx, env.Tmp(), cycleWait).Should(matchers.BeSwept())
 		Consistently(ctx, cycle(env), 3*time.Second).Should(Equal(1.0))
 	}, daemonTimeout)
 })
