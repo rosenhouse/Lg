@@ -220,6 +220,8 @@ var _ = DescribeTable("lg says that it waits for lg.db.lock, and whom for", Labe
 		dbLock := filepath.Join(c.Home, "state", "lg.db.lock")
 		held, err := lock.Wait(dbLock, time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
+		// A failed assertion leaves no lg waiting out the lock past the spec.
+		DeferCleanup(func() { _ = held.Release() })
 		stderr := gbytes.NewBuffer()
 		code := make(chan int, 1)
 		go func() {
@@ -240,6 +242,8 @@ var _ = Describe("lg paths", Label("paths"), func() {
 		Expect(c.Main("sync")).To(Equal(0))
 		held, err := lock.Wait(filepath.Join(c.Home, "state", "lg.db.lock"), time.Second, clock.Real{}, func(string) {})
 		Expect(err).NotTo(HaveOccurred())
+		// A failed assertion leaves no lg waiting out the lock past the spec.
+		DeferCleanup(func() { _ = held.Release() })
 		stderr := gbytes.NewBuffer()
 		code := make(chan int, 1)
 		go func() {
@@ -270,3 +274,4 @@ var _ = Describe("lg paths", Label("paths"), func() {
 		Expect(c.Stderr.String()).To(MatchRegexp(`^lg: warning: indexing data/ in memory, since %s: .+\n$`, regexp.QuoteMeta(db)))
 	})
 })
+
