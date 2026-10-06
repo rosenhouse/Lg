@@ -50,22 +50,32 @@ func (c syncCmd) Run(deps *Deps) error {
 		if !c.Wait {
 			return nil
 		}
-		if err := daemon.WaitForCycle(t.roots.State, n, since, timeout, deps.Clock); err != nil {
-			return err
-		}
 		// The daemon reconciles lg.db only after it reports the cycle.
-		return reconcileIndex(context.Background(), t.roots)
+		return reconcileAfter(daemon.WaitForCycle(t.roots.State, n, since, timeout, deps.Clock), t.roots, deps)
 	}
 	held, err := lockWrites(context.Background(), t.roots, deps, c.timeout(writeLockWait))
 	if err != nil {
 		return failure.FromErrno(err)
 	}
-	defer func() { _ = held.Release() }()
 	// Ending ctx on a signal kills gh's process group, which the signal does not reach.
 	ctx, stop := signalContext()
 	defer stop()
 	_, err = recordCycle(t, deps, func() (mirror.Report, error) { return runCycle(ctx, t, deps) }, func(*status.Cycle) {})
-	return err
+	stop()
+	_ = held.Release()
+	return reconcileAfter(err, t.roots, deps)
+}
+
+// reconcileAfter reconciles lg.db after a cycle that succeeded, and gives
+// the cycle's error. Like the daemon, it only warns when reconcile fails.
+func reconcileAfter(cycleErr error, roots config.Roots, deps *Deps) error {
+	if cycleErr != nil {
+		return cycleErr
+	}
+	if err := reconcileIndex(context.Background(), roots); err != nil {
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: reconcile lg.db: %s\n", status.OneLine(err.Error()))
+	}
+	return nil
 }
 
 func (c syncCmd) Validate() error { return validateTimeout(c.timeout(0)) }
