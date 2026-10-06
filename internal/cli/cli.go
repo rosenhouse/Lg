@@ -131,7 +131,8 @@ func Main(args []string, deps Deps) (code int) {
 	return 0
 }
 
-// warn prints the line status.Warning gives for the store's status.json, if any.
+// warn prints the line status.Warning gives for the store's status.json, if
+// any, with its hint unless command already runs it.
 func warn(deps *Deps, command string) {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
@@ -142,9 +143,10 @@ func warn(deps *Deps, command string) {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", err)
 		return
 	}
-	warning := status.Warning(deps.Clock.Now(), st)
-	if st == nil && command != "sync" && command != "daemon run" {
-		warning += "; run `lg sync`"
+	warning, hint := status.Warning(deps.Clock.Now(), st)
+	runsHint := command == hint || hint == "sync" && command == "daemon run"
+	if hint != "" && !runsHint {
+		warning += "; run `lg " + hint + "`"
 	}
 	if warning != "" {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)

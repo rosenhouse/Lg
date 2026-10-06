@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -45,21 +44,46 @@ type Blocked struct {
 }
 
 // Warning is the one line every command prints while st, the status at
-// now, is blocked or stale, and "" otherwise (D24).
-func Warning(now time.Time, st *Status) string {
+// now, is blocked or stale, has units stuck pending, or records an invalid
+// config.yaml, and "" otherwise (D24). hint is the lg command to run about
+// it, if any.
+func Warning(now time.Time, st *Status) (warning, hint string) {
 	switch {
 	case st == nil:
-		return "never synced"
+		return "never synced", "sync"
 	case st.Blocked != nil:
-		return "sync blocked: " + st.Blocked.String()
+		return "sync blocked: " + st.Blocked.String(), ""
 	case st.LastSyncOKAt == nil:
-		return "no sync has succeeded yet"
+		return "no sync has succeeded yet", ""
 	}
 	interval := time.Duration(st.SyncIntervalSeconds) * time.Second
 	if age := now.Sub(*st.LastSyncOKAt); age/2 > interval {
-		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval)
+		return fmt.Sprintf("last successful sync was %s ago, at %s, over twice sync_interval %s", age.Round(time.Second), st.LastSyncOKAt.Format(time.RFC3339), interval), ""
 	}
-	return ""
+	if n, oldest := stuck(now, st, interval); n > 0 {
+		return fmt.Sprintf("%d units pending since %s", n, oldest.Format(time.RFC3339)), "status"
+	}
+	if st.ConfigError != nil {
+		return "config.yaml is invalid: " + *st.ConfigError, ""
+	}
+	return "", ""
+}
+
+// stuck counts the units in st pending longer than twice interval at now,
+// and gives the oldest since among them. A zero since is unknown.
+func stuck(now time.Time, st *Status, interval time.Duration) (n int, oldest time.Time) {
+	for _, r := range st.Repos {
+		for _, p := range r.Pending {
+			if p.Since.IsZero() || now.Sub(p.Since)/2 <= interval {
+				continue
+			}
+			n++
+			if oldest.IsZero() || p.Since.Before(oldest) {
+				oldest = p.Since
+			}
+		}
+	}
+	return n, oldest
 }
 
 // String gives b on one line, without the terminal controls that gh's
@@ -139,9 +163,16 @@ func (u Unit) String() string {
 type Pending struct {
 	Unit
 	Error string `json:"error"`
+	// Since is when the cycle that first left the unit pending finished.
+	Since time.Time `json:"since,omitzero"`
 }
 
-func (p Pending) String() string { return p.Unit.String() + ": " + p.Error }
+func (p Pending) String() string {
+	if p.Since.IsZero() {
+		return p.Unit.String() + ": " + p.Error
+	}
+	return fmt.Sprintf("%s, pending since %s: %s", p.Unit, p.Since.Format(time.RFC3339), p.Error)
+}
 
 type Cycle struct {
 	Started, Finished time.Time
@@ -209,21 +240,32 @@ func Next(prev *Status, c Cycle) Status {
 		st.Cycle = prev.Cycle + 1
 		st.LastSyncOKAt = prev.LastSyncOKAt
 		st.ServedRequest = max(st.ServedRequest, prev.ServedRequest)
-		last = prev.Repos[c.Repo]
+		last = repoIn(prev.Repos, c.Repo)
 	}
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
 	}
-	repo.Pending = oneLineErrors(c.Pending)
+	repo.Pending = withSince(c.Pending, last.Pending, finished)
+	repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published, c.Completed)...)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
-		repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published)...)
 		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
 	}
 	repo.PendingUnits = len(repo.Pending)
 	st.Repos = map[string]Repo{c.Repo: repo}
 	return st
+}
+
+// repoIn gives the repo in repos named name in any case, as Measure matches
+// it.
+func repoIn(repos map[string]Repo, name string) Repo {
+	for key, r := range repos {
+		if strings.EqualFold(key, name) {
+			return r
+		}
+	}
+	return Repo{}
 }
 
 // Remeasured is st with repo's disk fields from d, retention and diskCap,
@@ -293,21 +335,45 @@ func lines(err error) []string {
 	return found
 }
 
-// oneLineErrors gives pending with each error passed through OneLine.
-func oneLineErrors(pending []Pending) []Pending {
+// withSince gives each unit of pending once, with its first error passed
+// through OneLine. A unit keeps its since from last, unless a clock step put
+// that after finished. Any other unit is pending since finished.
+func withSince(pending, last []Pending, finished time.Time) []Pending {
+	lastSince := map[Unit]time.Time{}
+	for _, p := range last {
+		if !p.Since.IsZero() {
+			lastSince[p.Unit] = p.Since
+		}
+	}
 	found := []Pending{}
+	seen := map[Unit]bool{}
 	for _, p := range pending {
-		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error)})
+		if seen[p.Unit] {
+			continue
+		}
+		seen[p.Unit] = true
+		since, ok := lastSince[p.Unit]
+		if !ok || since.After(finished) {
+			since = finished
+		}
+		found = append(found, Pending{Unit: p.Unit, Error: OneLine(p.Error), Since: since})
 	}
 	return found
 }
 
-// carried gives the units of last that a cycle which stopped early neither
-// left again, in now, nor published.
-func carried(last, now []Pending, published map[Unit]bool) []Pending {
+// carried gives the units of last that the cycle may have skipped and
+// neither left again, in now, nor published: any unit after a cycle that
+// stopped early, and the attempts and artifacts of each run that a completed
+// cycle left pending as a whole.
+func carried(last, now []Pending, published map[Unit]bool, completed bool) []Pending {
+	inNow := map[Unit]bool{}
+	for _, p := range now {
+		inNow[p.Unit] = true
+	}
 	var kept []Pending
 	for _, p := range last {
-		if !published[p.Unit] && !slices.ContainsFunc(now, func(n Pending) bool { return n.Unit == p.Unit }) {
+		maybeSkipped := !completed || inNow[Unit{Run: p.Run}]
+		if maybeSkipped && !published[p.Unit] && !inNow[p.Unit] {
 			kept = append(kept, p)
 		}
 	}

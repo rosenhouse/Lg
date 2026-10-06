@@ -57,6 +57,15 @@ var _ = Describe("Write", Label("status"), func() {
 		Expect(os.ReadFile(path)).To(ContainSubstring(`"error": "runs?created=a..b&per_page=100: <html>"`))
 	})
 
+	It("writes a pending unit with no since without the since key", func() {
+		st := status.Status{Repos: map[string]status.Repo{"github.com/o/r": {Pending: []status.Pending{{Unit: status.Unit{Run: 1}, Error: "502"}}}}}
+
+		Expect(status.Write(store.OSFS{}, path, st)).To(Succeed())
+		raw, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(And(ContainSubstring(`"error": "502"`), Not(ContainSubstring(`"since"`))))
+	})
+
 	It("writes through fsys", func() {
 		fsys := faultfs.New()
 		fsys.FailOn("rename", syscall.ENOSPC)

@@ -162,6 +162,19 @@ var _ = Describe("lg status with a daemon running and no next_sync_at", Label("s
 	})
 })
 
+var _ = DescribeTable("cli.Main with a unit stuck pending", Label("status"),
+	func(command, warning string) {
+		s := harness.NewCLI()
+		s.WriteStatus(strings.Replace(goodStatus, `"pending": []`,
+			`"pending": [{"run": 1, "attempt": 2, "error": "503", "since": "2026-10-03T17:30:00Z"}]`, 1))
+
+		Expect(s.Main(command)).To(Equal(0))
+		Expect(s.Stderr.String()).To(Equal(warning))
+	},
+	Entry("tells to run lg status", "version", "lg: warning: 1 units pending since 2026-10-03T17:30:00Z; run `lg status`\n"),
+	Entry("does not tell lg status to run itself", "status", "lg: warning: 1 units pending since 2026-10-03T17:30:00Z\n"),
+)
+
 // goodStatus is a status.json from a one-shot sync with no runs.
 const goodStatus = `{
   "lg_format": 1,
@@ -347,6 +360,17 @@ var _ = Describe("lg status after a daemon rejected config.yaml", Label("status"
 
 		Expect(s.Main("status")).To(Equal(0))
 		Expect(s.Stdout.String()).To(ContainSubstring("\nblocked: no\nconfig error: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config\ndaemon: not running\n"))
+	})
+})
+
+var _ = Describe("cli.Main after a daemon rejected config.yaml", Label("status"), func() {
+	It("warns 'config.yaml is invalid: ...'", func() {
+		s := harness.NewCLI()
+		s.WriteStatus(strings.Replace(goodStatus, `"daemon_version": null,`,
+			`"daemon_version": null, "config_error": "config.yaml: sync_interval must be at least 1m: 30s; kept the last good config",`, 1))
+
+		Expect(s.Main("version")).To(Equal(0))
+		Expect(s.Stderr.String()).To(Equal("lg: warning: config.yaml is invalid: config.yaml: sync_interval must be at least 1m: 30s; kept the last good config\n"))
 	})
 })
 
