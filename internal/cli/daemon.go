@@ -54,6 +54,9 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		},
 		Log: deps.Stderr,
 	}
+	if st, _ := status.Read(filepath.Join(state, "status.json")); st != nil && st.Blocked != nil && st.Blocked.RetryAt != nil {
+		loop.RetryAt = *st.Blocked.RetryAt
+	}
 	loop.Run(ctx)
 	return nil
 }

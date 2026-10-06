@@ -119,6 +119,18 @@ var _ = Describe("Loop", Label("daemon"), func() {
 		e.expectCycle(t0.Add(30*time.Minute), 0)
 	})
 
+	It("runs the first cycle at RetryAt when it is in the future, even with a request", func() {
+		e := newLoopEnv(outcomeAt(t0.Add(5 * time.Minute)))
+		e.loop.RetryAt = t0.Add(5 * time.Minute)
+		e.requested.Store(1)
+		e.run()
+
+		e.waiting()
+		e.expectNoCycle()
+		e.set(t0.Add(5 * time.Minute))
+		e.expectCycle(t0.Add(5*time.Minute), 1)
+	})
+
 	It("starts a cycle at once for a request during the wait, which serves it", func() {
 		e := newLoopEnv(outcomeAt(t0))
 		e.run()

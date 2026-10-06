@@ -30,6 +30,8 @@ type Outcome struct {
 // request comes. After each cycle it reconciles the index and logs one line.
 type Loop struct {
 	Clock clock.Clock
+	// RetryAt defers the first cycle, as a restarted daemon's blocked.retry_at does.
+	RetryAt time.Time
 	// Cycle runs one cycle that serves sync requests up to served.
 	Cycle func(ctx context.Context, served int64) Outcome
 	// Requested gives the number of the latest sync request.
@@ -41,6 +43,7 @@ type Loop struct {
 
 // Run returns when ctx is done, after any cycle in progress returns.
 func (l *Loop) Run(ctx context.Context) {
+	l.wait(ctx, 0, l.RetryAt, l.RetryAt)
 	var served int64
 	for ctx.Err() == nil {
 		if n, err := l.Requested(); err != nil {

@@ -232,6 +232,24 @@ var _ = Describe("lg daemon run when rate limited", Label("daemon"), func() {
 	}, daemonTimeout)
 })
 
+var _ = Describe("lg daemon run restarted while rate limited", Label("daemon"), func() {
+	It("waits for the recorded retry_at before its first cycle", func(SpecContext) {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusTooManyRequests, Headers: map[string]string{"Retry-After": "3600"}})
+		first := env.Start("daemon", "run")
+		Eventually(cycle(env), cycleWait).Should(Equal(1.0))
+		first.Signal(syscall.SIGTERM)
+		Eventually(first, harness.ExitTimeout).Should(gexec.Exit(0))
+
+		env.Start("daemon", "run")
+
+		Eventually(held(env, "daemon.lock"), cycleWait).Should(BeTrue())
+		Consistently(cycle(env), 3*time.Second).Should(Equal(1.0))
+	}, daemonTimeout)
+})
+
 var _ = Describe("lg sync without --wait, with a daemon running", Label("daemon"), func() {
 	It("writes a sync request and exits 0 at once", func(SpecContext) {
 		env := harness.New(lgPath)
