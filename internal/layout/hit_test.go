@@ -2,6 +2,7 @@ package layout_test
 
 import (
 	"slices"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,4 +48,18 @@ var _ = DescribeTable("ParseHit splits an rg or grep hit at the longest prefix t
 		layout.Hit{}, false),
 	Entry("no existing prefix", "a:1:b", []string{"b"},
 		layout.Hit{}, false),
+	Entry("a path as long as Linux allows", strings.Repeat("a", 4095)+":1:x", []string{strings.Repeat("a", 4095)},
+		layout.Hit{Path: strings.Repeat("a", 4095), Line: 1, Text: "x"}, true),
 )
+
+var _ = It("ParseHit tries no prefix longer than a path can be", Label("where"), func() {
+	text := strings.Repeat("a:", 1<<19)
+	var longest int
+	hit, ok := layout.ParseHit("path:1:"+text, func(path string) bool {
+		longest = max(longest, len(path))
+		return path == "path"
+	})
+	Expect(ok).To(BeTrue())
+	Expect(hit).To(Equal(layout.Hit{Path: "path", Line: 1, Text: text}))
+	Expect(longest).To(BeNumerically("<=", 4095))
+})

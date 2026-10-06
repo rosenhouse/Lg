@@ -161,12 +161,15 @@ type Hit struct {
 	Text string
 }
 
+// maxPath is the longest path Linux opens. macOS opens shorter ones.
+const maxPath = 4095
+
 // ParseHit splits hit at the longest prefix that exists, since a path may
 // hold colons, and gives false when no prefix exists. It reads a match as
 // path:line:text, path:line or path:text, and a context line as path-line-text.
 func ParseHit(hit string, exists func(path string) bool) (Hit, bool) {
 	for end := len(hit); end > 0; end = strings.LastIndexAny(hit[:end], ":-") {
-		if !exists(hit[:end]) {
+		if end > maxPath || !exists(hit[:end]) {
 			continue
 		}
 		h := Hit{Path: hit[:end]}
