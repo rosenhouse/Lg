@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -123,6 +125,22 @@ var _ = Describe("lg where", Label("where"), func() {
 			HaveKeyWithValue("text", `  "head_branch": "main",`),
 		)))
 	})
+
+	It("reads no file outside the store", func(ctx SpecContext) {
+		fifo := filepath.Join(GinkgoT().TempDir(), "fifo")
+		Expect(syscall.Mkfifo(fifo, 0o600)).To(Succeed())
+		DeferCleanup(func() {
+			// Opening the write end frees a reader blocked opening the read end.
+			if w, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+				_ = w.Close()
+			}
+		})
+		code := make(chan int, 1)
+		go func() { code <- c.Main("where", fifo+":1:x") }()
+
+		Eventually(ctx, code).WithTimeout(5 * time.Second).Should(Receive(Equal(1)))
+		Expect(c.Stderr.String()).To(ContainSubstring(fifo + " is outside the store"))
+	}, SpecTimeout(10*time.Second))
 
 	It("keeps a hit's .. in its text, not its path", func() {
 		log := filepath.Join(job, "log.txt")

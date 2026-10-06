@@ -176,9 +176,6 @@ func (f placeFinder) find(hit string) (place, error) {
 		}
 		return place{}, fmt.Errorf("%q names no file", hit)
 	}
-	if h.Line > 0 && !f.lines.has(path, h.Line, h.Text) {
-		h.Line, h.Text = 0, hit[len(h.Path)+1:]
-	}
 	real, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return place{}, err
@@ -190,6 +187,9 @@ func (f placeFinder) find(hit string) (place, error) {
 	loc, err := layout.Parse(rel)
 	if err != nil {
 		return place{}, err
+	}
+	if h.Line > 0 && !f.lines.has(path, h.Line, h.Text) {
+		h.Line, h.Text = 0, hit[len(h.Path)+1:]
 	}
 	p, err := f.describe(loc)
 	if err == nil && (loc.File == "log.txt.tombstone" || loc.File == "artifact.zip.tombstone") {
