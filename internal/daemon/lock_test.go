@@ -85,11 +85,10 @@ var _ = Describe("LockInstance", Label("daemon"), func() {
 	It("waits out a shared lock that lg status takes for a moment", func() {
 		file, err := os.Create(filepath.Join(state, "daemon.lock"))
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(file.Close)
 		Expect(syscall.Flock(int(file.Fd()), syscall.LOCK_SH)).To(Succeed())
 		go func() {
 			<-clock.Real{}.After(100 * time.Millisecond)
-			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+			_ = file.Close()
 		}()
 
 		held, err := daemon.LockInstance(store.OSFS{}, state, clock.Real{}, noWarning)
