@@ -74,13 +74,16 @@ func Env(env map[string]string, gh string) (map[string]string, error) {
 	return out, nil
 }
 
-// Executable gives the path lg was run by, as arg0 and the PATH list path
-// name it, when that is self. It keeps a symlink, so a unit follows an
-// upgrade that repoints it. Otherwise it gives self.
+// Executable gives arg0 made absolute, looked up on path when bare, if it
+// names self. Keeping a symlink lets the unit follow an upgrade that
+// repoints it. Otherwise it gives self.
 func Executable(arg0, path, self string) string {
 	name := arg0
 	if !strings.Contains(arg0, "/") {
-		name, _ = lookPath(arg0, path)
+		var ok bool
+		if name, ok = lookPath(arg0, path); !ok {
+			return self
+		}
 	}
 	abs, err := filepath.Abs(name)
 	if err != nil || !sameFile(abs, self) {
