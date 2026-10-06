@@ -294,8 +294,7 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 	})
 
 	It("matches --branch only where the head repository is the repository", func() {
-		forks := slices.Concat(logsOf(env, a.Fork.ID), under(env, "artifacts/*/artifact.zip", pendingFork))
-		Expect(paths(index.Filter{Branches: []string{"main"}}, index.UnitLog)).NotTo(ContainElements(forks))
+		Expect(paths(index.Filter{Branches: []string{"main"}}, index.UnitLog)).NotTo(ContainElement(BeElementOf(logsOf(env, a.Fork.ID))))
 		Expect(paths(index.Filter{Branches: []string{"main"}}, index.UnitArtifact)).NotTo(ContainElement(HavePrefix(runDir(env.Data(), pendingFork))))
 		Expect(paths(index.Filter{Events: []string{"pull_request"}}, index.UnitLog)).To(ContainElements(logsOf(env, a.Fork.ID)))
 		Expect(paths(index.Filter{SHAs: []string{"1a51"}}, index.UnitArtifact)).To(ContainElements(under(env, "artifacts/*/artifact.zip", pendingFork)))

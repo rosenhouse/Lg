@@ -14,7 +14,6 @@ var _ = Describe("IndexRun", Label("paths"), func() {
 		env := harness.InProcess()
 		env.Mirror.Backfill = 60 * scenario.Day
 		a := scenario.Archaeology()
-		const pendingFork = 9
 		running := scenario.FromFork(scenario.InProgress(scenario.CloneAt(pendingFork, "after-attempt-1", harness.DefaultNow().Add(-scenario.Day)), 1), "someone/Lg")
 		for _, r := range []scenario.Run{a.Fork, a.MainSeptember, running} {
 			Expect(env.Fake.AddRun(r)).To(Succeed())
