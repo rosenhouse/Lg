@@ -27,6 +27,7 @@ type Deps struct {
 	Env       map[string]string
 	Stdout    io.Writer
 	Stderr    io.Writer
+	Stdin     io.Reader
 	Clock     clock.Clock
 	Runner    execx.Runner
 	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
@@ -42,7 +43,7 @@ func RealDeps() Deps {
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: func() (string, string, error) { return executable(env["PATH"]) }}
+	return Deps{Env: env, Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin, Clock: clock.Real{}, Runner: execx.Real{}, NewGitHub: github.NewDefault, StoreFS: store.OSFS{}, GOOS: runtime.GOOS, Executable: func() (string, string, error) { return executable(env["PATH"]) }}
 }
 
 type commands struct {
@@ -53,6 +54,7 @@ type commands struct {
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
+	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
@@ -118,7 +120,7 @@ func Main(args []string, deps Deps) (code int) {
 	}
 	if err != nil {
 		if !errors.As(err, new(warned)) {
-			_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+			printError(deps.Stderr, err)
 		}
 		var configErr config.Error
 		var blocked failure.Blocked
@@ -157,7 +159,12 @@ func warn(deps *Deps, command string) {
 	}
 }
 
-// warned is an error that warn has already printed.
+// printError prints each line of err after "lg: ".
+func printError(stderr io.Writer, err error) {
+	_, _ = fmt.Fprintf(stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+}
+
+// warned is an error that lg has already printed.
 type warned struct{ error }
 
 func (w warned) Unwrap() error { return w.error }

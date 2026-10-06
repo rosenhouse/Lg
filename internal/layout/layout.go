@@ -101,3 +101,96 @@ func DirID(name string) (int64, bool) {
 	}
 	return id, true
 }
+
+// Location is what a path relative to data/ names. Each dir is relative to
+// data/, and empty when the path is not in one.
+type Location struct {
+	Host, Repo  string
+	RunID       int64
+	RunDir      string
+	Attempt     int
+	AttemptDir  string
+	JobID       int64
+	JobDir      string
+	ArtifactID  int64
+	ArtifactDir string
+	// File is the rest of the path, below the deepest of those dirs.
+	File string
+}
+
+// Parse decodes a path relative to data/ that is a run dir or below one.
+func Parse(path string) (Location, error) {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(path)), "/")
+	if filepath.IsAbs(path) || len(parts) < 6 || isDots(parts[0]) || !IsRepo(parts[1]+"/"+parts[2]) || parts[3] != "runs" {
+		return Location{}, fmt.Errorf("%s is not in a run dir", path)
+	}
+	runID, ok := DirID(parts[5])
+	if _, err := time.Parse(time.DateOnly, parts[4]); err != nil || !ok {
+		return Location{}, fmt.Errorf("%s is not in a run dir", path)
+	}
+	loc := Location{Host: parts[0], Repo: parts[1] + "/" + parts[2], RunID: runID, RunDir: filepath.Join(parts[:6]...)}
+	rest := parts[6:]
+	switch {
+	case len(rest) == 0:
+	case rest[0] == "artifacts" && len(rest) > 1:
+		if loc.ArtifactID, ok = DirID(rest[1]); !ok {
+			return Location{}, fmt.Errorf("%s: %s is not an artifact dir", path, rest[1])
+		}
+		loc.ArtifactDir, rest = filepath.Join(parts[:8]...), rest[2:]
+	case rest[0] != "artifacts":
+		if loc.Attempt, ok = AttemptNumber(rest[0]); !ok {
+			return Location{}, fmt.Errorf("%s: %s is not an attempt dir", path, rest[0])
+		}
+		loc.AttemptDir, rest = filepath.Join(parts[:7]...), rest[1:]
+		if len(rest) > 1 && rest[0] == "jobs" {
+			if loc.JobID, ok = DirID(rest[1]); !ok {
+				return Location{}, fmt.Errorf("%s: %s is not a job dir", path, rest[1])
+			}
+			loc.JobDir, rest = filepath.Join(parts[:9]...), rest[2:]
+		}
+	}
+	loc.File = filepath.Join(rest...)
+	return loc, nil
+}
+
+// Hit is a line rg or grep printed: a path, and the line number and text that
+// follow it when they do.
+type Hit struct {
+	Path string
+	Line int
+	Text string
+}
+
+// maxPath is the longest path Linux opens. macOS opens shorter ones.
+const maxPath = 4095
+
+// ParseHit splits hit at the longest prefix that exists, since a path may
+// hold colons, and gives false when no prefix exists. A prefix shorter than
+// hit must not be a dir, since rg prints files. It reads a match as
+// path:line:text, path:line or path:text, and a context line as path-line-text
+// or path-text.
+func ParseHit(hit string, stat func(path string) (isDir, exists bool)) (Hit, bool) {
+	for end := len(hit); end > 0; end = strings.LastIndexAny(hit[:end], ":-") {
+		if end > maxPath {
+			continue
+		}
+		if isDir, exists := stat(hit[:end]); !exists || isDir && end < len(hit) {
+			continue
+		}
+		h := Hit{Path: hit[:end]}
+		if end == len(hit) {
+			return h, true
+		}
+		sep, rest := hit[end], hit[end+1:]
+		digits, text, found := strings.Cut(rest, string(sep))
+		n, err := strconv.Atoi(digits)
+		isLine := err == nil && n > 0 && strconv.Itoa(n) == digits
+		if isLine && (found || sep == ':') {
+			h.Line, h.Text = n, text
+		} else {
+			h.Text = rest
+		}
+		return h, true
+	}
+	return Hit{}, false
+}
