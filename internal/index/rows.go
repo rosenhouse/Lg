@@ -43,6 +43,7 @@ type Run struct {
 	WorkflowName  string
 	HeadBranch    string
 	HeadSHA       string
+	FromFork      bool
 	Event         string
 	PRNumbers     []int
 	DisplayTitle  string
