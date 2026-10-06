@@ -318,6 +318,21 @@ var _ = Describe("Index.Paths", Label("paths"), func() {
 		Expect(got).To(ConsistOf(logs[2:]))
 	}, NodeTimeout(time.Minute))
 
+	It("gives the files it can read, with the error of each unit dir it cannot", func(ctx SpecContext) {
+		env, ix := archaeology(ctx)
+		release3 := scenario.Archaeology().Release3.ID
+		logs := logsOf(env, release3)
+		jobDir, artifactDir := filepath.Dir(logs[0]), artifactDirs(env, release3)[0]
+		for _, dir := range []string{jobDir, artifactDir} {
+			Expect(os.RemoveAll(dir)).To(Succeed())
+			Expect(os.WriteFile(dir, nil, 0o644)).To(Succeed())
+		}
+
+		got, err := ix.Paths(ctx, index.Filter{SHAs: []string{"3"}}, index.UnitDefault)
+		Expect(err).To(MatchError(And(ContainSubstring(logs[0]), ContainSubstring(filepath.Join(artifactDir, "extracted")))))
+		Expect(got).To(ConsistOf(logs[1:]))
+	}, NodeTimeout(time.Minute))
+
 	It("refuses an unknown unit", func(ctx SpecContext) {
 		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), GinkgoT().TempDir())
 		Expect(err).NotTo(HaveOccurred())
