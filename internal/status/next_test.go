@@ -183,6 +183,16 @@ var _ = Describe("Next", Label("status"), func() {
 		Expect(again.Repos[repo].Pending).To(Equal([]status.Pending{{Unit: unit, Error: "503", Since: finished.Add(30 * time.Minute)}}))
 	})
 
+	It("records since anew for a unit whose since is after the cycle, as after a clock stepped back", func() {
+		unit := status.Unit{Run: 1, Attempt: 2}
+		prev := status.Next(nil, good(started.Add(-time.Hour)))
+		prev.Repos[repo] = status.Repo{Pending: []status.Pending{{Unit: unit, Error: "503", Since: finished.Add(24 * time.Hour)}}}
+		c := good(started)
+		c.Pending = []status.Pending{{Unit: unit, Error: "503"}}
+
+		Expect(status.Next(&prev, c).Repos[repo].Pending).To(Equal([]status.Pending{{Unit: unit, Error: "503", Since: finished}}))
+	})
+
 	It("records since for a unit still pending from a status.json that has no since", func() {
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
 		prev.Repos[repo] = status.Repo{Pending: []status.Pending{{Unit: status.Unit{Run: 1}, Error: "502"}}}
