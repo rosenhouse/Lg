@@ -24,16 +24,15 @@ type Lock struct {
 	file *os.File
 }
 
-// Wait takes the lock on path, polling until timeout and trying once more
-// after it, and then records this process's pid in it if it can. If the lock
-// is busy, it first calls waiting with the holder.
+// Wait takes the lock on path, polling until timeout, and then records this
+// process's pid in it if it can. If the lock is busy, it first calls waiting
+// with the holder.
 func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(holder string)) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return nil, err
 	}
 	deadline := clk.After(timeout)
-	expired := false
 	for tries := 0; ; tries++ {
 		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
@@ -46,13 +45,10 @@ func Wait(path string, timeout time.Duration, clk clock.Clock, waiting func(hold
 		if tries == 0 {
 			waiting(holder(path))
 		}
-		if expired {
-			_ = file.Close()
-			return nil, fmt.Errorf("%s is held by %s; %w after %s", path, holder(path), ErrTimeout, timeout)
-		}
 		select {
 		case <-deadline:
-			expired = true
+			_ = file.Close()
+			return nil, fmt.Errorf("%s is held by %s; %w after %s", path, holder(path), ErrTimeout, timeout)
 		case <-clk.After(pollInterval):
 		}
 	}
@@ -79,8 +75,8 @@ func (l *Lock) Release() error {
 }
 
 // Held reports whether a holder has the lock on path. It takes a shared
-// lock for a moment, which a Wait at that moment retries past, even one
-// whose timeout is shorter than a poll.
+// lock for a moment, so a Wait that overlaps it needs a timeout of at least
+// one poll.
 func Held(path string) (bool, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
