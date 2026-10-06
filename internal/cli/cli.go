@@ -120,7 +120,7 @@ func Main(args []string, deps Deps) (code int) {
 	}
 	if err != nil {
 		if !errors.As(err, new(warned)) {
-			_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+			printError(deps.Stderr, err)
 		}
 		var configErr config.Error
 		var blocked failure.Blocked
@@ -159,7 +159,12 @@ func warn(deps *Deps, command string) {
 	}
 }
 
-// warned is an error that warn has already printed.
+// printError prints each line of err after "lg: ".
+func printError(stderr io.Writer, err error) {
+	_, _ = fmt.Fprintf(stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
+}
+
+// warned is an error that lg has already printed.
 type warned struct{ error }
 
 func (w warned) Unwrap() error { return w.error }

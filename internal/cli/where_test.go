@@ -69,7 +69,7 @@ var _ = Describe("lg where", Label("where"), func() {
 		return objects
 	}
 
-	It("exits 1 naming each input it cannot decode, after printing the others", func() {
+	It("exits 1 naming each input it cannot decode, and prints the others", func() {
 		missing := filepath.Join(c.Home, "data", "missing.txt") + ":1:x"
 		host := filepath.Join(c.Home, "data", "github.com")
 
@@ -77,8 +77,22 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(strings.Count(c.Stdout.String(), "\n")).To(Equal(1))
 		Expect(c.Stderr.String()).To(SatisfyAll(
 			ContainSubstring(strconv.Quote(missing)+" names no file"),
-			ContainSubstring("github.com is not in a run dir"),
+			ContainSubstring(host+": github.com is not in a run dir"),
 		))
+	})
+
+	It("prints each error as it reads stdin", func() {
+		var stderr string
+		c.Stdin = io.MultiReader(
+			strings.NewReader("/nope:3:x\n"),
+			onRead(func() { stderr = c.Stderr.String() }),
+			strings.NewReader(filepath.Join(job, "log.txt")+"\n"),
+		)
+
+		Expect(c.Main("where")).To(Equal(1))
+		Expect(stderr).To(Equal("lg: \"/nope:3:x\" names no file\n"))
+		Expect(c.Stderr.String()).To(Equal(stderr))
+		Expect(decoded()).To(HaveLen(1))
 	})
 
 	It("quotes an input it cannot decode, and hints at rg -H when it starts with a line number", func() {

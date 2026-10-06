@@ -37,16 +37,20 @@ func (w whereCmd) Run(deps *Deps) error {
 	out.SetEscapeHTML(false)
 	finder := newPlaceFinder(roots.Data)
 	defer finder.lines.close()
-	var failed []error
+	var failed error
 	err = eachInput(w.Hits, deps.Stdin, func(hit string) error {
 		p, err := finder.find(hit)
 		if err != nil {
-			failed = append(failed, err)
+			printError(deps.Stderr, err)
+			failed = warned{err}
 			return nil
 		}
 		return out.Encode(p)
 	})
-	return errors.Join(append(failed, err)...)
+	if err != nil {
+		return err
+	}
+	return failed
 }
 
 // eachInput calls f with each of hits, or else with each line of stdin that
@@ -186,7 +190,7 @@ func (f placeFinder) find(hit string) (place, error) {
 	}
 	loc, err := layout.Parse(rel)
 	if err != nil {
-		return place{}, err
+		return place{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if h.Line > 0 {
 		var holds bool
