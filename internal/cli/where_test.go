@@ -50,7 +50,7 @@ var _ = Describe("lg where", Label("where"), func() {
 		setHTMLURL(filepath.Join(job, "job.json"), "https://ghes.example/job")
 		setHTMLURL(filepath.Join(attempt, "attempt.json"), "https://ghes.example/run")
 
-		Expect(c.Main("where", filepath.Join(job, "log.txt")+":3:x", filepath.Join(attempt, "fetch.json"))).To(Equal(0), c.Stderr.String())
+		Expect(c.Main("where", filepath.Join(job, "log.txt"), filepath.Join(attempt, "fetch.json"))).To(Equal(0), c.Stderr.String())
 		lines := strings.Split(strings.TrimSuffix(c.Stdout.String(), "\n"), "\n")
 		Expect(lines).To(HaveExactElements(
 			MatchRegexp(`"html_url":"https://ghes.example/job"`),
@@ -121,17 +121,35 @@ var _ = Describe("lg where", Label("where"), func() {
 
 	It("gives a line only when the file has that line and it holds the text", func() {
 		log := filepath.Join(job, "log.txt")
-		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR <nil> disk full"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR disk full"), 0o644)).To(Succeed())
 
-		Expect(c.Main("where", log+":10:15:00 ERROR <nil> disk full", log+":2:ERROR <nil>", log+":2", log+":3", log+":1:15:00")).To(Equal(0), c.Stderr.String())
+		Expect(c.Main("where", log+":10:15:00 ERROR disk full", log+":2:ERROR", log+":2")).To(Equal(0), c.Stderr.String())
 		Expect(decoded()).To(HaveExactElements(
-			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "10:15:00 ERROR <nil> disk full")),
-			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "ERROR <nil>")),
+			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "10:15:00 ERROR disk full")),
+			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "ERROR")),
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), Not(HaveKey("text"))),
-			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "3")),
-			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "1:15:00")),
 		))
-		Expect(c.Stdout.String()).To(ContainSubstring(`"text":"ERROR <nil>"`))
+	})
+
+	It("exits 1 naming a hit whose text no line of its file holds", func() {
+		log := filepath.Join(job, "log.txt")
+		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR disk full\n"), 0o644)).To(Succeed())
+		hits := []string{log + ":1:15:00", log + "-2-ERROR x", log + ":2:ERROR x [... omitted end of long line]"}
+
+		Expect(c.Main(append(append([]string{"where"}, hits...), log+":3")...)).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		for _, hit := range hits {
+			Expect(c.Stderr.String()).To(ContainSubstring(strconv.Quote(hit) + ": no line of " + log + " holds its text\n"))
+		}
+		Expect(c.Stderr.String()).To(ContainSubstring(log + " has no line 3\n"))
+	})
+
+	It("prints <, > and & in text unescaped", func() {
+		log := filepath.Join(job, "log.txt")
+		Expect(os.WriteFile(log, []byte("<nil> & more\n"), 0o644)).To(Succeed())
+
+		Expect(c.Main("where", log+":1:<nil> & more")).To(Equal(0), c.Stderr.String())
+		Expect(c.Stdout.String()).To(ContainSubstring(`"text":"<nil> & more"`))
 	})
 
 	It("reads a context line rg printed without a line number", func() {
@@ -170,7 +188,6 @@ var _ = Describe("lg where", Label("where"), func() {
 			log+":2:10:10:15:00 ERROR disk full yyy [... 1 more match]",
 			log+":2:[Omitted long matching line]",
 			log+":2:10:[Omitted long line with 1 matches]",
-			log+":2:ERROR x [... omitted end of long line]",
 		)).To(Equal(0), c.Stderr.String())
 		Expect(decoded()).To(HaveExactElements(
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "10:15:00 ERROR disk full")),
@@ -178,7 +195,6 @@ var _ = Describe("lg where", Label("where"), func() {
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "10:15:00 ERROR disk full yyy [... 1 more match]")),
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "[Omitted long matching line]")),
 			SatisfyAll(HaveKeyWithValue("line", BeEquivalentTo(2)), HaveKeyWithValue("text", "[Omitted long line with 1 matches]")),
-			SatisfyAll(Not(HaveKey("line")), HaveKeyWithValue("text", "2:ERROR x [... omitted end of long line]")),
 		))
 	})
 
@@ -222,7 +238,7 @@ var _ = Describe("lg where", Label("where"), func() {
 	It("decodes a hit in a file created after where listed its dir", func() {
 		created := filepath.Join(job, "created.txt")
 		c.Stdin = io.MultiReader(
-			strings.NewReader(filepath.Join(job, "log.txt")+":1:x\n"),
+			strings.NewReader(filepath.Join(job, "log.txt")+"\n"),
 			onRead(func() { Expect(os.WriteFile(created, []byte("x\n"), 0o644)).To(Succeed()) }),
 			strings.NewReader(created+":1:x\n"),
 		)

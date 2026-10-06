@@ -209,10 +209,18 @@ func (f *placeFinder) find(hit string) (place, error) {
 		return place{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if h.Line > 0 {
-		var holds bool
-		if h.Text, holds = f.holding(path, h.Line, h.Text); !holds {
-			h.Line, h.Text = 0, hit[len(h.Path)+1:]
+		text, holds := f.holding(path, h.Line, h.Text)
+		if !holds {
+			text = hit[len(h.Path)+1:]
+			if !f.anyHolding(path, text) {
+				if h.Text == "" {
+					return place{}, fmt.Errorf("%s has no line %d", path, h.Line)
+				}
+				return place{}, fmt.Errorf("%q: no line of %s holds its text", hit, path)
+			}
+			h.Line = 0
 		}
+		h.Text = text
 	}
 	p, err := f.describe(loc)
 	if err == nil && (loc.File == "log.txt.tombstone" || loc.File == "artifact.zip.tombstone") {
@@ -226,7 +234,7 @@ func (f *placeFinder) find(hit string) (place, error) {
 var rgOmission = regexp.MustCompile(`^\[Omitted long (matching line|line with [0-9]+ matches)\]$| \[\.\.\. (omitted end of long line|[0-9]+ more match(es)?)\]$`)
 
 // holding gives text, without the column rg --column printed before it, when
-// line n of path holds it but for rg's omissions.
+// line n of path holds it.
 func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 	line, ok := f.lines.line(path, n)
 	if !ok {
@@ -237,11 +245,29 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 		texts = append(texts, text[len(column):])
 	}
 	for _, t := range texts {
-		if strings.Contains(line, rgOmission.ReplaceAllString(t, "")) {
+		if holds(line, t) {
 			return t, true
 		}
 	}
 	return "", false
+}
+
+// anyHolding tells whether any line of path holds text.
+func (f *placeFinder) anyHolding(path, text string) bool {
+	for n := 1; ; n++ {
+		line, ok := f.lines.line(path, n)
+		if !ok {
+			return false
+		}
+		if holds(line, text) {
+			return true
+		}
+	}
+}
+
+// holds tells whether line holds text but for rg's omissions.
+func holds(line, text string) bool {
+	return strings.Contains(line, rgOmission.ReplaceAllString(text, ""))
 }
 
 // existing gives the file path names: path itself when absolute, else path
