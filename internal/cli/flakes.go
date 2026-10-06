@@ -84,7 +84,7 @@ func printFlip(w io.Writer, flip index.Flip) error {
 		outcomes = append(outcomes, fmt.Sprintf("%d:%s", o.Attempt, o.Conclusion))
 	}
 	line := fmt.Sprintf("run %d (sha %.7s): %s: %s", flip.RunID, flip.HeadSHA, name, strings.Join(outcomes, " "))
-	if flip.Step == "" && len(flip.FailingSteps) > 0 {
+	if len(flip.FailingSteps) > 0 {
 		var steps []string
 		for _, step := range flip.FailingSteps {
 			steps = append(steps, fmt.Sprintf("%q", step))

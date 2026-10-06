@@ -52,9 +52,9 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 
 		Expect(flips).To(HaveExactElements(
 			model.Flip{RunID: 1, Job: "lint", Outcomes: outcomes(1, "failure", 3, "success"), FailingSteps: []string{"golangci-lint"}, Logs: []string{"attempt-1/13/log.txt", "attempt-3/33/log.txt"}},
-			model.Flip{RunID: 1, Job: "lint", Step: "golangci-lint", Outcomes: outcomes(1, "failure", 3, "success"), FailingSteps: []string{"golangci-lint"}, Logs: []string{"attempt-1/13/log.txt", "attempt-3/33/log.txt"}},
+			model.Flip{RunID: 1, Job: "lint", Step: "golangci-lint", Outcomes: outcomes(1, "failure", 3, "success"), Logs: []string{"attempt-1/13/log.txt", "attempt-3/33/log.txt"}},
 			model.Flip{RunID: 1, Job: "test", Outcomes: outcomes(1, "failure", 2, "success"), FailingSteps: []string{"go test"}, Logs: []string{"attempt-1/11/log.txt", "attempt-2/21/log.txt"}},
-			model.Flip{RunID: 1, Job: "test", Step: "go test", Outcomes: outcomes(1, "failure", 2, "success"), FailingSteps: []string{"go test"}, Logs: []string{"attempt-1/11/log.txt", "attempt-2/21/log.txt"}},
+			model.Flip{RunID: 1, Job: "test", Step: "go test", Outcomes: outcomes(1, "failure", 2, "success"), Logs: []string{"attempt-1/11/log.txt", "attempt-2/21/log.txt"}},
 		))
 	})
 

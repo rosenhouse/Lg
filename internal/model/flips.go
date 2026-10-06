@@ -21,7 +21,8 @@ type Outcome struct {
 }
 
 // Flip is a job name of a run, or a step of it when Step is not "", that
-// failed in one attempt and succeeded in another.
+// failed in one attempt and succeeded in another. FailingSteps are a job
+// name's steps that failed in any attempt.
 type Flip struct {
 	RunID        int64
 	Job, Step    string
@@ -104,9 +105,6 @@ func concluded(j AttemptJob, f func(k flipKey, conclusion string)) {
 func (f *Flip) observe(j AttemptJob, conclusion string) {
 	if j.Log != "" {
 		f.Logs = appendNew(f.Logs, j.Log)
-	}
-	if f.Step != "" && failing(conclusion) {
-		f.FailingSteps = appendNew(f.FailingSteps, f.Step)
 	}
 	if !failing(conclusion) && conclusion != "success" {
 		return
