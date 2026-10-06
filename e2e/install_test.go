@@ -98,6 +98,23 @@ var _ = Describe("lg daemon install on Linux", Label("install"), func() {
 		))
 	})
 
+	It("bakes in a PATH on which lg, run in the unit's env, finds gh when LG_GH is unset", func(ctx SpecContext) {
+		env.Setenv("LG_GH", "")
+		env.PrependPath(filepath.Dir(env.GH().Path))
+		// A dead proxy keeps the sync after gh offline.
+		env.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
+
+		sync := exec.CommandContext(ctx, lgPath, "sync")
+		for k, v := range fakeservice.UnitEnv(unit) {
+			sync.Env = append(sync.Env, k+"="+v)
+		}
+		sync.Env = append(sync.Env, "HOME="+env.Home())
+		out, _ := sync.CombinedOutput()
+
+		Expect(env.GH().Calls()).To(Equal([]string{"auth token --hostname github.com"}), string(out))
+	})
+
 	It("runs `systemctl --user daemon-reload` then `systemctl --user enable --now lg.service`, and on reinstall rewrites the unit and restarts it", func() {
 		queries := []string{"--user show -p UnitPath --value", "--user show -p FragmentPath --value lg.service", "--user show -p ActiveState --value lg.service"}
 		Eventually(env.Lg("daemon", "install"), harness.ExitTimeout).Should(gexec.Exit(0))

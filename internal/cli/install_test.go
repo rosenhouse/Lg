@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -120,7 +119,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		config := filepath.Join(home, ".config", "lg", "config.yaml")
 		Expect(os.WriteFile(config, []byte("repo: rosenhouse/lg\napi_url: http://127.0.0.1:1\n"), 0o644)).To(Succeed())
 
-		env = unitEnv(filepath.Join(home, ".config", "systemd", "user", "lg.service"))
+		env = fakeservice.UnitEnv(filepath.Join(home, ".config", "systemd", "user", "lg.service"))
 		env["HOME"] = home
 		stderr.Reset()
 
@@ -178,18 +177,3 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Expect(runner.Calls()).To(BeEmpty())
 	})
 })
-
-// unitEnv gives the variables a systemd unit sets, whose values hold nothing to unquote.
-func unitEnv(unit string) map[string]string {
-	GinkgoHelper()
-	content, err := os.ReadFile(unit)
-	Expect(err).NotTo(HaveOccurred())
-	env := map[string]string{}
-	for _, line := range strings.Split(string(content), "\n") {
-		if kv, ok := strings.CutPrefix(line, `Environment="`); ok {
-			k, v, _ := strings.Cut(strings.TrimSuffix(kv, `"`), "=")
-			env[k] = v
-		}
-	}
-	return env
-}

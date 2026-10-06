@@ -104,3 +104,18 @@ func (f *Fake) lines(name string) []string {
 }
 
 func (f *Fake) file(name string) string { return filepath.Join(f.dir, name) }
+
+// UnitEnv gives the variables the systemd unit at path sets, whose values must hold nothing to unquote.
+func UnitEnv(path string) map[string]string {
+	ginkgo.GinkgoHelper()
+	content, err := os.ReadFile(path)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	env := map[string]string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		if kv, ok := strings.CutPrefix(line, `Environment="`); ok {
+			k, v, _ := strings.Cut(strings.TrimSuffix(kv, `"`), "=")
+			env[k] = v
+		}
+	}
+	return env
+}
