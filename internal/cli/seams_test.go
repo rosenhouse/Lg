@@ -56,11 +56,12 @@ var _ = Describe("RealDeps", Label("failures"), func() {
 
 	It("installs a service for the OS lg runs on, and for lg's own executable", Label("install"), func() {
 		Expect(cli.RealDeps().GOOS).To(Equal(runtime.GOOS))
-		exe, err := cli.RealDeps().Executable()
+		exe, file, err := cli.RealDeps().Executable()
 		Expect(err).NotTo(HaveOccurred())
 		self, err := os.Executable()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sameFile(exe, self)).To(BeTrue())
+		Expect(filepath.EvalSymlinks(self)).To(Equal(file))
 	})
 
 	It("opens the store on the OS filesystem", Label("blocked"), func() {

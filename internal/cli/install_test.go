@@ -35,6 +35,7 @@ func (l *loggingRunner) Run(_ context.Context, name string, args []string, _ map
 var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 	var (
 		home, gh       string
+		exe, file      string
 		env            map[string]string
 		runner         *loggingRunner
 		stdout, stderr *bytes.Buffer
@@ -50,6 +51,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		env = map[string]string{"HOME": home, "LG_GH": gh}
 		runner = &loggingRunner{}
 		stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
+		exe, file = "/opt/lg/bin/lg", "/opt/lg/libexec/lg"
 	})
 
 	run := func(goos string, args ...string) int {
@@ -61,7 +63,7 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 			Runner:     runner,
 			StoreFS:    store.OSFS{},
 			GOOS:       goos,
-			Executable: func() (string, error) { return "/opt/lg/bin/lg", nil },
+			Executable: func() (string, string, error) { return exe, file, nil },
 		})
 	}
 
@@ -82,6 +84,19 @@ var _ = Describe("lg daemon install and uninstall", Label("install"), func() {
 		Entry(nil, "linux", []string{"--name", "lg-test"}, ".config/systemd/user/lg-test.service"),
 		Entry(nil, "darwin", nil, "Library/LaunchAgents/com.github.rosenhouse.lg.plist"),
 		Entry(nil, "darwin", []string{"--name", "lg-test"}, "Library/LaunchAgents/com.github.rosenhouse.lg-test.plist"),
+	)
+
+	DescribeTable("refuses when the path lg was run by, or the file it resolves to, was built by go run",
+		func(path, resolved string) {
+			exe, file = path, resolved
+
+			Expect(run("linux", "daemon", "install")).To(Equal(1))
+
+			Expect(stderr.String()).To(ContainSubstring("/tmp/go-build1/b001/exe/lg was built by go run"))
+			Expect(runner.calls).To(BeEmpty())
+		},
+		Entry(nil, "/tmp/go-build1/b001/exe/lg", "/opt/lg/libexec/lg"),
+		Entry(nil, "/opt/lg/bin/lg", "/tmp/go-build1/b001/exe/lg"),
 	)
 
 	It("hides --name from help", func() {

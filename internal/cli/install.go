@@ -14,12 +14,14 @@ type daemonInstallCmd struct {
 }
 
 func (c daemonInstallCmd) Run(deps *Deps) error {
-	exe, err := deps.Executable()
+	exe, file, err := deps.Executable()
 	if err != nil {
 		return err
 	}
-	if service.BuiltByGoRun(exe) {
-		return fmt.Errorf("%s was built by go run; install from go build or go install", exe)
+	for _, path := range []string{exe, file} {
+		if service.BuiltByGoRun(path) {
+			return fmt.Errorf("%s was built by go run; install from go build or go install", path)
+		}
 	}
 	gh, err := service.FindGH(deps.Env)
 	if err != nil {
@@ -62,6 +64,20 @@ func (c daemonUninstallCmd) Run(deps *Deps) error {
 		_, err = fmt.Fprintf(deps.Stdout, "removed %s\n", path)
 	}
 	return err
+}
+
+// executable gives the path lg was run by, as service.Executable finds it
+// on path, and the file it resolves to.
+func executable(path string) (exe, file string, err error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", "", err
+	}
+	file, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		return "", "", err
+	}
+	return service.Executable(os.Args[0], path, self), file, nil
 }
 
 func manager(deps *Deps) service.Manager {

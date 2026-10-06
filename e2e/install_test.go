@@ -159,6 +159,15 @@ var _ = Describe("lg daemon install", Label("install"), func() {
 		Expect(string(session.Err.Contents())).To(ContainSubstring("go run"))
 		Expect(unit).NotTo(BeAnExistingFile())
 		Expect(systemctl.Calls()).To(BeEmpty())
+
+		bin := GinkgoT().TempDir()
+		Expect(os.Symlink(lg, filepath.Join(bin, "lg"))).To(Succeed())
+		env.PrependPath(bin)
+		session = env.Sh("lg daemon install")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(1))
+		Expect(string(session.Err.Contents())).To(ContainSubstring("go run"))
+		Expect(unit).NotTo(BeAnExistingFile())
 	})
 })
 
