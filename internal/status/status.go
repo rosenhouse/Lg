@@ -246,10 +246,10 @@ func Next(prev *Status, c Cycle) Status {
 		repo.DefaultBranch = last.DefaultBranch
 	}
 	repo.Pending = withSince(c.Pending, last.Pending, finished)
+	repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published, c.Completed)...)
 	if c.Completed {
 		st.LastSyncOKAt = &finished
 	} else {
-		repo.Pending = append(repo.Pending, carried(last.Pending, repo.Pending, c.Disk.Published)...)
 		st.Blocked = nextBlocked(prev, c.Err, st.LastSyncStartedAt)
 	}
 	repo.PendingUnits = len(repo.Pending)
@@ -348,16 +348,23 @@ func sinceIn(ps []Pending, u Unit) (time.Time, bool) {
 	return ps[i].Since, true
 }
 
-// carried gives the units of last that a cycle which stopped early neither
-// left again, in now, nor published.
-func carried(last, now []Pending, published map[Unit]bool) []Pending {
+// carried gives the units of last that a cycle did not retry, and neither
+// left again, in now, nor published. A cycle that stopped early retried
+// none. One that completed skipped the attempts and artifacts of each run
+// it left pending as a whole.
+func carried(last, now []Pending, published map[Unit]bool, completed bool) []Pending {
 	var kept []Pending
 	for _, p := range last {
-		if !published[p.Unit] && !slices.ContainsFunc(now, func(n Pending) bool { return n.Unit == p.Unit }) {
+		skipped := !completed || pendingIn(now, Unit{Run: p.Run})
+		if skipped && !published[p.Unit] && !pendingIn(now, p.Unit) {
 			kept = append(kept, p)
 		}
 	}
 	return kept
+}
+
+func pendingIn(ps []Pending, u Unit) bool {
+	return slices.ContainsFunc(ps, func(p Pending) bool { return p.Unit == u })
 }
 
 // Read gives nil when path does not exist.
