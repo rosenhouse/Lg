@@ -28,6 +28,8 @@ const (
 	sameTimeLow, sameTimeHigh = 20, 100
 	// renamed is a run of the Archaeology workflow under the name "renamed", with SHA aaaa….
 	renamed = 30
+	// steady has two attempts, and a job "steady" in attempt 2 only, with SHA bbbb….
+	steady = 40
 )
 
 // archaeology syncs the Archaeology runs and the runs above, writes an
@@ -40,9 +42,11 @@ func archaeology(ctx context.Context) (*harness.InProcessEnv, *index.Index) {
 	sameTime := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 	runs := append(scenario.Archaeology().All(),
 		scenario.OnBranch(scenario.FromFork(scenario.InProgress(scenario.CloneAt(pendingFork, "after-attempt-1", harness.DefaultNow().Add(-scenario.Day)), 1), "someone/Lg"), "main"),
-		scenario.CloneAt(sameTimeLow, "after-attempt-1", sameTime),
+		// Job 7 is the first by id and the last by path.
+		scenario.RenumberJob(scenario.CloneAt(sameTimeLow, "after-attempt-1", sameTime), 1, "pass", 7),
 		scenario.CloneAt(sameTimeHigh, "after-attempt-1", sameTime),
-		scenario.RenameWorkflow(scenario.WithSHA(scenario.CloneAt(renamed, "after-attempt-1", sameTime), strings.Repeat("a", 40)), 1, "renamed"))
+		scenario.RenameWorkflow(scenario.WithSHA(scenario.CloneAt(renamed, "after-attempt-1", sameTime), strings.Repeat("a", 40)), 1, "renamed"),
+		scenario.RenameJob(scenario.WithSHA(scenario.CloneAt(steady, "after-attempt-2", sameTime.Add(-scenario.Day)), strings.Repeat("b", 40)), 2, "flaky", "steady"))
 	for _, r := range runs {
 		Expect(env.Fake.AddRun(r)).To(Succeed())
 	}
@@ -92,6 +96,24 @@ func under(env *harness.InProcessEnv, pattern string, ids ...int64) []string {
 
 func logsOf(env *harness.InProcessEnv, ids ...int64) []string {
 	return under(env, "attempt-*/jobs/*/log.txt", ids...)
+}
+
+// runJSON gives the .json files below the dir of each run, outside extracted/ trees, in walk order.
+func runJSON(env *harness.InProcessEnv, ids ...int64) []string {
+	GinkgoHelper()
+	var files []string
+	for _, id := range ids {
+		Expect(filepath.WalkDir(runDir(env.Data(), id), func(path string, d fs.DirEntry, err error) error {
+			if err == nil && d.IsDir() && d.Name() == "extracted" {
+				return filepath.SkipDir
+			}
+			if err == nil && d.Type().IsRegular() && strings.HasSuffix(path, ".json") {
+				files = append(files, path)
+			}
+			return err
+		})).To(Succeed())
+	}
+	return files
 }
 
 // extractedFiles gives the regular files below the extracted/ trees of the
@@ -186,6 +208,37 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		}),
 	)
 
+	DescribeTable("--job selects a unit above a job when the unit holds a matching job",
+		func(u index.Unit) {
+			release3 := paths(index.Filter{SHAs: []string{"3"}}, u)
+			Expect(release3).NotTo(BeEmpty())
+			Expect(paths(index.Filter{Jobs: []string{"matrix*"}, SHAs: []string{"3"}}, u)).To(Equal(release3))
+			Expect(paths(index.Filter{Jobs: []string{"no-such-job"}}, u)).To(BeEmpty())
+		},
+		Entry("run", index.UnitRun),
+		Entry("attempt", index.UnitAttempt),
+		Entry("artifact", index.UnitArtifact),
+		Entry("extracted", index.UnitExtracted),
+	)
+
+	It("--job selects only the attempts that hold a matching job", func() {
+		Expect(paths(index.Filter{Jobs: []string{"steady"}}, index.UnitAttempt)).To(ConsistOf(under(env, "attempt-2/*.json", steady)))
+	})
+
+	DescribeTable("--conclusion of a unit above a job is its attempt's, or else its run's latest attempt's",
+		func(conclusion string, u index.Unit, want func() []string) {
+			expected := want()
+			Expect(paths(index.Filter{SHAs: []string{"8"}, Conclusions: []string{conclusion}}, u)).To(ConsistOf(expected))
+		},
+		Entry("an attempt that failed", "failure", index.UnitAttempt, func() []string { return under(env, "attempt-1/*.json", a.Rerun.ID) }),
+		Entry("a run whose latest attempt succeeded", "failure", index.UnitRun, func() []string { return nil }),
+		Entry("a run, by its latest attempt", "success", index.UnitRun, func() []string { return runJSON(env, a.Rerun.ID) }),
+		Entry("an artifact of a run whose latest attempt succeeded", "failure", index.UnitArtifact, func() []string { return nil }),
+		Entry("an artifact, by its run's latest attempt", "success", index.UnitArtifact, func() []string {
+			return under(env, "artifacts/*/artifact.zip", a.Rerun.ID)
+		}),
+	)
+
 	DescribeTable("each unit filters on its own time",
 		func(u index.Unit, want func() []string) {
 			expected := want()
@@ -265,6 +318,11 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		Expect(got).To(Equal(want))
 	})
 
+	It("orders runs created at the same time by run_id", func() {
+		sameTime := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+		Expect(paths(index.Filter{Since: sameTime, Until: sameTime}, index.UnitRun)).To(Equal(runJSON(env, sameTimeLow, renamed, sameTimeHigh)))
+	})
+
 	DescribeTable("each unit maps to its file set, and the default is log plus extracted",
 		func(u index.Unit, want func() []string) {
 			expected := want()
@@ -274,21 +332,7 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		Entry("default", index.UnitDefault, func() []string {
 			return slices.Concat(logsOf(env, allRuns(env)...), extractedFiles(env, allRuns(env)...))
 		}),
-		Entry("run", index.UnitRun, func() []string {
-			var files []string
-			for _, id := range allRuns(env) {
-				Expect(filepath.WalkDir(runDir(env.Data(), id), func(path string, d fs.DirEntry, err error) error {
-					if err == nil && d.IsDir() && d.Name() == "extracted" {
-						return filepath.SkipDir
-					}
-					if err == nil && d.Type().IsRegular() && strings.HasSuffix(path, ".json") {
-						files = append(files, path)
-					}
-					return err
-				})).To(Succeed())
-			}
-			return files
-		}),
+		Entry("run", index.UnitRun, func() []string { return runJSON(env, allRuns(env)...) }),
 		Entry("attempt", index.UnitAttempt, func() []string {
 			return slices.Concat(under(env, "attempt-*/attempt.json", allRuns(env)...), under(env, "attempt-*/jobs.json", allRuns(env)...),
 				under(env, "attempt-*/artifacts.json", allRuns(env)...), under(env, "attempt-*/fetch.json", allRuns(env)...))
