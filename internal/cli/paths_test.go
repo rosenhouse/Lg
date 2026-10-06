@@ -168,6 +168,9 @@ var _ = DescribeTable("lg paths exits 2", Label("paths"),
 	Entry("for an empty --job", []string{"--job", ""}, "--job must not be empty"),
 	Entry("for an empty --event", []string{"--event", ""}, "--event must not be empty"),
 	Entry("for an empty --conclusion", []string{"--conclusion", ""}, "--conclusion must not be empty"),
+	Entry("for a repeated --unit", []string{"--unit", "log", "--unit", "extracted"}, "--unit must not be given more than once"),
+	Entry("for a repeated --since", []string{"--since", "60d", "--since", "1d"}, "--since: must not be given more than once"),
+	Entry("for a repeated --until", []string{"--until", "60d", "--until=1d"}, "--until: must not be given more than once"),
 )
 
 var _ = DescribeTable("lg paths prints the paths it can read, then exits 1 naming what it cannot", Label("paths"),

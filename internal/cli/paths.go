@@ -27,7 +27,7 @@ type pathsCmd struct {
 	Conclusion []string `sep:"none" help:"Only units that concluded so: the job, the attempt, or else the run's latest attempt."`
 	Since      moment   `placeholder:"TIME" help:"Only units since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
 	Until      moment   `placeholder:"TIME" help:"Only units until this time, inclusive. A date means its 00:00 UTC."`
-	Unit       *string  `enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit (${enum}) instead of logs and extracted files."`
+	Unit       []string `sep:"none" enum:"run,attempt,job,log,artifact,extracted" help:"Print the files of this unit (${enum}) instead of logs and extracted files."`
 	Null       bool     `short:"0" help:"Separate paths with NUL instead of newline."`
 }
 
@@ -36,8 +36,11 @@ func (pathsCmd) Help() string {
 }
 
 // Validate refuses an empty value, which a filter would take as matching every
-// run or none.
+// run or none, and more than one --unit.
 func (p pathsCmd) Validate() error {
+	if len(p.Unit) > 1 {
+		return errors.New("--unit must not be given more than once")
+	}
 	flags := map[string][]string{
 		"branch": p.Branch, "sha": p.SHA, "workflow": p.Workflow, "job": p.Job, "event": p.Event, "conclusion": p.Conclusion,
 	}
@@ -57,6 +60,9 @@ type moment struct {
 }
 
 func (m *moment) Decode(ctx *kong.DecodeContext) error {
+	if m.set {
+		return errors.New("must not be given more than once")
+	}
 	var s string
 	if err := ctx.Scan.PopValueInto("time", &s); err != nil {
 		return err
@@ -118,8 +124,8 @@ func (p pathsCmd) Run(deps *Deps) error {
 		return nil
 	}
 	var unit index.Unit
-	if p.Unit != nil {
-		unit = index.Unit(*p.Unit)
+	if len(p.Unit) > 0 {
+		unit = index.Unit(p.Unit[0])
 	}
 	ctx := context.Background()
 	ix, err := openIndex(ctx, roots, deps)
