@@ -53,6 +53,12 @@ var _ = Describe("lg daemon run", Label("daemon"), func() {
 		Eventually(ctx, attemptDir, cycleWait).WithArguments(env, 2).Should(BeADirectory())
 	}, daemonTimeout)
 
+	It("warns that it never synced without telling itself to run lg sync", func(ctx SpecContext) {
+		running := env.Start("daemon", "run")
+
+		Eventually(ctx, running.Err, cycleWait).Should(gbytes.Say("^lg: warning: never synced\n"))
+	}, daemonTimeout)
+
 	It("sets next_sync_at 10m after last_sync_started_at when sync_interval is unset", func(ctx SpecContext) {
 		env.Start("daemon", "run")
 		Eventually(ctx, cycle(env), cycleWait).Should(Equal(1.0))

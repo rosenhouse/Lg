@@ -143,7 +143,7 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning := status.Warning(deps.Clock.Now(), st)
-	if st == nil && command != "sync" {
+	if st == nil && command != "sync" && command != "daemon run" {
 		warning += "; run `lg sync`"
 	}
 	if warning != "" {
