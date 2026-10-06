@@ -63,4 +63,4 @@ jobs:
             sleep 1
           done
           exit 1
-      - run: go tool ginkgo --label-filter=systemd ./e2e
+      - run: go tool ginkgo --fail-on-empty --label-filter=systemd ./e2e
