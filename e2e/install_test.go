@@ -228,7 +228,6 @@ var _ = Describe("under a real systemd user manager", Label("systemd"), func() {
 func newInstallEnv(kv ...string) (*harness.Env, *fakeservice.Fake, string) {
 	GinkgoHelper()
 	env := harness.New(lgPath)
-	env.Setenv("SSL_CERT_FILE", "")
 	for i := 0; i+1 < len(kv); i += 2 {
 		env.Setenv(kv[i], kv[i+1])
 	}
