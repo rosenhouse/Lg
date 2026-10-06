@@ -166,6 +166,23 @@ var _ = Describe("Next", Label("status"), func() {
 		}))
 	})
 
+	It("keeps a unit's since across cycles while it stays pending, and drops it once the unit is published", func() {
+		unit := status.Unit{Run: 1, Attempt: 2}
+		cycle := func(prev *status.Status, at time.Time, pending ...status.Pending) status.Status {
+			c := good(at)
+			c.Pending = pending
+			return status.Next(prev, c)
+		}
+		first := cycle(nil, started, status.Pending{Unit: unit, Error: "503"})
+		second := cycle(&first, started.Add(10*time.Minute), status.Pending{Unit: unit, Error: "502"})
+		published := cycle(&second, started.Add(20*time.Minute))
+		again := cycle(&published, started.Add(30*time.Minute), status.Pending{Unit: unit, Error: "503"})
+
+		Expect(second.Repos[repo].Pending).To(Equal([]status.Pending{{Unit: unit, Error: "502", Since: started.UTC()}}))
+		Expect(published.Repos[repo].Pending).To(BeEmpty())
+		Expect(again.Repos[repo].Pending).To(Equal([]status.Pending{{Unit: unit, Error: "503", Since: started.Add(30 * time.Minute).UTC()}}))
+	})
+
 	It("keeps, after a cycle that stopped early, the units it left and the earlier ones still missing on disk", func() {
 		prev := status.Next(nil, good(started.Add(-time.Hour)))
 		prev.Repos[repo] = status.Repo{Pending: []status.Pending{
