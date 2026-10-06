@@ -97,6 +97,42 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Expect(err).To(MatchError("no cycle served sync request 3; gave up after 1m0s"))
 	})
 
+	// holdWriteLock holds state/write.lock as this process, the daemon's,
+	// and gives its path.
+	holdWriteLock := func() string {
+		GinkgoHelper()
+		path := filepath.Join(state, "write.lock")
+		held, err := lock.Wait(path, time.Second, clock.Real{}, func(string) {})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(held.Release)
+		return path
+	}
+
+	giveUp := func() error {
+		GinkgoHelper()
+		done := wait(3)
+		polling()
+		clk.Set(t0.Add(waitTimeout))
+		var err error
+		Eventually(done, time.Second).Should(Receive(&err))
+		return err
+	}
+
+	It("names another process that holds state/write.lock when it gives up", func() {
+		runDaemon()
+		writeLock := holdWriteLock()
+		Expect(os.WriteFile(writeLock, []byte("424242\n"), 0o644)).To(Succeed())
+
+		Expect(giveUp()).To(MatchError(fmt.Sprintf("no cycle served sync request 3; %s is held by pid 424242; gave up after 1m0s", writeLock)))
+	})
+
+	It("names no holder when the daemon holds state/write.lock", func() {
+		runDaemon()
+		holdWriteLock()
+
+		Expect(giveUp()).To(MatchError("no cycle served sync request 3; gave up after 1m0s"))
+	})
+
 	It("counts its timeout from since", func() {
 		runDaemon()
 		done := waitSince(3, t0.Add(-30*time.Second))

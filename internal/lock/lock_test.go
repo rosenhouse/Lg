@@ -179,3 +179,15 @@ var _ = Describe("Held", Label("status"), func() {
 		Expect(held.Release()).To(Succeed())
 	})
 })
+
+var _ = Describe("Holder", Label("sync"), func() {
+	It("names the holder of a held lock, and gives \"\" once it is free", func() {
+		path := filepath.Join(GinkgoT().TempDir(), "write.lock")
+		held, err := lock.Wait(path, time.Second, clock.Real{}, ignore)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(lock.Holder(path)).To(Equal(fmt.Sprintf("pid %d", os.Getpid())))
+		Expect(held.Release()).To(Succeed())
+		Expect(lock.Holder(path)).To(BeEmpty())
+	})
+})
