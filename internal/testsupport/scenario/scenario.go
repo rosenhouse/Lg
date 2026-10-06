@@ -97,11 +97,22 @@ var timestamp = regexp.MustCompile(`"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"`)
 // NextDayRerun moves every time at or after attempt's run_started_at 24
 // hours later, so the attempt and the jobs it ran start the next UTC day.
 func NextDayRerun(r Run, attempt int) Run {
+	return RerunAt(r, attempt, r.runStartedAt(attempt).Add(Day))
+}
+
+// RerunAt moves every time at or after attempt's run_started_at by the same
+// amount, so that the attempt started at the given time.
+func RerunAt(r Run, attempt int, at time.Time) Run {
+	started := r.runStartedAt(attempt)
+	return r.shiftTimes(func(t time.Time) bool { return !t.Before(started) }, at.Sub(started))
+}
+
+func (r Run) runStartedAt(attempt int) time.Time {
 	var started struct {
 		RunStartedAt time.Time `json:"run_started_at"`
 	}
 	mustUnmarshal(r.Files[attemptFile(attempt, "attempt.json")].Data, &started)
-	return r.shiftTimes(func(t time.Time) bool { return !t.Before(started.RunStartedAt) }, 24*time.Hour)
+	return started.RunStartedAt
 }
 
 // RenameWorkflow renames the workflow to name in run.json, in attempt and
@@ -179,26 +190,116 @@ func WithDigest(r Run, artifactID int64, digest string) Run {
 
 func (r Run) editArtifact(artifactID int64, edit func(map[string]any)) Run {
 	out := r.copy()
-	out.edit("artifacts.json", func(listing map[string]any) {
-		for _, artifact := range listing["artifacts"].([]any) {
-			artifact := artifact.(map[string]any)
-			if artifact["id"].(json.Number).String() == strconv.FormatInt(artifactID, 10) {
-				edit(artifact)
-			}
+	out.editArtifacts(func(artifact map[string]any) {
+		if artifact["id"].(json.Number).String() == strconv.FormatInt(artifactID, 10) {
+			edit(artifact)
 		}
 	})
 	return out
 }
 
-// WithPullRequests lists the run with pull requests of the given numbers.
+// WithPullRequests lists the run, and every attempt, with pull requests of the given numbers.
 func WithPullRequests(r Run, numbers ...int) Run {
 	prs := make([]any, len(numbers))
 	for i, n := range numbers {
 		prs[i] = map[string]any{"number": n}
 	}
-	out := r.copy()
-	out.edit("run.json", func(run map[string]any) { run["pull_requests"] = prs })
+	return r.editRuns(func(run map[string]any) { run["pull_requests"] = prs })
+}
+
+// OnBranch sets head_branch in the run, every attempt, their jobs and the artifacts' workflow_run.
+func OnBranch(r Run, branch string) Run { return r.setHead("head_branch", branch) }
+
+// WithSHA sets head_sha in the run, every attempt, their jobs and the artifacts' workflow_run.
+func WithSHA(r Run, sha string) Run { return r.setHead("head_sha", sha) }
+
+func (r Run) setHead(key, value string) Run {
+	out := r.editRuns(func(run map[string]any) { run[key] = value })
+	for n := 1; out.Files[attemptFile(n, "jobs.json")] != nil; n++ {
+		out.editJobs(n, func(jobs []any) []any {
+			for _, job := range jobs {
+				job.(map[string]any)[key] = value
+			}
+			return jobs
+		})
+	}
+	out.editArtifacts(func(artifact map[string]any) { artifact["workflow_run"].(map[string]any)[key] = value })
 	return out
+}
+
+// WithEvent sets the event of the run and every attempt.
+func WithEvent(r Run, event string) Run {
+	return r.editRuns(func(run map[string]any) { run["event"] = event })
+}
+
+// WithDisplayTitle sets the display_title of the run and every attempt.
+func WithDisplayTitle(r Run, title string) Run {
+	return r.editRuns(func(run map[string]any) { run["display_title"] = title })
+}
+
+// forkID is the repository id of every fork.
+const forkID = 1
+
+// FromFork gives the run, every attempt and the artifacts' workflow_run the
+// head repository fullName, which is not the repository.
+func FromFork(r Run, fullName string) Run {
+	out := r.editRuns(func(run map[string]any) {
+		run["head_repository"] = map[string]any{"id": forkID, "full_name": fullName}
+	})
+	out.editArtifacts(func(artifact map[string]any) { artifact["workflow_run"].(map[string]any)["head_repository_id"] = forkID })
+	return out
+}
+
+// InjectLogLine puts a line holding text first in the log of each job of
+// that name in the attempt: after the BOM, with the timestamp of the log's
+// first line.
+func InjectLogLine(r Run, attempt int, job, text string) Run {
+	var listing struct {
+		Jobs []struct {
+			ID   int64
+			Name string
+		}
+	}
+	mustUnmarshal(r.Files[attemptFile(attempt, "jobs.json")].Data, &listing)
+	out := r.copy()
+	injected := false
+	for _, j := range listing.Jobs {
+		log := out.Files[attemptFile(attempt, fmt.Sprintf("logs/%d.txt", j.ID))]
+		if j.Name != job || log == nil {
+			continue
+		}
+		rest, ok := bytes.CutPrefix(log.Data, []byte(bom))
+		stamp, _, found := bytes.Cut(rest, []byte(" "))
+		if !ok || !found {
+			panic(fmt.Sprintf("log of job %d starts with no BOM and timestamp", j.ID))
+		}
+		log.Data = slices.Concat([]byte(bom), stamp, []byte(" "+text+"\n"), rest)
+		injected = true
+	}
+	if !injected {
+		panic(fmt.Sprintf("attempt %d has no log of a job named %q", attempt, job))
+	}
+	return out
+}
+
+const bom = "\uFEFF"
+
+// editRuns edits run.json and every attempt's attempt.json.
+func (r Run) editRuns(edit func(map[string]any)) Run {
+	out := r.copy()
+	out.edit("run.json", edit)
+	for n := 1; out.Files[attemptFile(n, "attempt.json")] != nil; n++ {
+		out.edit(attemptFile(n, "attempt.json"), edit)
+	}
+	return out
+}
+
+func (r Run) editArtifacts(edit func(map[string]any)) {
+	r.edit("artifacts.json", func(listing map[string]any) {
+		for _, artifact := range listing["artifacts"].([]any) {
+			edit(artifact.(map[string]any))
+		}
+	})
 }
 
 // WithoutRunAttempt drops run_attempt from the listed run.
