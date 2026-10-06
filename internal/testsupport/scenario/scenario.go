@@ -166,6 +166,39 @@ func QueueJob(r Run, attempt int, name string) Run {
 	return out
 }
 
+// RenameJob renames attempt's jobs named name to newName.
+func RenameJob(r Run, attempt int, name, newName string) Run {
+	out := r.copy()
+	out.editJobs(attempt, func(jobs []any) []any {
+		for _, job := range jobs {
+			if job := job.(map[string]any); job["name"] == name {
+				job["name"] = newName
+			}
+		}
+		return jobs
+	})
+	return out
+}
+
+// RenumberJob gives attempt's job named name, and its log, the id.
+func RenumberJob(r Run, attempt int, name string, id int64) Run {
+	out := r.copy()
+	out.editJobs(attempt, func(jobs []any) []any {
+		for _, job := range jobs {
+			job := job.(map[string]any)
+			if job["name"] != name {
+				continue
+			}
+			log := attemptFile(attempt, fmt.Sprintf("logs/%s.txt", job["id"]))
+			out.Files[attemptFile(attempt, fmt.Sprintf("logs/%d.txt", id))] = out.Files[log]
+			delete(out.Files, log)
+			job["id"] = id
+		}
+		return jobs
+	})
+	return out
+}
+
 // Expire lists the artifact as expired: true, as the docs describe. No recording shows it.
 func Expire(r Run, artifactID int64) Run {
 	return r.editArtifact(artifactID, func(artifact map[string]any) { artifact["expired"] = true })
