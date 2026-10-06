@@ -262,6 +262,20 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Dir(attempt) + ": cannot read the run"))
 	})
 
+	It("exits 1 naming the file when another unit of the run does not parse", func() {
+		Expect(c.Fake.Advance(fixtureRun, "after-attempt-2")).To(Succeed())
+		Expect(c.Main("sync")).To(Equal(0))
+		run := filepath.Dir(attempt)
+		Expect(os.WriteFile(filepath.Join(attempt, "attempt.json"), []byte("not json"), 0o644)).To(Succeed())
+
+		Expect(c.Main("where",
+			filepath.Join(run, "attempt-2", "jobs", "111221662305_build-ubuntu-latest-1.23", "job.json"),
+			filepath.Join(run, "artifacts", "11276052917_rerun-only-attempt-2", "artifact.zip"),
+		)).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(strings.Count(c.Stderr.String(), filepath.Join(attempt, "attempt.json"))).To(Equal(2))
+	})
+
 	It("decodes an artifact.zip.tombstone", func() {
 		c = harness.NewCLI()
 		c.WriteConfig("repo: rosenhouse/lg\napi_url: " + c.Fake.URL() + "\nartifact_max_bytes: 700\n")

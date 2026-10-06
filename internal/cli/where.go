@@ -290,6 +290,9 @@ func (f *placeFinder) describeWith(loc layout.Location, facts runFacts) (place, 
 		}
 		p.artifactPlace = artifactOf(rows.Artifacts[i])
 	}
+	if facts.err != nil {
+		return place{}, unread("the run")
+	}
 	var htmlFrom string
 	switch {
 	case loc.JobDir != "":
