@@ -162,16 +162,18 @@ var _ = Describe("lg status with a daemon running and no next_sync_at", Label("s
 	})
 })
 
-var _ = Describe("lg status with pending units", Label("status"), func() {
-	It("prints each unit with the time it was first seen pending, when status.json has it", func() {
+var _ = DescribeTable("cli.Main with a unit stuck pending", Label("status"),
+	func(command, warning string) {
 		s := harness.NewCLI()
 		s.WriteStatus(strings.Replace(goodStatus, `"pending": []`,
-			`"pending": [{"run": 1, "attempt": 2, "error": "503", "since": "2026-10-03T17:01:00Z"}, {"run": 3, "error": "502"}]`, 1))
+			`"pending": [{"run": 1, "attempt": 2, "error": "503", "since": "2026-10-03T17:30:00Z"}]`, 1))
 
-		Expect(s.Main("status")).To(Equal(0))
-		Expect(s.Stdout.String()).To(ContainSubstring("\n    run 1 attempt 2, pending since 2026-10-03T17:01:00Z: 503\n    run 3: 502\n"))
-	})
-})
+		Expect(s.Main(command)).To(Equal(0))
+		Expect(s.Stderr.String()).To(Equal(warning))
+	},
+	Entry("tells to run lg status", "version", "lg: warning: 1 units pending since 2026-10-03T17:30:00Z; run `lg status`\n"),
+	Entry("does not tell lg status to run itself", "status", "lg: warning: 1 units pending since 2026-10-03T17:30:00Z\n"),
+)
 
 // goodStatus is a status.json from a one-shot sync with no runs.
 const goodStatus = `{
