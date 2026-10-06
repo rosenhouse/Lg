@@ -43,7 +43,7 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 
 	// served is the status after a good cycle that served request n.
 	served := func(n int64) {
-		writeStatus(`{"last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "served_request": %d}`, n)
+		writeStatus(`{"last_sync_started_at": "2026-10-03T18:00:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "served_request": %d}`, n)
 	}
 
 	waitSince := func(request int64, since time.Time) <-chan error {
@@ -75,6 +75,19 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 		Expect(done).NotTo(Receive())
 
 		served(4)
+		clk.Set(t0.Add(time.Second))
+
+		Eventually(done, time.Second).Should(Receive(BeNil()))
+	})
+
+	It("accepts no cycle that started before since, in the second before it", func() {
+		runDaemon()
+		writeStatus(`{"last_sync_started_at": "2026-10-03T17:59:59Z", "served_request": 3}`)
+		done := waitSince(3, t0.Add(500*time.Millisecond))
+		polling()
+		Expect(done).NotTo(Receive())
+
+		served(3)
 		clk.Set(t0.Add(time.Second))
 
 		Eventually(done, time.Second).Should(Receive(BeNil()))
@@ -168,12 +181,12 @@ var _ = Describe("WaitForCycle", Label("sync"), func() {
 			`{"served_request": 3, "last_sync_started_at": "2026-10-03T18:00:00Z", "blocked": {"kind": "auth", "detail": "401"}}`,
 			MatchError(failure.Blocked{Kind: failure.Auth, Detail: "401"})),
 		Entry("failed in the second its last good sync finished",
-			`{"served_request": 3, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "last_sync_errors": ["GET /actions/runs: 500"]}`,
+			`{"served_request": 3, "last_sync_started_at": "2026-10-03T18:00:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z", "last_sync_errors": ["GET /actions/runs: 500"]}`,
 			MatchError("GET /actions/runs: 500")),
 		Entry("completed with errors",
-			`{"served_request": 3, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z",
+			`{"served_request": 3, "last_sync_started_at": "2026-10-03T18:00:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z",
 			  "last_sync_errors": ["watch.json: moved to watch.json.corrupt", "run 1 attempt 2: 502"]}`,
 			MatchError("watch.json: moved to watch.json.corrupt\nrun 1 attempt 2: 502")),
-		Entry("ok, serving a later request too", `{"served_request": 4, "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z"}`, Succeed()),
+		Entry("ok, serving a later request too", `{"served_request": 4, "last_sync_started_at": "2026-10-03T18:00:00Z", "last_sync_finished_at": "2026-10-03T18:00:00Z", "last_sync_ok_at": "2026-10-03T18:00:00Z"}`, Succeed()),
 	)
 })
