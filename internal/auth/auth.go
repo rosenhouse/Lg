@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/rosenhouse/lg/internal/execx"
 	"github.com/rosenhouse/lg/internal/failure"
@@ -53,6 +54,20 @@ func (g GhTokenSource) Token(ctx context.Context, host string) (string, error) {
 
 var errHung = errors.New("did not exit")
 
+// maxStderr bounds the gh stderr in the detail that every command warns with.
+const maxStderr = 512
+
+// truncate cuts s to at most n bytes at a rune boundary, marking a cut with "…".
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
 // keyringError is a gh failure whose stderr names a keyring service.
 type keyringError struct{ error }
 
@@ -78,7 +93,7 @@ func (g GhTokenSource) token(ctx context.Context, host string) (string, error) {
 	}
 	if err != nil {
 		if msg := bytes.TrimSpace(stderr); len(msg) > 0 {
-			err = fmt.Errorf("%w: %s", err, msg)
+			err = fmt.Errorf("%w: %s", err, truncate(string(msg), maxStderr))
 			lower := strings.ToLower(string(msg))
 			switch {
 			case slices.ContainsFunc(keyringWords, func(word string) bool { return strings.Contains(lower, word) }):

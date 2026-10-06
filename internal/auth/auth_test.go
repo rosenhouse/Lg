@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,6 +63,7 @@ var _ = Describe("GhTokenSource", Label("transport"), func() {
 		},
 		Entry("with stderr", "not logged in\n", "gh auth token --hostname ghe.corp.example: exit status 1: not logged in"),
 		Entry("without stderr", " \n", "gh auth token --hostname ghe.corp.example: exit status 1"),
+		Entry("with stderr cut to 512 bytes at a rune", "x"+strings.Repeat("é", 300), "gh auth token --hostname ghe.corp.example: exit status 1: x"+strings.Repeat("é", 255)+"…"),
 	)
 
 	It("blocks as auth suggesting `--insecure-storage` when gh's stderr mentions the keyring", Label("status"), func() {
