@@ -58,10 +58,9 @@ var recordedKinds = map[int64]map[int]map[model.JobKind]int{
 
 var _ = Describe("live", Label("live"), Ordered, func() {
 	var (
-		env            *harness.Env
-		synced         *gexec.Session
-		fixtureDir     string
-		logsDeletedDir string
+		env        *harness.Env
+		synced     *gexec.Session
+		fixtureDir string
 	)
 
 	BeforeAll(func() {
@@ -71,7 +70,6 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 
 		synced = syncLive(env)
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
-		logsDeletedDir = runDir(env, logsDeletedRun)
 	})
 
 	// Ordered skips the specs after a failed one, so this one goes first.
@@ -115,7 +113,7 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 	})
 
 	It("writes deleted tombstones for the 10 ran jobs of run 37129738159", func() {
-		dir := layout.AttemptDir(logsDeletedDir, 1)
+		dir := layout.AttemptDir(runDir(env, logsDeletedRun), 1)
 		kinds := storedKinds(dir)
 		Expect(countKinds(kinds)).To(Equal(recordedKinds[logsDeletedRun][1]))
 		for id, kind := range kinds {
@@ -140,7 +138,7 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
 			compare(fixtureDir, fixtureRun, fixtureStage, attempt)
 		}
-		compare(logsDeletedDir, logsDeletedRun, logsDeletedStage, 1)
+		compare(runDir(env, logsDeletedRun), logsDeletedRun, logsDeletedStage, 1)
 	})
 
 	It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
