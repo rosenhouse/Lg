@@ -152,7 +152,10 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 
 		Expect(printed.String()).To(And(
 			ContainSubstring("2026-08-20 run 1\n"),
-			ContainSubstring("flaky\tFail on first attempt only\tfailure success success\n"),
+			ContainSubstring("flaky\t\tfailure success success\n"+
+				"flaky\tFail on first attempt only\tfailure success success\n"+
+				"timeout\t\tcancelled success success\n"+
+				"timeout\tTime out on first attempt only\tcancelled success success\n"),
 			ContainSubstring("pass-artifact\tinner.tar.gz.d/tgz/nested.log\n"),
 			ContainSubstring("37129390741\t1\tflaky\n"),
 			ContainSubstring("/extracted/.pytest_cache/v/cache/lastfailed\n"),
