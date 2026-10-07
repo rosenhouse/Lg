@@ -23,7 +23,8 @@ func (i IntermittentRuns) All() []Run {
 // Intermittent gives push runs 1 to 6 on main, a day apart. Their first
 // attempts conclude integration SSFSSS, broken SSSFFF, steady SSSSSS and
 // suite SFFFFF (S success, F failure), as suite's step unit goes SSSFSS and
-// its step e2e SFF-FF (- skipped). Run 3 re-runs integration, which succeeds.
+// its step e2e SFF-FF (- skipped). Run 3 re-runs integration and suite,
+// which succeed.
 // Between runs 3 and 4, a fork's pull_request run 7 on main fails steady;
 // between runs 4 and 5, run 8 is cancelled, steady with it.
 func Intermittent() IntermittentRuns {
@@ -64,7 +65,7 @@ func Intermittent() IntermittentRuns {
 		}
 		runs.Main = append(runs.Main, r)
 	}
-	runs.Main[2] = AddRerunAttempt(runs.Main[2], "integration")
+	runs.Main[2] = AddRerunAttempt(runs.Main[2], "integration", "suite")
 
 	fork := FromFork(WithEvent(run(7, first.Add(3*Day+6*time.Hour)), "pull_request"), "someone/Lg")
 	runs.Fork = conclude(fork, "steady", "", "failure")
