@@ -76,14 +76,38 @@ var inlineCode = regexp.MustCompile("`([^`\n]+)`")
 // LgCommands gives each lg invocation in an sh block or an inline code span.
 func LgCommands(md string) []Command {
 	p := &shell{}
+	shellText(md, func(line int, s string, inline bool) {
+		if !inline || strings.HasPrefix(s, "lg ") {
+			p.parse(line, s)
+		}
+	})
+	return p.found
+}
+
+var lgWord = regexp.MustCompile(`(^|[\s|;&(])lg\s`)
+
+// LgMentions gives the line of each word lg followed by white space in an sh
+// block or an inline code span. A spec can compare it with LgCommands to
+// find the invocations that LgCommands misses.
+func LgMentions(md string) []int {
+	var found []int
+	shellText(md, func(line int, s string, _ bool) {
+		for range lgWord.FindAllStringIndex(s, -1) {
+			found = append(found, line)
+		}
+	})
+	return found
+}
+
+// shellText calls visit with each inline code span, and with each line of
+// an sh block joined to the lines it continues onto, and the line it starts on.
+func shellText(md string, visit func(line int, s string, inline bool)) {
 	start, continued := 0, ""
 	lines(md, func(n int, line string, f fence) {
 		switch {
 		case f.line == 0:
 			for _, m := range inlineCode.FindAllStringSubmatch(line, -1) {
-				if strings.HasPrefix(m[1], "lg ") {
-					p.parse(n, m[1])
-				}
+				visit(n, m[1], true)
 			}
 		case f.lang == "sh":
 			if continued == "" {
@@ -93,11 +117,10 @@ func LgCommands(md string) []Command {
 				continued += body
 				return
 			}
-			p.parse(start, continued+line)
+			visit(start, continued+line, false)
 			continued = ""
 		}
 	})
-	return p.found
 }
 
 // FlagSpans gives the words of each inline code span that starts with "--".

@@ -39,9 +39,12 @@ var _ = Describe("SKILL.md", Label("skill"), func() {
 	It("uses only commands and flags that the lg Kong parser accepts in every `lg …` line", func() {
 		commands := doctest.LgCommands(skill.Markdown)
 		Expect(commands).NotTo(BeEmpty())
+		var lines []int
 		for _, c := range commands {
 			Expect(cli.Parse(c.Args)).To(Succeed(), "line %d: lg %s", c.Line, strings.Join(c.Args, " "))
+			lines = append(lines, c.Line)
 		}
+		Expect(lines).To(Equal(doctest.LgMentions(skill.Markdown)), "each mention of lg must be an invocation that LgCommands finds")
 	})
 
 	It("passes every flag its prose names in some `lg …` line", func() {

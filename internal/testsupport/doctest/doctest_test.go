@@ -73,6 +73,22 @@ var _ = Describe("LgCommands", Label("skill"), func() {
 	})
 })
 
+var _ = Describe("LgMentions", Label("skill"), func() {
+	It("gives the line of each word lg followed by a space, in sh blocks and inline code, so that a spec can flag the invocations LgCommands misses", func() {
+		md := "Run `lg status` and `LG_HOME=/x lg root`, not `lg` or `a~lg`; lg in prose.\n" +
+			"```sh\n" +
+			"lg paths -0 | xargs -0 lg where\n" +
+			"for f in a; do lg where \"$f\"; done; (lg root)\n" +
+			"lg paths \\\n" +
+			"  | lg where\n" +
+			"```\n" +
+			"```text\n" +
+			"lg version\n" +
+			"```\n"
+		Expect(doctest.LgMentions(md)).To(Equal([]int{1, 1, 3, 3, 4, 4, 5, 5}))
+	})
+})
+
 var _ = Describe("FlagSpans", Label("skill"), func() {
 	It("finds each inline code span that starts with --, split into words", func() {
 		md := "Pass `--sha` (a prefix) or `--unit run`, not `lg paths --pr 1` or `-0`.\n" +
