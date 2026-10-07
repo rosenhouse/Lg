@@ -323,7 +323,7 @@ var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
 		for _, setuid := range []string{"setuid.sh", filepath.Join("special.tar.d", "tar-setuid")} {
 			info, err := os.Stat(filepath.Join(extracted, setuid))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(info.Mode() & (fs.ModeSetuid | fs.ModeSetgid)).To(BeZero(), setuid)
+			Expect(info.Mode()&(fs.ModeSetuid|fs.ModeSetgid)).To(BeZero(), setuid)
 		}
 		after := treesnap.Snapshot(env.Store())
 		for path := range after {
