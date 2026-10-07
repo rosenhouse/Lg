@@ -693,8 +693,28 @@ type CommitPull struct {
 	HeadRepoID int64
 }
 
+// CommitPullsFile holds the pull requests that GET /commits/{sha}/pulls
+// lists for the run's head_sha, as GitHub sends them.
+const CommitPullsFile = "commit-pulls.json"
+
 // WithCommitPulls lists prs for the run's head_sha.
-func WithCommitPulls(r Run, prs ...CommitPull) Run { return r }
+func WithCommitPulls(r Run, prs ...CommitPull) Run {
+	pulls := make([]any, len(prs))
+	for i, pr := range prs {
+		var repo any
+		if pr.HeadRepoID != 0 {
+			repo = map[string]any{"id": pr.HeadRepoID}
+		}
+		pulls[i] = map[string]any{"number": pr.Number, "head": map[string]any{"ref": pr.HeadRef, "repo": repo}}
+	}
+	out := r.copy()
+	out.Files[CommitPullsFile] = &fstest.MapFile{Data: mustMarshal(pulls)}
+	return out
+}
 
 // WithoutArtifacts lists no artifacts for the run.
-func WithoutArtifacts(r Run) Run { return r }
+func WithoutArtifacts(r Run) Run {
+	out := r.copy()
+	out.edit("artifacts.json", func(listing map[string]any) { listing["artifacts"], listing["total_count"] = []any{}, 0 })
+	return out
+}
