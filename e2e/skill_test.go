@@ -114,8 +114,9 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 		bin := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(bin, "sqlite3"), []byte("#!/bin/sh\necho 'sqlite3 is unavailable' >&2\nexit 127\n"), 0o755)).To(Succeed())
 		env.PrependPath(bin)
+		// Every rg must ignore this config, which hides every match.
 		rc := filepath.Join(bin, "ripgreprc")
-		Expect(os.WriteFile(rc, []byte("--heading\n--max-columns=20\n--smart-case\n--no-filename\n"), 0o644)).To(Succeed())
+		Expect(os.WriteFile(rc, []byte("--max-count=0\n"), 0o644)).To(Succeed())
 		env.Setenv("RIPGREP_CONFIG_PATH", rc)
 		// An ignore file above the store must not hide it from rg.
 		parent := GinkgoT().TempDir()
