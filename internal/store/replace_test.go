@@ -3,11 +3,13 @@ package store_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 )
 
@@ -81,5 +83,53 @@ var _ = Describe("State", Label("store"), func() {
 	It("is the store's state/ dir", func() {
 		root := newStore()
 		Expect(open(root).State()).To(Equal(filepath.Join(root, "state")))
+	})
+})
+
+var _ = Describe("ReplaceFileUnlocked", Label("store"), func() {
+	var dir, path string
+
+	BeforeEach(func() {
+		dir = GinkgoT().TempDir()
+		path = filepath.Join(dir, "f.json")
+		Expect(os.WriteFile(path, []byte("old"), 0o644)).To(Succeed())
+	})
+
+	It("writes and fsyncs a temp file of its own, renames it over path and fsyncs the dir", func() {
+		fsys := faultfs.New()
+		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(Succeed())
+
+		Expect(os.ReadFile(path)).To(Equal([]byte("new")))
+		journal := fsys.Journal()
+		Expect(journal).To(HaveLen(6))
+		tmp := journal[0].Path
+		Expect(tmp).To(MatchRegexp(`^` + regexp.QuoteMeta(dir+"/.f.json.") + `\w+\.tmp$`))
+		Expect(journal).To(Equal([]faultfs.Op{
+			{Name: "create", Path: tmp},
+			{Name: "write", Path: tmp},
+			{Name: "fsync", Path: tmp},
+			{Name: "close", Path: tmp},
+			{Name: "rename", Path: tmp, To: path},
+			{Name: "fsync", Path: dir},
+		}))
+	})
+
+	It("stages each call in a different temp file", func() {
+		temps := map[string]bool{}
+		for range 2 {
+			fsys := faultfs.New()
+			Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(Succeed())
+			temps[fsys.Journal()[0].Path] = true
+		}
+		Expect(temps).To(HaveLen(2))
+	})
+
+	It("keeps the old file, and removes the temp file, when a step fails", func() {
+		fsys := faultfs.New()
+		fsys.FailOn("rename", syscall.ENOSPC)
+
+		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(MatchError(syscall.ENOSPC))
+		Expect(os.ReadFile(path)).To(Equal([]byte("old")))
+		Expect(os.ReadDir(dir)).To(HaveLen(1))
 	})
 })

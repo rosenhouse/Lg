@@ -40,6 +40,20 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		installsTo(older)
 	})
 
+	It("installs from many processes at once", func() {
+		env := harness.New(lgPath)
+		var sessions []*gexec.Session
+		for range 30 {
+			sessions = append(sessions, env.Lg("skill", "install"))
+		}
+		for _, session := range sessions {
+			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0), string(session.Err.Contents()))
+		}
+		dir := filepath.Join(env.Home(), ".claude", "skills", "lg")
+		Expect(os.ReadFile(filepath.Join(dir, "SKILL.md"))).To(Equal([]byte(skill.Markdown)))
+		Expect(os.ReadDir(dir)).To(HaveLen(1))
+	})
+
 	DescribeTable("installs when lg cannot use the store",
 		func(storeEnv func(env *harness.Env)) {
 			env := harness.New(lgPath)

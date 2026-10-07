@@ -625,6 +625,17 @@ func ReplaceFileFS(fsys FS, path string, data []byte) error {
 	if err := fsys.RemoveAll(tmp); err != nil {
 		return err
 	}
+	return replaceVia(fsys, tmp, path, data)
+}
+
+// ReplaceFileUnlocked is ReplaceFileFS for callers that hold no lock. Each
+// call stages its own temp file, which a crash leaves behind.
+func ReplaceFileUnlocked(fsys FS, path string, data []byte) error {
+	tmp := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+"."+strconv.FormatUint(rand.Uint64(), 36)+".tmp")
+	return replaceVia(fsys, tmp, path, data)
+}
+
+func replaceVia(fsys FS, tmp, path string, data []byte) error {
 	f, err := fsys.Create(tmp)
 	if err != nil {
 		return err

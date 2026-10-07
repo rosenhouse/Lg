@@ -1,15 +1,38 @@
 package cli_test
 
 import (
+	"bytes"
 	"strings"
+	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/cli"
+	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/testsupport/doctest"
+	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	skill "github.com/rosenhouse/lg/skill/lg"
 )
+
+var _ = Describe("lg skill install", Label("skill"), func() {
+	It("writes through the store's filesystem", func() {
+		fsys := faultfs.New()
+		fsys.FailOn("create", syscall.EROFS)
+		var stderr bytes.Buffer
+
+		code := cli.Main([]string{"skill", "install"}, cli.Deps{
+			Env:     map[string]string{"CLAUDE_CONFIG_DIR": GinkgoT().TempDir()},
+			Stdout:  &bytes.Buffer{},
+			Stderr:  &stderr,
+			Clock:   clock.Real{},
+			StoreFS: fsys,
+		})
+
+		Expect(code).To(Equal(1))
+		Expect(stderr.String()).To(ContainSubstring("read-only file system"))
+	})
+})
 
 var _ = Describe("SKILL.md", Label("skill"), func() {
 	It("uses only commands and flags that the lg Kong parser accepts in every `lg …` line", func() {
