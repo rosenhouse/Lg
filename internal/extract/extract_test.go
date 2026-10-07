@@ -399,6 +399,15 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["renamed"]).To(HaveEach(HaveKeyWithValue("reason", "collision")))
 	})
 
+	It("keeps a member whose name another took in another Unicode normalization, as APFS folds them", func() {
+		nfc, nfd := "caf\u00e9.log", "cafe\u0301.log"
+		f := newFixture(archives.Zip(archives.Entry{Name: nfc, Body: "nfc\n"}, archives.Entry{Name: nfd, Body: "nfd\n"}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue(nfc, "nfc\n"), HaveKeyWithValue(nfd+"~1", "nfd\n")))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", nfd, "path", nfd+"~1", "reason", "collision")))
+	})
+
 	It("expands a nested archive into <archive>.d~N when a member took <archive>.d", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "a.zip.d/a.log", Body: "member\n"},

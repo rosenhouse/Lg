@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/rosenhouse/lg/internal/layout"
 )
 
@@ -18,7 +20,7 @@ const (
 )
 
 // namer gives each member a path below extracted/ that no other member has,
-// even on a case-insensitive filesystem.
+// even on a filesystem that ignores case and Unicode normalization.
 type namer struct{ root node }
 
 // node is a dir, keyed by folded name.
@@ -43,7 +45,9 @@ func newNamer() *namer {
 	return &namer{root: node{fold(Manifest): {name: Manifest, kind: file}}}
 }
 
-func fold(name string) string { return strings.ToLower(name) }
+// fold maps names that a case- and normalization-insensitive filesystem,
+// such as APFS, takes as one to one key.
+func fold(name string) string { return strings.ToLower(norm.NFC.String(name)) }
 
 // file gives the path for a member named name of the archive expanding into
 // base, and why it differs from name, if it does.
