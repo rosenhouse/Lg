@@ -93,7 +93,7 @@ var _ = Describe("lg init", Label("discovery"), func() {
 	It("exits 2 in every process but one when several race to init the same config", func() {
 		env := harness.New(lgPath)
 
-		session := env.Sh(`for i in 1 2 3 4 5 6; do (lg init --repo a/b; echo "exit $?") & done; wait`)
+		session := env.Sh(`for i in 1 2 3 4 5 6; do (lg init --repo a/b >/dev/null; echo "exit $?") & done; wait`)
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		exits := strings.Fields(strings.ReplaceAll(string(session.Out.Contents()), "exit ", ""))
 		Expect(exits).To(ConsistOf("0", "2", "2", "2", "2", "2"))
