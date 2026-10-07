@@ -55,8 +55,17 @@ var PrintFlipJSON = printFlipJSON
 
 var PrintIntermittentJSON = printIntermittentJSON
 
-// Parse parses args as Main does, without running the command.
-func Parse(args []string) error {
-	_, err := newParser(io.Discard, io.Discard).Parse(args)
+// Parse parses args as Main does, without running the command. --help
+// parses as success.
+func Parse(args []string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != kongExit(0) {
+				panic(r)
+			}
+			err = nil
+		}
+	}()
+	_, err = newParser(io.Discard, io.Discard).Parse(args)
 	return err
 }

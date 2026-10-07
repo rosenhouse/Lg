@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -39,26 +41,41 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 	)
 })
 
-var _ = Describe("SKILL.md", Label("skill"), func() {
-	It("uses only commands and flags that the lg Kong parser accepts in every `lg …` line", func() {
-		commands := doctest.LgCommands(skill.Markdown)
+var _ = DescribeTable("uses only commands and flags that the lg Kong parser accepts in every `lg …` line of", Label("skill"),
+	func(markdown func() string) {
+		md := markdown()
+		commands := doctest.LgCommands(md)
 		Expect(commands).NotTo(BeEmpty())
 		var lines []int
 		for _, c := range commands {
 			Expect(cli.Parse(c.Args)).To(Succeed(), "line %d: lg %s", c.Line, strings.Join(c.Args, " "))
 			lines = append(lines, c.Line)
 		}
-		Expect(lines).To(Equal(doctest.LgMentions(skill.Markdown)), "each mention of lg must be an invocation that LgCommands finds")
-	})
+		Expect(lines).To(Equal(doctest.LgMentions(md)), "each mention of lg must be an invocation that LgCommands finds")
+	},
+	Entry("SKILL.md", func() string { return skill.Markdown }),
+	Entry("README.md", readme),
+)
 
-	It("passes every flag its prose names in some `lg …` line", func() {
-		commands := doctest.LgCommands(skill.Markdown)
-		for _, span := range doctest.FlagSpans(skill.Markdown) {
+var _ = DescribeTable("passes every flag its prose names in some `lg …` line of", Label("skill"),
+	func(markdown func() string) {
+		md := markdown()
+		commands := doctest.LgCommands(md)
+		for _, span := range doctest.FlagSpans(md) {
 			Expect(slices.ContainsFunc(commands, func(c doctest.Command) bool { return containsRun(c.Args, span.Args) })).
 				To(BeTrue(), "line %d: %s", span.Line, strings.Join(span.Args, " "))
 		}
-	})
-})
+	},
+	Entry("SKILL.md", func() string { return skill.Markdown }),
+	Entry("README.md", readme),
+)
+
+func readme() string {
+	GinkgoHelper()
+	md, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	Expect(err).NotTo(HaveOccurred())
+	return string(md)
+}
 
 // containsRun reports whether words appear in args, in order and side by side.
 func containsRun(args, words []string) bool {
