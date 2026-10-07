@@ -140,7 +140,7 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 	if err != nil {
 		return report, err
 	}
-	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs, lookups{})
+	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs)
 	report.Pending = append(report.Pending, attemptsFailed...)
 	if err != nil {
 		return report, err
@@ -222,7 +222,8 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 // listed, and whose run_attempt it read after that, since each attempt holds
 // both. It goes oldest run first. It returns the errors that runScoped
 // accepts, and stops at any other.
-func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun, l lookups) ([]UnitError, error) {
+func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]UnitError, error) {
+	l := lookups{}
 	var failed []UnitError
 	for i := range runs {
 		run := &runs[i]
