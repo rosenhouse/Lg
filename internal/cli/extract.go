@@ -49,7 +49,7 @@ func (c extractCmd) Validate() error {
 	if err := c.validate(); err != nil {
 		return err
 	}
-	filtered, named := !c.filters.empty(), len(c.Paths) > 0
+	filtered, named := !c.empty(), len(c.Paths) > 0
 	switch {
 	case c.All && (filtered || named):
 		return errors.New("--all takes no filters or PATHs")

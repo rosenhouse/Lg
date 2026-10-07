@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -40,7 +41,7 @@ func tarGzFiles(data []byte) map[string][]byte {
 	files := map[string][]byte{}
 	for {
 		h, err := r.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return files
 		}
 		Expect(err).NotTo(HaveOccurred())
