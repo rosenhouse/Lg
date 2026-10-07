@@ -1,0 +1,32 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/store"
+	skill "github.com/rosenhouse/lg/skill/lg"
+)
+
+type skillCmd struct {
+	Install skillInstallCmd `cmd:"" help:"Install lg's skill for Claude Code."`
+}
+
+type skillInstallCmd struct{}
+
+func (skillInstallCmd) Run(deps *Deps) error {
+	path, err := config.SkillFile(deps.Env)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := store.ReplaceFileFS(store.OSFS{}, path, []byte(skill.Markdown)); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(deps.Stdout, path)
+	return err
+}

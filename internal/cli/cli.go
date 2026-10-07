@@ -60,6 +60,7 @@ type commands struct {
 	Extract extractCmd `cmd:"" help:"Expand artifacts' zips, and the archives in them, into extracted/ beside each zip, for grep or rg."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
+	Skill   skillCmd   `cmd:"" help:"Teach Claude Code to search the store."`
 }
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.

@@ -20,3 +20,31 @@ var _ = Describe("SKILL.md", Label("skill"), func() {
 		}
 	})
 })
+
+var _ = Describe("Parse", Label("skill"), func() {
+	DescribeTable("accepts every documented command line, without running it",
+		func(line string) {
+			Expect(cli.Parse(strings.Fields(line))).To(Succeed())
+		},
+		Entry(nil, "init --repo O/R --host H"),
+		Entry(nil, "root"),
+		Entry(nil, "version"),
+		Entry(nil, "status --json"),
+		Entry(nil, "sync --wait --timeout 1m"),
+		Entry(nil, "daemon run"),
+		Entry(nil, "daemon install"),
+		Entry(nil, "daemon uninstall"),
+		Entry(nil, "gc --dry-run --timeout 1m"),
+		Entry(nil, "index rebuild"),
+		Entry(nil, "paths --branch B --branch C --sha S --pr 1 --workflow W --job J --event E --conclusion C --since 30d --until 2026-09-01 --unit attempt -0"),
+		Entry(nil, "where PATH HIT"),
+		Entry(nil, "flakes --kind rerun --sha S --json"),
+		Entry(nil, "extract --branch B --max-bytes 1GB --timeout 1m"),
+		Entry(nil, "extract --all"),
+		Entry(nil, "skill install"),
+	)
+
+	It("rejects an unknown flag", func() {
+		Expect(cli.Parse([]string{"paths", "--branches", "main"})).To(MatchError(ContainSubstring("unknown flag --branches")))
+	})
+})
