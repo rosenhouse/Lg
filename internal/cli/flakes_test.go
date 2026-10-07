@@ -92,6 +92,26 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(c.Stderr.String()).To(SatisfyAll(ContainSubstring(statusJSON), ContainSubstring("pass --branch")))
 	})
 
+	It("prints nothing before a sync puts anything in data/, though status.json records no default branch", func() {
+		c := harness.NewCLI()
+		c.WriteStatus(`{"repos": {"rosenhouse/lg": {"default_branch": ""}}}`)
+
+		Expect(c.Main("flakes")).To(Equal(0), c.Stderr.String())
+		Expect(c.Stdout.String()).To(BeEmpty())
+	})
+
+	It("names --branch when status.json records no default branch", func() {
+		c := harness.NewCLI()
+		for _, r := range scenario.Intermittent().All() {
+			Expect(c.Fake.AddRun(r)).To(Succeed())
+		}
+		Expect(c.Main("sync")).To(Equal(0), c.Stderr.String())
+		Expect(os.WriteFile(c.StatusFile(), []byte(`{"repos": {"rosenhouse/lg": {"default_branch": ""}}}`), 0o644)).To(Succeed())
+
+		Expect(c.Main("flakes", "--kind", "intermittent")).To(Equal(1))
+		Expect(c.Stderr.String()).To(ContainSubstring("pass --branch"))
+	})
+
 	It("prints an intermittent failure with no logs with an empty list in --json", func() {
 		var out bytes.Buffer
 		failures := []model.RunOutcome{{RunID: 2, Conclusion: "failure"}}
