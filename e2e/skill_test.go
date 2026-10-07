@@ -47,7 +47,9 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 
 	BeforeAll(func() {
 		env = harness.New(lgPath)
-		env.PathWithout("sqlite3")
+		bin := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(bin, "sqlite3"), []byte("#!/bin/sh\necho 'sqlite3 is unavailable' >&2\nexit 127\n"), 0o755)).To(Succeed())
+		env.PrependPath(bin)
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
 		for _, r := range scenario.Archaeology().All() {
