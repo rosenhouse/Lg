@@ -429,11 +429,15 @@ func CloneAt(id int64, stage string, at time.Time) Run {
 // CreatedAt moves every time in r's JSON files by the same amount, so that
 // the run was created at the given time.
 func CreatedAt(r Run, at time.Time) Run {
-	var created struct {
+	return r.shiftTimes(func(time.Time) bool { return true }, at.Sub(r.createdAt()))
+}
+
+func (r Run) createdAt() time.Time {
+	var run struct {
 		CreatedAt time.Time `json:"created_at"`
 	}
-	mustUnmarshal(r.Files["run.json"].Data, &created)
-	return r.shiftTimes(func(time.Time) bool { return true }, at.Sub(created.CreatedAt))
+	mustUnmarshal(r.Files["run.json"].Data, &run)
+	return run.CreatedAt
 }
 
 // shiftTimes moves every time in r's JSON files that moved accepts by delta.
@@ -662,5 +666,15 @@ func (r Run) maxJobID() int64 {
 // EndingAt moves every time of the runs by the same amount, so that the
 // newest was created at the given time.
 func EndingAt(runs []Run, at time.Time) []Run {
-	return runs
+	var newest time.Time
+	for _, r := range runs {
+		if created := r.createdAt(); created.After(newest) {
+			newest = created
+		}
+	}
+	moved := make([]Run, len(runs))
+	for i, r := range runs {
+		moved[i] = r.shiftTimes(func(time.Time) bool { return true }, at.Sub(newest))
+	}
+	return moved
 }
