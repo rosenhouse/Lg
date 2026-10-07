@@ -17,12 +17,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
@@ -38,6 +40,8 @@ const (
 	// GitHub delists an artifact once it expires, so the fixture run's live listing is the after-expiry one.
 	artifactsStage  = "after-expiry"
 	expiredArtifact = int64(11276327411)
+	thirdFixtureRun = int64(37129867594)
+	expiringName    = "expires-in-1-day"
 )
 
 // recordedKinds counts the job kinds of each recorded attempt, by run and attempt.
@@ -52,9 +56,10 @@ var recordedKinds = map[int64]map[int]map[model.JobKind]int{
 	},
 }
 
-var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Ordered, func() {
+var _ = Describe("live", Label("live"), Ordered, func() {
 	var (
 		env            *harness.Env
+		synced         *gexec.Session
 		fixtureDir     string
 		logsDeletedDir string
 	)
@@ -64,9 +69,22 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 		window := liveWindow()
 		env.WriteLiveConfig("backfill: "+window, "retention: "+window)
 
-		syncLive(env)
+		synced = syncLive(env)
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
 		logsDeletedDir = runDir(env, logsDeletedRun)
+	})
+
+	// Ordered skips the specs after a failed one, so this one goes first.
+	It("syncs rosenhouse/Lg and lg status reports no blocked state", func() {
+		Expect(synced).To(gexec.Exit(0))
+		session := env.Lg("status").Wait(harness.ExitTimeout)
+		Expect(session).To(gexec.Exit(0))
+		Expect(session.Out).To(gbytes.Say("blocked: no"))
+		Expect(env.Status()).To(SatisfyAll(
+			HaveKeyWithValue("blocked", BeNil()),
+			HaveKeyWithValue("last_sync_errors", BeEmpty()),
+			HaveKeyWithValue("repos", HaveKey("github.com/rosenhouse/lg")),
+		))
 	})
 
 	It("mirrors run 37129390741 with attempts 1–3, the recorded job ids and the recorded job kinds", func() {
@@ -148,7 +166,187 @@ var _ = Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), Orde
 			Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(HaveKeyWithValue("reason", BeElementOf("expired", "deleted")), "artifact %d", artifact.ID)
 		}
 	})
+
+	It("gives every job dir of runs 37129390741, 37129738159 and 37129867594 job.json plus exactly one of log.txt, log.txt.tombstone or an id in fetch.json carried_forward_jobs", func() {
+		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
+			attempts, err := filepath.Glob(filepath.Join(runDir(env, runID), "attempt-*"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(attempts).NotTo(BeEmpty(), "run %d", runID)
+			for _, attempt := range attempts {
+				carriedForward := carriedForwardJobs(attempt)
+				jobs, err := filepath.Glob(filepath.Join(attempt, "jobs", "*"))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(jobs).NotTo(BeEmpty(), attempt)
+				for _, job := range jobs {
+					Expect(filepath.Join(job, "job.json")).To(BeARegularFile())
+					id, ok := layout.DirID(filepath.Base(job))
+					Expect(ok).To(BeTrue(), job)
+					holds := 0
+					for _, held := range []bool{
+						exists(filepath.Join(job, "log.txt")),
+						exists(filepath.Join(job, "log.txt.tombstone")),
+						slices.Contains(carriedForward, id),
+					} {
+						if held {
+							holds++
+						}
+					}
+					Expect(holds).To(Equal(1), job)
+				}
+			}
+		}
+	})
+
+	It("reports only the jobs flaky and timeout and their failing steps for lg flakes --sha 1a51097", func() {
+		session := env.Lg("flakes", "--sha", "1a51097", "--json").Wait(harness.ExitTimeout)
+		Expect(session).To(gexec.Exit(0))
+		failingSteps := map[string][]string{}
+		for _, line := range strings.Split(strings.TrimSpace(string(session.Out.Contents())), "\n") {
+			var finding struct {
+				Kind         string
+				RunID        int64 `json:"run_id"`
+				Job          string
+				Step         *string
+				FailingSteps []string `json:"failing_steps"`
+			}
+			Expect(json.Unmarshal([]byte(line), &finding)).To(Succeed(), line)
+			Expect(finding.Kind).To(Equal("rerun"), line)
+			Expect(finding.RunID).To(Equal(int64(fixtureRun)), line)
+			key := finding.Job
+			if finding.Step != nil {
+				key += " / " + *finding.Step
+			}
+			failingSteps[key] = finding.FailingSteps
+		}
+		Expect(failingSteps).To(Equal(map[string][]string{
+			"flaky":                              {"Fail on first attempt only"},
+			"flaky / Fail on first attempt only": {},
+			"timeout":                            {"Time out on first attempt only"},
+			"timeout / Time out on first attempt only": {},
+		}))
+	})
+
+	It("decodes an LG_MARKER hit from `lg paths` + grep with lg where", func() {
+		session := env.Bash("lg paths --sha 1a51097 -0 | xargs -0 -r rg --no-config -Hn LG_MARKER | lg where").Wait(harness.ExitTimeout)
+		Expect(session).To(gexec.Exit(0))
+		var decoded []map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(string(session.Out.Contents())), "\n") {
+			var hit map[string]any
+			Expect(json.Unmarshal([]byte(line), &hit)).To(Succeed(), line)
+			Expect(hit).To(HaveKeyWithValue("run_id", BeEquivalentTo(fixtureRun)))
+			Expect(hit).To(HaveKeyWithValue("text", ContainSubstring("LG_MARKER")))
+			Expect(hit).To(HaveKeyWithValue("line", BeNumerically(">", 0)))
+			Expect(lineOf(hit["path"].(string), int(hit["line"].(float64)))).To(Equal(hit["text"]))
+			decoded = append(decoded, hit)
+		}
+		Expect(decoded).To(ContainElement(SatisfyAll(
+			HaveKeyWithValue("attempt", BeEquivalentTo(1)),
+			HaveKeyWithValue("job", "flaky"),
+			HaveKeyWithValue("job_conclusion", "failure"),
+			HaveKeyWithValue("sha", HavePrefix("1a51097")),
+			HaveKeyWithValue("text", HaveSuffix("LG_MARKER flaky failure attempt=1")),
+			HaveKeyWithValue("html_url", "https://github.com/rosenhouse/Lg/actions/runs/37129390741/job/111221289888"),
+		)))
+	})
+
+	It("handles the expires-in-1-day artifacts the way R1 recorded", func() {
+		By("finding them delisted")
+		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
+			dir := runDir(env, runID)
+			Expect(filepath.Glob(filepath.Join(dir, "artifacts", "*_"+expiringName))).To(BeEmpty(), "run %d", runID)
+			snapshots, err := filepath.Glob(filepath.Join(dir, "attempt-*", "artifacts.json"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(snapshots).NotTo(BeEmpty(), "run %d", runID)
+			for _, snapshot := range snapshots {
+				Expect(os.ReadFile(snapshot)).NotTo(ContainSubstring(expiringName), snapshot)
+			}
+		}
+
+		By("retrying them in a store that listed them before they expired")
+		early := harness.NewLive(lgPath)
+		realGH := early.Getenv("LG_GH")
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
+		listed := map[int64][]model.Artifact{
+			fixtureRun:     expiring(fixtureRun, "after-attempt-1"),
+			logsDeletedRun: expiring(logsDeletedRun, "logs-deleted"),
+		}
+		for _, artifacts := range listed {
+			Expect(artifacts).To(HaveLen(1))
+			fake.Fail("blob", fmt.Sprintf("/artifacts/%d.zip", artifacts[0].ID), fakegithub.Fault{Status: http.StatusServiceUnavailable})
+		}
+		early.Setenv("LG_GH", fakegh.New(GinkgoT().TempDir()).Path)
+		early.Setenv("LG_TEST_NOW", harness.DefaultNow().Format(time.RFC3339))
+		window := liveWindow()
+		early.WriteConfig(fake.URL(), "backfill: "+window, "retention: "+window)
+		Expect(early.Sync()).To(gexec.Exit(1))
+
+		early.Setenv("LG_GH", realGH)
+		early.Setenv("LG_TEST_NOW", "")
+		early.WriteLiveConfig("backfill: "+window, "retention: "+window)
+		Expect(syncLive(early)).To(gexec.Exit(0))
+
+		for runID, artifacts := range listed {
+			artifact := artifacts[0]
+			status := recordedZipStatus(runID, artifact.ID)
+			reason := map[int]string{http.StatusGone: "expired", http.StatusNotFound: "deleted"}[status]
+			Expect(reason).NotTo(BeEmpty(), "R1 recorded %d for artifact %d", status, artifact.ID)
+			tombstone := filepath.Join(layout.ArtifactDir(runDir(early, runID), artifact.ID, artifact.Name), "artifact.zip.tombstone")
+			Expect(readJSON(tombstone)).To(SatisfyAll(
+				HaveKeyWithValue("reason", reason),
+				HaveKeyWithValue("http_status", BeEquivalentTo(status)),
+			), "artifact %d", artifact.ID)
+		}
+	})
 })
+
+// expiring gives the expires-in-1-day artifacts of a recorded listing.
+func expiring(runID int64, stage string) []model.Artifact {
+	GinkgoHelper()
+	artifacts, err := recordings.Artifacts(runID, stage)
+	Expect(err).NotTo(HaveOccurred())
+	return slices.DeleteFunc(artifacts, func(a model.Artifact) bool { return a.Name != expiringName })
+}
+
+// recordedZipStatus is the final status R1 recorded for an artifact's zip.
+func recordedZipStatus(runID, artifactID int64) int {
+	GinkgoHelper()
+	status, err := os.Open(filepath.Join(recordings.Dir(runID, "after-expiry"), "status.txt"))
+	Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = status.Close() }()
+	lines, err := recordings.ParseStatus(status)
+	Expect(err).NotTo(HaveOccurred())
+	path := fmt.Sprintf("artifacts/%d/zip", artifactID)
+	i := slices.IndexFunc(lines, func(l recordings.Line) bool { return l.Path == path })
+	Expect(i).NotTo(BeNumerically("<", 0), path)
+	return lines[i].Final
+}
+
+func carriedForwardJobs(attemptDir string) []int64 {
+	GinkgoHelper()
+	var fetch struct {
+		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+	}
+	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
+	Expect(err).NotTo(HaveOccurred())
+	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+	return fetch.CarriedForwardJobs
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// lineOf gives line n of the file at path, without its newline.
+func lineOf(path string, n int) string {
+	GinkgoHelper()
+	raw, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred())
+	lines := strings.Split(string(raw), "\n")
+	Expect(n).To(BeNumerically("<=", len(lines)), path)
+	return lines[n-1]
+}
 
 var _ = Describe("the GitHub API", Label("live"), func() {
 	It("returns compact JSON to lg's User-Agent, as the fake does", func() {
@@ -190,16 +388,15 @@ func unexpiredRecordedArtifacts() []model.Artifact {
 }
 
 // syncLive retries, because one transient GitHub error on any run fails a
-// sync, and the next sync resumes where it stopped.
-func syncLive(env *harness.Env) {
-	GinkgoHelper()
+// sync, and the next sync resumes where it stopped. It gives the last sync.
+func syncLive(env *harness.Env) *gexec.Session {
 	var session *gexec.Session
 	for range 3 {
 		if session = env.Lg("sync").Wait(liveSyncTimeout); session.ExitCode() == 0 {
 			break
 		}
 	}
-	Expect(session).To(gexec.Exit(0))
+	return session
 }
 
 func get(url string) []byte {
@@ -293,13 +490,7 @@ func countKinds(kinds map[int64]model.JobKind) map[model.JobKind]int {
 // not_applicable from its tombstone's reason.
 func storedKinds(attemptDir string) map[int64]model.JobKind {
 	GinkgoHelper()
-	var fetch struct {
-		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
-	}
-	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
-	Expect(err).NotTo(HaveOccurred())
-	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
-
+	carriedForward := carriedForwardJobs(attemptDir)
 	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
 	Expect(err).NotTo(HaveOccurred())
 	kinds := map[int64]model.JobKind{}
@@ -307,7 +498,7 @@ func storedKinds(attemptDir string) map[int64]model.JobKind {
 		digits, _, _ := strings.Cut(entry.Name(), "_")
 		id, err := strconv.ParseInt(digits, 10, 64)
 		Expect(err).NotTo(HaveOccurred(), entry.Name())
-		kinds[id] = storedKind(attemptDir, id, slices.Contains(fetch.CarriedForwardJobs, id))
+		kinds[id] = storedKind(attemptDir, id, slices.Contains(carriedForward, id))
 	}
 	return kinds
 }
