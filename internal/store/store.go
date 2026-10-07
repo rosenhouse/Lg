@@ -604,6 +604,17 @@ func (u *Unit) WriteJSON(name string, raw []byte) error {
 	return w.Close()
 }
 
+// WriteValue stores v as WriteJSON does, with <, > and & as they are, so rg finds them.
+func (u *Unit) WriteValue(name string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	return u.WriteJSON(name, buf.Bytes())
+}
+
 // ReplaceFile replaces path with data, so that a crash leaves the old file
 // or the new one. Callers hold state/write.lock.
 func (s *Store) ReplaceFile(path string, data []byte) error { return ReplaceFileFS(s.fs, path, data) }

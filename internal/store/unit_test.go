@@ -55,6 +55,13 @@ var _ = Describe("Unit", Label("sync"), func() {
 		Expect(io.ReadAll(f)).To(Equal([]byte("zip")))
 	})
 
+	It("writes a value as indented JSON, keeping <, > and &, and ending in one newline", func() {
+		Expect(unit.WriteValue("v.json", map[string]string{"a": "<&>"})).To(Succeed())
+		Expect(s.Publish(unit, target)).To(Succeed())
+
+		Expect(os.ReadFile(filepath.Join(target, "v.json"))).To(Equal([]byte("{\n  \"a\": \"<&>\"\n}\n")))
+	})
+
 	It("publishes members created in subdirs by renaming the staged unit into place", func() {
 		w, err := unit.Create("jobs/1_build/log.txt", store.Unlimited)
 		Expect(err).NotTo(HaveOccurred())
