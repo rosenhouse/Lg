@@ -15,6 +15,7 @@ import (
 	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
@@ -148,7 +149,7 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 
 	// withoutFirstAttempt is a run re-run after run afterRun of Intermittent whose first attempt sync cannot fetch.
 	withoutFirstAttempt := func(id int64, event string, afterRun int) scenario.Run {
-		r := scenario.AddRerunAttempt(onMain(id, event, afterRun), untouched)
+		r := scenario.AddRerunAttempt(scenario.WithSHA(onMain(id, event, afterRun), strings.Repeat("e", 40)), untouched)
 		env.Fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, untouched)[0]), fakegithub.Fault{Status: http.StatusInternalServerError})
 		return r
 	}
@@ -169,6 +170,24 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		addRunsWithoutFirstAttempt(ctx, withoutFirstAttempt(14, "push", 3))
 
 		Expect(failures(ctx, main)).To(BeEmpty())
+	})
+
+	It("names a run whose first attempt is not on disk and whose created_at is not a time", func(ctx SpecContext) {
+		addRunsWithoutFirstAttempt(ctx, withoutFirstAttempt(14, "push", 3))
+		_, err := openDB(dbPath(env)).ExecContext(ctx, "UPDATE runs SET created_at = 'yesterday' WHERE run_id = 14")
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = ix.IntermittentFailures(ctx, main)
+		Expect(err).To(MatchError(SatisfyAll(ContainSubstring(runDir(env.Data(), 14)), ContainSubstring(`"yesterday"`))))
+	})
+
+	It("orders a run whose first attempt is not on disk and that has no created_at first", func(ctx SpecContext) {
+		addRunsWithoutFirstAttempt(ctx, withoutFirstAttempt(14, "push", 3))
+		_, err := openDB(dbPath(env)).ExecContext(ctx, "UPDATE runs SET created_at = NULL WHERE run_id = 14")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(failures(ctx, main)).To(ConsistOf(SatisfyAll(integration, runIDs(14, 1, 2, 3, 4, 5, 6),
+			HaveField("Runs", ContainElement(model.RunOutcome{RunID: 14, HeadSHA: strings.Repeat("e", 40)}))), unit))
 	})
 
 	It("leaves out pull_request runs and runs whose latest attempt was cancelled, though their first attempt is not on disk", func(ctx SpecContext) {
