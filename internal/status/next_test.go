@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -365,6 +366,14 @@ var _ = Describe("Remeasured", Label("status"), func() {
 		Expect(prev.Repos[repo]).To(Equal(before))
 		st.Repos = prev.Repos
 		Expect(st).To(Equal(prev))
+	})
+
+	It("replaces the fields of repo named in any case, and adds no repo", func() {
+		prev := status.Next(nil, good(time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)))
+
+		Expect(status.Remeasured(prev, strings.ToUpper(repo), status.Disk{Runs: 7}, 24*time.Hour, 1).Repos).
+			To(SatisfyAll(HaveLen(1), HaveKeyWithValue(repo, HaveField("Runs", 7))))
+		Expect(status.Remeasured(prev, "github.com/o/other", status.Disk{Runs: 7}, 24*time.Hour, 1)).To(Equal(prev))
 	})
 
 	It("clears the newest run and lag when no completed run is left", func() {
