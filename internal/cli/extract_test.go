@@ -142,13 +142,13 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 })
 
 var _ = Describe("lg extract with nothing to extract", Label("extract"), func() {
-	It("says so on stderr when no artifact matches", func() {
+	It("says so on stderr when no artifact.zip matches", func() {
 		c := harness.NewCLI()
 		Expect(c.Main("sync")).To(Equal(0))
 
 		Expect(c.Main("extract", "--branch", "no-such-branch")).To(Equal(0))
 		Expect(c.Stdout.String()).To(BeEmpty())
-		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: no artifact matches\n"))
+		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: no artifact.zip matches\n"))
 	})
 
 	It("says so on stderr when every artifact it selects is extracted already", func() {

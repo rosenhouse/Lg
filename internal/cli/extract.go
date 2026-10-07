@@ -116,7 +116,7 @@ func (c extractCmd) Run(deps *Deps) error {
 		warnPastDiskCap(deps)
 	case err != nil:
 	case len(dirs) == 0:
-		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: no artifact matches")
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: no artifact.zip matches")
 	default:
 		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone")
 	}
