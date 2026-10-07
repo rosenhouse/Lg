@@ -110,6 +110,37 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			SatisfyAll(HaveField("Step", "e2e"), HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(2, "success")})),
 		))
 	})
+	It("leaves out of a series a run whose only job of the name was neutral, or skipped the step", func() {
+		series := model.FirstAttemptSeries([]model.RunJob{
+			firstAttempt(1, 1, 11, "test", "success", "e2e", "success"),
+			firstAttempt(1, 1, 12, "lint", "success"),
+			firstAttempt(2, 2, 21, "test", "success", "e2e", "skipped"),
+			firstAttempt(2, 2, 22, "lint", "neutral"),
+			firstAttempt(3, 3, 31, "test", "failure", "e2e", "failure"),
+			firstAttempt(3, 3, 32, "lint", "failure"),
+		})
+
+		Expect(series).To(HaveExactElements(
+			SatisfyAll(HaveField("Job", "lint"), HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(3, "failure", "attempt-1/32/log.txt")})),
+			SatisfyAll(HaveField("Job", "test"), HaveField("Step", ""), HaveField("Runs", HaveLen(3))),
+			SatisfyAll(HaveField("Job", "test"), HaveField("Step", "e2e"), HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(3, "failure", "attempt-1/31/log.txt")})),
+		))
+	})
+
+	It("gives a step series per job name, though two job names share the step name", func() {
+		series := model.FirstAttemptSeries([]model.RunJob{
+			firstAttempt(1, 1, 11, "test", "failure", "go test", "failure"),
+			firstAttempt(1, 1, 12, "lint", "success", "go test", "success"),
+		})
+
+		Expect(series).To(HaveExactElements(
+			HaveField("Job", "lint"),
+			SatisfyAll(HaveField("Job", "lint"), HaveField("Step", "go test"), HaveField("Runs", []model.RunOutcome{ran(1, "success")})),
+			HaveField("Job", "test"),
+			SatisfyAll(HaveField("Job", "test"), HaveField("Step", "go test"), HaveField("Runs", []model.RunOutcome{ran(1, "failure", "attempt-1/11/log.txt")})),
+		))
+	})
+
 	It("leaves its input as it was", func() {
 		notApplicable := firstAttempt(1, 1, 12, "test", "failure")
 		notApplicable.Kind = model.NotApplicable
