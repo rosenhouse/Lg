@@ -137,11 +137,11 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		Expect(failures(ctx, index.Filter{})).To(ConsistOf(integration, unit))
 	})
 
-	It("counts a run whose first attempt failed and whose later attempt was cancelled", func(ctx SpecContext) {
+	It("leaves out a run whose first attempt failed and whose latest attempt was cancelled", func(ctx SpecContext) {
 		r := scenario.AddRerunAttempt(failingUntouched(12, "push", 3), untouched)
 		addRuns(ctx, scenario.Cancel(r, 2))
 
-		Expect(failures(ctx, main)).To(ContainElement(failedAlone(untouched, "", 12)))
+		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
 	})
 
 	It("ignores attempts after the first, so a job that failed only in a re-run did not fail alone", func(ctx SpecContext) {
