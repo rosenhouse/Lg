@@ -20,7 +20,7 @@ type Flip struct {
 // conclusion of the latest.
 var flipRuns = source{
 	from: "runs r JOIN attempts x ON " + within,
-	when: "x.run_started_at", conclusion: latestConclusion, jobs: "r.path",
+	when: "x.run_started_at", conclusion: latestConclusion,
 }
 
 // RerunFlips gives the rerun flips of the runs f selects, among the jobs
@@ -28,7 +28,9 @@ var flipRuns = source{
 // returns the error of each of their logs it could not read.
 func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	w := jobSource.where(Filter{Jobs: f.Jobs})
-	runs := flipRuns.where(f)
+	runFilter := f
+	runFilter.Jobs = nil
+	runs := flipRuns.where(runFilter)
 	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
 	// Ordering by run first lets SQLite find each run's jobs by path range.
 	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
