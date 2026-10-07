@@ -67,16 +67,7 @@ func (c extractCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	format := filepath.Join(roots.Store, "FORMAT")
-	if !exists(format) && !exists(filepath.Join(roots.State, "write.lock")) {
-		return noStore(roots)
-	}
-	s, release, err := openForWriting(roots, deps, c.Timeout, func() error {
-		if !exists(format) {
-			return noStore(roots)
-		}
-		return nil
-	})
+	s, release, err := openExisting(roots, deps, c.Timeout)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

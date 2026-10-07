@@ -33,6 +33,29 @@ func noStore(roots config.Roots) error {
 	return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
 }
 
+// checkHasStore refuses a root without a store, since a command that only
+// changes one was likely given a mistyped LG_HOME, unless a writer holding
+// state/write.lock is making it.
+func checkHasStore(roots config.Roots) error {
+	if !exists(filepath.Join(roots.Store, "FORMAT")) && !exists(filepath.Join(roots.State, "write.lock")) {
+		return noStore(roots)
+	}
+	return nil
+}
+
+// openExisting is openForWriting for a store that must already exist.
+func openExisting(roots config.Roots, deps *Deps, timeout time.Duration) (*store.Store, func(), error) {
+	if err := checkHasStore(roots); err != nil {
+		return nil, nil, err
+	}
+	return openForWriting(roots, deps, timeout, func() error {
+		if !exists(filepath.Join(roots.Store, "FORMAT")) {
+			return noStore(roots)
+		}
+		return nil
+	})
+}
+
 // writeLockWait bounds how long a writer waits for another to finish.
 const writeLockWait = 5 * time.Minute
 
