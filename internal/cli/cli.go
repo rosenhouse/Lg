@@ -111,7 +111,8 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		err = config.Error(err.Error())
 	}
-	if err == nil {
+	// skill install writes only outside the store.
+	if err == nil && ctx.Command() != "skill install" {
 		warn(&deps, ctx.Command())
 		err = checkStore(ctx.Command(), deps.Env)
 	}
@@ -181,9 +182,9 @@ type warned struct{ error }
 
 func (w warned) Unwrap() error { return w.error }
 
-// checkStore refuses a store that lg cannot own before any command that uses the store runs.
+// checkStore refuses a store that lg cannot own before any command but version runs.
 func checkStore(command string, env map[string]string) error {
-	if command == "version" || command == "skill install" {
+	if command == "version" {
 		return nil
 	}
 	roots, err := config.Locations(env)
