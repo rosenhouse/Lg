@@ -85,6 +85,7 @@ var _ = Describe("lg sync --wait with a daemon running", Label("sync"), func() {
 		appendOnly := snapshotData(env)
 		waiting := env.Lg("sync", "--wait")
 		Eventually(env.Status, cycleWait).WithContext(ctx).Should(HaveKeyWithValue("served_request", 1.0))
+		// A -race lg sleeps 1s as it exits, so a shorter window could miss an early exit.
 		Consistently(waiting, 3*time.Second).WithContext(ctx).ShouldNot(gexec.Exit())
 		Expect(writer.Rollback()).To(Succeed())
 
