@@ -30,7 +30,7 @@ var firstAttemptRuns = source{
 // failures it could not read.
 func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermittent, error) {
 	seriesRuns := Filter{Branches: f.Branches, Workflows: f.Workflows, Events: f.Events, Jobs: f.Jobs}
-	jobs, restarted, err := ix.flakeJobs(ctx, seriesRuns, "x.attempt = 1",
+	jobs, restarted, err := ix.flakeJobs(ctx, seriesRuns, below("x.path", "r.path || '/attempt-1'"),
 		"r.event NOT IN ('pull_request', 'pull_request_target')", "a.conclusion IS NOT 'cancelled'")
 	if err != nil {
 		return nil, errors.Join(restarted, err)

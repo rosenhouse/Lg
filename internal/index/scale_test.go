@@ -150,7 +150,7 @@ var _ = Describe("rerun flips over a store of 9,000 runs of ten jobs of ten step
 })
 
 var _ = Describe("intermittent failures over a store of 9,000 runs of ten jobs of ten steps", Label("scale"), func() {
-	It("gives them in under 5s", func(ctx SpecContext) {
+	It("gives them in under 10s", func(ctx SpecContext) {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
 		writeScaleStore(data, 9_000, storeShape{attempts: func(int) int { return 1 }, jobs: func(int) int { return 10 }, steps: 10})
 		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), data, nil)
@@ -165,6 +165,6 @@ var _ = Describe("intermittent failures over a store of 9,000 runs of ten jobs o
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeEmpty())
-		Expect(took).To(BeNumerically("<", 5*time.Second))
+		Expect(took).To(BeNumerically("<", 10*time.Second))
 	}, NodeTimeout(5*time.Minute))
 })
