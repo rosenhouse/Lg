@@ -150,8 +150,9 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		c := harness.NewCLI()
 
 		Expect(c.Main("flakes", "--help")).To(Equal(0))
-		Expect(c.Stdout.String()).To(ContainSubstring("The other filters select runs"))
-		Expect(c.Stdout.String()).NotTo(ContainSubstring("unit"))
+		help := strings.Join(strings.Fields(c.Stdout.String()), " ")
+		Expect(help).To(ContainSubstring("The other filters select runs"))
+		Expect(help).NotTo(ContainSubstring("unit"))
 	})
 
 	DescribeTable("exits 2",
