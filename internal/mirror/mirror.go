@@ -498,3 +498,24 @@ func jsonArray[T any](elements []T, raw func(T) json.RawMessage) []byte {
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
 }
+
+// matchingPRs gives the numbers of the pulls whose head is the run's head
+// branch and repository, sorted. A null head repo, on either side, matches
+// only a run from a fork.
+func matchingPRs(run model.RunRepositories, headBranch string, pulls []github.CommitPull) []int {
+	numbers := []int{}
+	for _, pr := range pulls {
+		if pr.HeadRef == headBranch && sameHeadRepo(run, pr.HeadRepoID) {
+			numbers = append(numbers, pr.Number)
+		}
+	}
+	slices.Sort(numbers)
+	return slices.Compact(numbers)
+}
+
+func sameHeadRepo(run model.RunRepositories, prRepo int64) bool {
+	if !run.FromFork() {
+		return prRepo == run.Repository.ID
+	}
+	return prRepo == 0 || run.HeadRepository == nil || prRepo == run.HeadRepository.ID
+}

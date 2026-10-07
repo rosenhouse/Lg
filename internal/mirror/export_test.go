@@ -11,6 +11,7 @@ var (
 	NonTerminal  = nonTerminal
 	Merge        = merge
 	RescanWindow = rescanWindow
+	MatchingPRs  = matchingPRs
 )
 
 // Retry is an artifact of a retry set, with the run_attempt of its origin.
