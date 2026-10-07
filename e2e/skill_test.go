@@ -22,21 +22,22 @@ import (
 var _ = Describe("lg skill install", Label("skill"), func() {
 	It("writes ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/lg/SKILL.md identical to the embedded copy, replacing an older copy and printing the path", func() {
 		env := harness.New(lgPath)
-		for _, path := range []string{
-			filepath.Join(env.Home(), ".claude", "skills", "lg", "SKILL.md"),
-			filepath.Join(GinkgoT().TempDir(), "skills", "lg", "SKILL.md"),
-		} {
-			if !strings.HasPrefix(path, env.Home()) {
-				env.Setenv("CLAUDE_CONFIG_DIR", filepath.Dir(filepath.Dir(filepath.Dir(path))))
-			}
-			Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
-			Expect(os.WriteFile(path, []byte("an older copy\n"), 0o644)).To(Succeed())
-
+		installsTo := func(path string) {
+			GinkgoHelper()
 			session := env.Lg("skill", "install")
 			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 			Expect(outputLines(session)).To(Equal([]string{path}))
 			Expect(os.ReadFile(path)).To(Equal([]byte(skill.Markdown)))
 		}
+
+		installsTo(filepath.Join(env.Home(), ".claude", "skills", "lg", "SKILL.md"))
+
+		claude := GinkgoT().TempDir()
+		env.Setenv("CLAUDE_CONFIG_DIR", claude)
+		older := filepath.Join(claude, "skills", "lg", "SKILL.md")
+		Expect(os.MkdirAll(filepath.Dir(older), 0o755)).To(Succeed())
+		Expect(os.WriteFile(older, []byte("an older copy\n"), 0o644)).To(Succeed())
+		installsTo(older)
 	})
 })
 
