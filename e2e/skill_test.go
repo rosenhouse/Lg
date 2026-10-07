@@ -161,6 +161,23 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 		), printed.String())
 	})
 
+	It("prints no hit from the current dir in any ```sh block, run without set -e, when lg refuses the store", func() {
+		lax := harness.New(lgPath)
+		foreign := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(foreign, "notes.txt"), []byte("hi\n"), 0o644)).To(Succeed())
+		lax.Setenv("LG_HOME", foreign)
+		decoy := "\"head_sha\": \"1a51097 test_retry \"reason\": \"deleted\" foo bar nested in tar.gz\n"
+		for _, name := range []string{"attempt.json", "decoy.tombstone", "log.txt"} {
+			Expect(os.WriteFile(filepath.Join(lax.Home(), name), []byte(decoy), 0o644)).To(Succeed())
+		}
+
+		for _, b := range doctest.ShBlocks(skill.Markdown) {
+			session := lax.BashUnchecked(b.Text)
+			Eventually(session, docBlockTimeout).Should(gexec.Exit(), "line %d", b.Line)
+			Expect(session.Out.Contents()).To(BeEmpty(), "the block on line %d:\n%s", b.Line, b.Text)
+		}
+	})
+
 	It("names every file kind a sync and an extract write (attempt.json, jobs.json, artifacts.json, fetch.json, job.json, log.txt, *.tombstone, artifact.json, artifact.zip, extracted/)", func() {
 		kinds := map[string]bool{}
 		Expect(filepath.WalkDir(env.Data(), func(path string, d fs.DirEntry, err error) error {

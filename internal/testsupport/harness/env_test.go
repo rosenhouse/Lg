@@ -37,3 +37,14 @@ var _ = Describe("Env.Bash", Label("skill"), func() {
 		Expect(string(session.Out.Contents())).To(Equal(home + "\n"))
 	})
 })
+
+var _ = Describe("Env.BashUnchecked", Label("skill"), func() {
+	It("runs on past a failing command and pipe stage, in HOME", func() {
+		env := harness.New("/no/lg")
+		session := env.BashUnchecked("false; false | cat; echo $UNSET_VAR ok; pwd -P")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		home, err := filepath.EvalSymlinks(env.Home())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(session.Out.Contents())).To(Equal("ok\n" + home + "\n"))
+	})
+})

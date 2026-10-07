@@ -78,12 +78,10 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 
 Run `rg --no-config`, so that a ripgrep config file named by `RIPGREP_CONFIG_PATH` cannot change its output.
 When rg walks the store, pass `-uu`, so that it searches hidden files and no ignore file hides any.
-Assign `lg root` on its own line, as below, so a script stops when lg fails instead of searching the current dir.
+Chain `lg root` and `cd` with `&&`, as below, so a script stops when lg fails instead of searching the current dir.
 
 ```sh
-data=$(lg root)
-cd "$data"
-rg --no-config -uu -l '"head_sha": "1a51097' --glob attempt.json
+data=$(lg root) && cd "$data" && rg --no-config -uu -l '"head_sha": "1a51097' --glob attempt.json
 lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -f2- | sort | uniq -c | sort -rn
 ```
 
@@ -189,9 +187,7 @@ Artifacts often hold hidden dirs such as `.pytest_cache/`, which rg walks only w
 lg extract --branch release-3
 lg paths --unit extracted -0 | xargs -0 -r grep -lI 'nested in tar.gz' | lg where \
   | jq -r '[.run_id, .artifact_id, .artifact, .inner_path] | @tsv'
-data=$(lg root)
-cd "$data"
-rg --no-config -uu -l 'test_retry'
+data=$(lg root) && cd "$data" && rg --no-config -uu -l 'test_retry'
 ```
 
 ## Gaps
@@ -203,9 +199,7 @@ Its `reason` is `expired`, `deleted`, `not_applicable` or `too_large`.
 A unit that failed for a transient reason, such as a GitHub outage, is pending: `lg status` lists it, and the next sync retries it.
 
 ```sh
-data=$(lg root)
-cd "$data"
-rg --no-config -uu -l '"reason": "deleted"' --glob '*.tombstone'
+data=$(lg root) && cd "$data" && rg --no-config -uu -l '"reason": "deleted"' --glob '*.tombstone'
 ```
 
 ## Expiry and eviction

@@ -80,6 +80,14 @@ func (e *Env) Bash(script string) *gexec.Session {
 	return e.start(cmd)
 }
 
+// BashUnchecked runs a script with /bin/bash in HOME, without -e, -u or
+// pipefail, as agents' shells do.
+func (e *Env) BashUnchecked(script string) *gexec.Session {
+	cmd := e.command("/bin/bash", "-c", script)
+	cmd.Dir = e.Home()
+	return e.start(cmd)
+}
+
 // WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
 func (e *Env) WriteConfig(apiURL string, lines ...string) {
 	e.writeConfig(append([]string{"repo: rosenhouse/lg", "api_url: " + apiURL}, lines...))
