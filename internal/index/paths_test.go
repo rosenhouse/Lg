@@ -421,3 +421,23 @@ var _ = Describe("Index.Paths", Label("paths"), func() {
 		Expect(err).To(MatchError("unknown unit step"))
 	})
 })
+
+var _ = DescribeTable("CheckGlob", Label("paths"),
+	func(glob string, valid bool) {
+		if valid {
+			Expect(index.CheckGlob(glob)).To(Succeed())
+		} else {
+			Expect(index.CheckGlob(glob)).To(MatchError("unclosed ["))
+		}
+	},
+	Entry("accepts a glob without [", "build (*, 1.2?)", true),
+	Entry("accepts a closed class", "flak[y]", true),
+	Entry("accepts a class whose first member is ]", "[]]", true),
+	Entry("accepts a negated class whose first member is ]", "[^]]", true),
+	Entry("accepts a [ in a class", "[[]", true),
+	Entry("refuses an unclosed [", "flak[y", false),
+	Entry("refuses a [ that holds only ]", "x[]", false),
+	Entry("refuses a [ that holds only ^]", "x[^]", false),
+	Entry("refuses an unclosed [ after a closed one", "[a]b[c", false),
+	Entry("refuses a trailing [^", "x[^", false),
+)

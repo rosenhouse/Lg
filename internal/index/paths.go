@@ -34,6 +34,29 @@ type Filter struct {
 	Since, Until time.Time
 }
 
+// CheckGlob refuses a glob that SQLite's GLOB would take as matching nothing:
+// one with a [ that no ] closes. A ] right after [ or [^ is a class member.
+func CheckGlob(glob string) error {
+	for i := 0; i < len(glob); i++ {
+		if glob[i] != '[' {
+			continue
+		}
+		i++
+		if i < len(glob) && glob[i] == '^' {
+			i++
+		}
+		if i < len(glob) && glob[i] == ']' {
+			i++
+		}
+		end := strings.IndexByte(glob[i:], ']')
+		if end < 0 {
+			return errors.New("unclosed [")
+		}
+		i += end
+	}
+	return nil
+}
+
 // Unit names the files Paths gives of each selected unit.
 type Unit string
 
