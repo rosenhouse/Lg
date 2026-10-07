@@ -1,6 +1,7 @@
 package index_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -68,6 +69,22 @@ var _ = Describe("IndexRun", Label("index"), func() {
 			"DateDir":       Equal("2026-09-30"),
 			"LatestAttempt": Equal(10),
 		}))
+	})
+
+	It("gives the run row pr_numbers the union of every attempt's pull_requests and commit_pr_numbers and every artifact's pr_numbers", Label("prs"), func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeAttempt(dir, 1, "first", 1)
+		fetch := filepath.Join(layout.AttemptDir(dir, 1), "fetch.json")
+		raw, err := os.ReadFile(fetch)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(fetch, bytes.Replace(raw, []byte(`"attempt":`), []byte(`"commit_pr_numbers":[4,1],"attempt":`), 1), 0o644)).To(Succeed())
+		// Attempt 2's fetch.json, written before lg looked PRs up, has no commit_pr_numbers.
+		writeAttempt(dir, 2, "second", 2)
+		writeArtifact(dir, 1, attemptStart(1).Format(time.RFC3339), `"pr_numbers":[5,2]`, nil)
+
+		rows, err := index.IndexRun(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows.Run.PRNumbers).To(Equal([]int{1, 2, 4, 5}))
 	})
 
 	It("attributes an artifact created after attempt 1 started, fetched during attempt 2, to attempt 1 only once attempt 2 is on disk", func() {

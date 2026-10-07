@@ -112,6 +112,7 @@ type fetch struct {
 	WorkflowName      string    `json:"workflow_name"`
 	Event             string    `json:"event"`
 	PRNumbers         []int     `json:"pr_numbers"`
+	CommitPRNumbers   []int     `json:"commit_pr_numbers"`
 	DisplayTitle      string    `json:"display_title"`
 }
 
@@ -214,16 +215,20 @@ func readArtifact(runDir, rel string) (artifactFiles, error) {
 }
 
 // runRow takes the run's facts from its highest attempt, else from the
-// artifact fetched last.
+// artifact fetched last. Its pr_numbers are those of every unit.
 func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
+	var prs []int
+	for _, a := range attempts {
+		for _, pr := range a.run.PullRequests {
+			prs = append(prs, pr.Number)
+		}
+		prs = append(prs, a.fetch.CommitPRNumbers...)
+	}
+	for _, a := range artifacts {
+		prs = append(prs, a.fetch.PRNumbers...)
+	}
 	if len(attempts) > 0 {
 		latest := attempts[len(attempts)-1]
-		var prs []int
-		for _, a := range attempts {
-			for _, pr := range a.run.PullRequests {
-				prs = append(prs, pr.Number)
-			}
-		}
 		return Run{
 			Host: latest.fetch.Host, Repo: latest.fetch.Repo, RunID: latest.run.ID,
 			CreatedAt: latest.fetch.RunCreatedAt, DateDir: latest.fetch.RunCreatedAt.UTC().Format(time.DateOnly),
@@ -238,10 +243,6 @@ func runRow(attempts []attemptFiles, artifacts []artifactFiles) Run {
 	last := slices.MaxFunc(artifacts, func(a, b artifactFiles) int {
 		return cmp.Or(a.fetch.FetchedAt.Compare(b.fetch.FetchedAt), cmp.Compare(a.artifact.ID, b.artifact.ID))
 	})
-	var prs []int
-	for _, a := range artifacts {
-		prs = append(prs, a.fetch.PRNumbers...)
-	}
 	f := last.fetch
 	return Run{
 		Host: f.Host, Repo: f.Repo, RunID: f.RunID,
