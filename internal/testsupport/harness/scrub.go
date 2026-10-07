@@ -8,17 +8,19 @@ import (
 var droppedPrefixes = []string{"LG_", "XDG_", "GH_", "GITHUB_"}
 
 var droppedNames = map[string]bool{
-	"HOME":              true,
-	"CLAUDE_CONFIG_DIR": true,
-	"HTTPS_PROXY":       true,
-	"HTTP_PROXY":        true,
-	"NO_PROXY":          true,
-	"ALL_PROXY":         true,
-	"SSL_CERT_FILE":     true,
+	"HOME":                true,
+	"CLAUDE_CONFIG_DIR":   true,
+	"RIPGREP_CONFIG_PATH": true,
+	"HTTPS_PROXY":         true,
+	"HTTP_PROXY":          true,
+	"NO_PROXY":            true,
+	"ALL_PROXY":           true,
+	"SSL_CERT_FILE":       true,
 }
 
 // Scrub drops variables that would leak the caller's lg, XDG, GitHub, home,
-// Claude config, proxy or CA bundle settings into a spec, and puts binDir first on PATH.
+// Claude config, ripgrep config, proxy or CA bundle settings into a spec, and
+// puts binDir first on PATH.
 func Scrub(environ []string, binDir string) map[string]string {
 	vars := map[string]string{"PATH": binDir}
 	for _, kv := range environ {

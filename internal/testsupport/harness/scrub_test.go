@@ -11,9 +11,9 @@ import (
 )
 
 var _ = Describe("Scrub", Label("cli"), func() {
-	It("drops lg, XDG, GitHub, HOME, Claude config, proxy and CA bundle variables", func() {
+	It("drops lg, XDG, GitHub, HOME, Claude config, ripgrep config, proxy and CA bundle variables", func() {
 		Expect(harness.Scrub([]string{
-			"LG_HOME=/lg", "XDG_DATA_HOME=/x", "GH_TOKEN=t", "GITHUB_TOKEN=t", "HOME=/h", "CLAUDE_CONFIG_DIR=/c", "SSL_CERT_FILE=/ca",
+			"LG_HOME=/lg", "XDG_DATA_HOME=/x", "GH_TOKEN=t", "GITHUB_TOKEN=t", "HOME=/h", "CLAUDE_CONFIG_DIR=/c", "RIPGREP_CONFIG_PATH=/rc", "SSL_CERT_FILE=/ca",
 			"HTTPS_PROXY=p", "https_proxy=p", "HTTP_PROXY=p", "http_proxy=p",
 			"NO_PROXY=n", "no_proxy=n", "ALL_PROXY=p", "all_proxy=p",
 			"LANG=C", "PATH=/usr/bin",
