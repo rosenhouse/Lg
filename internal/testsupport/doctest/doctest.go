@@ -27,6 +27,19 @@ func ShBlocks(md string) []Block {
 	return blocks
 }
 
+// Tags gives the tag of each fenced code block, empty when it has none.
+func Tags(md string) []string {
+	var tags []string
+	last := 0
+	lines(md, func(n int, line string, f fence) {
+		if f.line != 0 && f.line != last {
+			tags = append(tags, f.lang)
+			last = f.line
+		}
+	})
+	return tags
+}
+
 // fence is the language of a fenced code block and the line it opens on.
 // The zero fence is outside any block.
 type fence struct {

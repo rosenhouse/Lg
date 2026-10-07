@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/rosenhouse/lg/internal/testsupport/doctest"
+
 	skill "github.com/rosenhouse/lg/skill/lg"
 )
 
@@ -23,6 +25,11 @@ var _ = Describe("SKILL.md", Label("skill"), func() {
 		Expect(fields).To(HaveKeyWithValue("name", "lg"))
 		Expect(fields).To(HaveKeyWithValue("description", Not(BeEmpty())))
 		Expect(len(fields["description"])).To(BeNumerically("<=", 1024))
+	})
+
+	It("tags every fenced block sh or text, so that the doc-tests see every block of shell", func() {
+		Expect(doctest.Tags(skill.Markdown)).To(HaveEach(BeElementOf("sh", "text")))
+		Expect(skill.Markdown).NotTo(MatchRegexp("(?m)^ *~~~"))
 	})
 
 	It("never cds into a command substitution, whose failure bash ignores", func() {

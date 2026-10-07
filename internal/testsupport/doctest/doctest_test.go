@@ -23,6 +23,13 @@ var _ = Describe("ShBlocks", Label("skill"), func() {
 	})
 })
 
+var _ = Describe("Tags", Label("skill"), func() {
+	It("gives the tag of each fenced block, empty when it has none", func() {
+		md := "```sh\nx\n```\ntext\n```bash title\ny\n```\n```\nz\n```\n"
+		Expect(doctest.Tags(md)).To(Equal([]string{"sh", "bash", ""}))
+	})
+})
+
 var _ = Describe("LgCommands", Label("skill"), func() {
 	It("finds each lg invocation in sh blocks and inline code, with its arguments unquoted, reading an unclosed quote or substitution to the end of the line", func() {
 		md := "Run `lg status` first, and `lg sync --wait`. Not `rg lg` or `lg`.\n" +
