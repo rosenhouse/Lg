@@ -469,7 +469,10 @@ func (u *Unit) Sum(name string) (Sum, error) {
 
 // Open opens a closed member for reading.
 func (u *Unit) Open(name string) (*os.File, error) {
-	return nil, nil
+	if _, closed := u.sums[name]; !closed {
+		return nil, fmt.Errorf("member %q is not closed", name)
+	}
+	return os.Open(filepath.Join(u.dir, name))
 }
 
 // Remove deletes a closed member.
