@@ -309,6 +309,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 
 	It("keeps every member whose name another took, even in another case, under a ~N suffix that keeps it within 200 bytes and whole runes", func() {
 		long := strings.Repeat("l", 200)
+		fits := strings.Repeat("f", 198)
 		accented := strings.Repeat("a", 197) + "\u00e9"
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "dup.txt", Body: "1\n"},
@@ -326,6 +327,8 @@ var _ = Describe("Extract", Label("extract"), func() {
 			archives.Entry{Name: long, Body: "13\n"},
 			archives.Entry{Name: accented, Body: "14\n"},
 			archives.Entry{Name: accented, Body: "15\n"},
+			archives.Entry{Name: fits, Body: "16\n"},
+			archives.Entry{Name: fits, Body: "17\n"},
 		))
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
@@ -337,8 +340,9 @@ var _ = Describe("Extract", Label("extract"), func() {
 			HaveKeyWithValue(".lg-extract.json~1", "11\n"),
 			HaveKeyWithValue(long, "12\n"), HaveKeyWithValue(long[:198]+"~1", "13\n"),
 			HaveKeyWithValue(accented, "14\n"), HaveKeyWithValue(accented[:197]+"~1", "15\n"),
+			HaveKeyWithValue(fits, "16\n"), HaveKeyWithValue(fits+"~1", "17\n"),
 		))
-		Expect(f.manifest()["renamed"]).To(HaveLen(8))
+		Expect(f.manifest()["renamed"]).To(HaveLen(9))
 		Expect(f.manifest()["renamed"]).To(HaveEach(HaveKeyWithValue("reason", "collision")))
 	})
 

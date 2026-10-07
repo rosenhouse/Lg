@@ -127,12 +127,12 @@ func components(name string) ([]string, string) {
 	return parts, reason
 }
 
-// truncate cuts s to at most n bytes, at a rune boundary.
+// truncate cuts s, which is valid UTF-8, to at most n bytes, at a rune boundary.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
+	for !utf8.RuneStart(s[n]) {
 		n--
 	}
 	return s[:n]
