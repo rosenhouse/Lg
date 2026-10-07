@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -97,7 +98,7 @@ var _ = Describe("ReplaceFileUnlocked", Label("store"), func() {
 
 	It("writes and fsyncs a temp file of its own, renames it over path and fsyncs the dir", func() {
 		fsys := faultfs.New()
-		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(Succeed())
+		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"), time.Now())).To(Succeed())
 
 		Expect(os.ReadFile(path)).To(Equal([]byte("new")))
 		journal := fsys.Journal()
@@ -118,7 +119,7 @@ var _ = Describe("ReplaceFileUnlocked", Label("store"), func() {
 		temps := map[string]bool{}
 		for range 2 {
 			fsys := faultfs.New()
-			Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(Succeed())
+			Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"), time.Now())).To(Succeed())
 			temps[fsys.Journal()[0].Path] = true
 		}
 		Expect(temps).To(HaveLen(2))
@@ -128,8 +129,28 @@ var _ = Describe("ReplaceFileUnlocked", Label("store"), func() {
 		fsys := faultfs.New()
 		fsys.FailOn("rename", syscall.ENOSPC)
 
-		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"))).To(MatchError(syscall.ENOSPC))
+		Expect(store.ReplaceFileUnlocked(fsys, path, []byte("new"), time.Now())).To(MatchError(syscall.ENOSPC))
 		Expect(os.ReadFile(path)).To(Equal([]byte("old")))
 		Expect(os.ReadDir(dir)).To(HaveLen(1))
+	})
+
+	It("removes the temp files that calls left over a minute ago, and keeps the others", func() {
+		now := time.Now()
+		seed := func(name string, age time.Duration) string {
+			p := filepath.Join(dir, name)
+			Expect(os.WriteFile(p, []byte("x"), 0o644)).To(Succeed())
+			Expect(os.Chtimes(p, now.Add(-age), now.Add(-age))).To(Succeed())
+			return p
+		}
+		stale := seed(".f.json.abc.tmp", 2*time.Minute)
+		live := seed(".f.json.def.tmp", 10*time.Second)
+		others := []string{seed(".g.json.abc.tmp", 2*time.Minute), seed(".f.json.abc.bak", 2*time.Minute)}
+
+		Expect(store.ReplaceFileUnlocked(faultfs.New(), path, []byte("new"), now)).To(Succeed())
+		Expect(stale).NotTo(BeAnExistingFile())
+		Expect(live).To(BeAnExistingFile())
+		for _, o := range others {
+			Expect(o).To(BeAnExistingFile())
+		}
 	})
 })

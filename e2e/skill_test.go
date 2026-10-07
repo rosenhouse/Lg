@@ -57,6 +57,19 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		Expect(os.ReadDir(dir)).To(HaveLen(1))
 	})
 
+	It("removes the temp files that installs killed over a minute ago left", func() {
+		env := harness.New(lgPath)
+		dir := filepath.Join(env.Home(), ".claude", "skills", "lg")
+		stale := filepath.Join(dir, ".SKILL.md.abc.tmp")
+		Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(stale, []byte("half"), 0o644)).To(Succeed())
+		then := harness.DefaultNow().Add(-2 * time.Minute)
+		Expect(os.Chtimes(stale, then, then)).To(Succeed())
+
+		Eventually(env.Lg("skill", "install"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(stale).NotTo(BeAnExistingFile())
+	})
+
 	DescribeTable("installs, printing nothing on stderr, whatever state the store is in",
 		func(storeEnv func(env *harness.Env)) {
 			env := harness.New(lgPath)

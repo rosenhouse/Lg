@@ -24,7 +24,7 @@ func (skillInstallCmd) Run(deps *Deps) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := store.ReplaceFileUnlocked(deps.StoreFS, path, []byte(skill.Markdown)); err != nil {
+	if err := store.ReplaceFileUnlocked(deps.StoreFS, path, []byte(skill.Markdown), deps.Clock.Now()); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintln(deps.Stdout, path)
