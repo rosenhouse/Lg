@@ -120,6 +120,7 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		scenario.RenameWorkflow(run, 2, "renamed")
 		scenario.InProgress(run, 2)
 		scenario.StartupFailure(run, 2)
+		scenario.Cancel(run, 2)
 		scenario.QueueJob(run, 2, "flaky")
 		scenario.RenameJob(run, 2, "flaky", "steady")
 		scenario.RenumberJob(run, 2, "flaky", 8)
@@ -194,6 +195,18 @@ var _ = Describe("mutations", Label("attempts"), func() {
 
 			Expect(field(running, "attempt-1/attempt.json", "status")).To(Equal("in_progress"))
 			Expect(field(running, "run.json", "status")).To(Equal("completed"))
+		})
+	})
+
+	Describe("Cancel", func() {
+		It("concludes the attempt, and the run when it is the latest, cancelled", func() {
+			cancelled := scenario.Cancel(run, 2)
+
+			for _, file := range []string{"run.json", "attempt-2/attempt.json"} {
+				Expect(field(cancelled, file, "status")).To(Equal("completed"), file)
+				Expect(field(cancelled, file, "conclusion")).To(Equal("cancelled"), file)
+			}
+			Expect(field(scenario.Cancel(run, 1), "run.json", "conclusion")).To(Equal("success"))
 		})
 	})
 

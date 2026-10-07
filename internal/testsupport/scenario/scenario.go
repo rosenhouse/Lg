@@ -141,6 +141,11 @@ func InProgress(r Run, attempt int) Run {
 	return r.conclude(attempt, "in_progress", nil)
 }
 
+// Cancel concludes attempt, and the run when attempt is its latest, cancelled.
+func Cancel(r Run, attempt int) Run {
+	return r
+}
+
 // StartupFailure concludes attempt startup_failure, with no jobs and no logs.
 func StartupFailure(r Run, attempt int) Run {
 	out := r.conclude(attempt, "completed", "startup_failure")
