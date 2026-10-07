@@ -83,14 +83,18 @@ func filesBelow(dir string) []string {
 	return found
 }
 
-// recorded lists the manifest's records under key as "archive: name".
+// recorded lists the manifest's records under key as "archive: name", followed by " (reason)" when one is given.
 func recorded(m map[string]any, key string) []string {
 	GinkgoHelper()
 	Expect(m).To(HaveKey(key))
 	var names []string
 	for _, r := range m[key].([]any) {
 		record := r.(map[string]any)
-		names = append(names, fmt.Sprintf("%s: %s", record["archive"], record["name"]))
+		name := fmt.Sprintf("%s: %s", record["archive"], record["name"])
+		if reason, ok := record["reason"]; ok {
+			name += fmt.Sprintf(" (%s)", reason)
+		}
+		names = append(names, name)
 	}
 	return names
 }
@@ -273,9 +277,9 @@ var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
 
 		m := manifest(dir)
 		Expect(recorded(m, "skipped")).To(ConsistOf(
-			"artifact.zip: ../escape.txt", "artifact.zip: /absolute.txt", "artifact.zip: link",
-			"special.tar: ../tar-escape.txt", "special.tar: /tar-absolute.txt", "special.tar: tar-link",
-			"special.tar: hard", "special.tar: dev", "special.tar: fifo",
+			"artifact.zip: ../escape.txt (outside)", "artifact.zip: /absolute.txt (absolute)", "artifact.zip: link (symlink)",
+			"special.tar: ../tar-escape.txt (outside)", "special.tar: /tar-absolute.txt (absolute)", "special.tar: tar-link (symlink)",
+			"special.tar: hard (hardlink)", "special.tar: dev (device)", "special.tar: fifo (fifo)",
 		))
 		Expect(recorded(m, "setuid_dropped")).To(ConsistOf("artifact.zip: setuid.sh", "special.tar: tar-setuid"))
 	})
@@ -304,7 +308,7 @@ var _ = Describe("lg extract on an archive with duplicate and case-colliding nam
 			Expect(os.ReadFile(filepath.Join(extracted, name))).To(Equal([]byte(body)), name)
 		}
 		Expect(recorded(manifest(dir), "renamed")).To(ConsistOf(
-			"artifact.zip: dup.txt", "artifact.zip: case.txt", "artifact.zip: CASE.TXT", "artifact.zip: DIR/b.txt",
+			"artifact.zip: dup.txt (collision)", "artifact.zip: case.txt (collision)", "artifact.zip: CASE.TXT (collision)", "artifact.zip: DIR/b.txt (collision)",
 		))
 	})
 })
