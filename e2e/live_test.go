@@ -28,6 +28,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
 // liveSyncTimeout bounds one sync of every run github.com lists for rosenhouse/Lg.
@@ -386,12 +387,17 @@ func unexpiredRecordedArtifacts() []model.Artifact {
 	return recorded
 }
 
-// syncLive retries, because one transient GitHub error on any run fails a
-// sync, and the next sync resumes where it stopped. It gives the last sync.
+// syncLive retries a sync that exits 1, because one transient GitHub error on
+// any run fails a sync, and the next sync resumes where it stopped. It
+// asserts each sync left data/ append-only, and gives the last sync.
 func syncLive(env *harness.Env) *gexec.Session {
+	GinkgoHelper()
 	var session *gexec.Session
 	for range 3 {
-		if session = env.Lg("sync").Wait(liveSyncTimeout); session.ExitCode() == 0 {
+		before := treesnap.Snapshot(env.Data())
+		session = env.Lg("sync").Wait(liveSyncTimeout)
+		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
+		if session.ExitCode() != 1 {
 			break
 		}
 	}
