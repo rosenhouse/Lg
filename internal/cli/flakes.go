@@ -52,7 +52,7 @@ func (f flakesCmd) Run(deps *Deps) error {
 		}
 		if f.Kind != "rerun" {
 			if len(filter.Branches) == 0 {
-				branch, err := defaultBranch(roots.State)
+				branch, err := defaultBranch(deps.Env, roots.State)
 				if err != nil {
 					return errors.Join(append(unread, err)...)
 				}
@@ -70,18 +70,20 @@ func (f flakesCmd) Run(deps *Deps) error {
 	})
 }
 
-// defaultBranch gives the default branch status.json records for the repository.
-func defaultBranch(state string) (string, error) {
+// defaultBranch gives the default branch status.json records for the
+// configured repository.
+func defaultBranch(env map[string]string, state string) (string, error) {
+	_, cfg, err := loadConfig(env)
+	if err != nil {
+		return "", err
+	}
 	st, err := status.Read(filepath.Join(state, "status.json"))
 	if err != nil {
 		return "", fmt.Errorf("%w; pass --branch", err)
 	}
 	var branch string
 	if st != nil {
-		// status.json records one repository.
-		for _, repo := range st.Repos {
-			branch = repo.DefaultBranch
-		}
+		branch = status.RepoIn(st.Repos, repoKey(cfg)).DefaultBranch
 	}
 	if branch == "" {
 		return "", errors.New("the default branch is unknown until lg sync records it in status.json; pass --branch")
