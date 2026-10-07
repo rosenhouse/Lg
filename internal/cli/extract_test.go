@@ -159,4 +159,12 @@ var _ = Describe("lg extract with nothing to extract", Label("extract"), func() 
 		Expect(c.Stdout.String()).To(BeEmpty())
 		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone\n"))
 	})
+
+	It("says only the error when it fails", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+
+		Expect(c.Main("extract", "no-such-path")).To(Equal(1))
+		Expect(c.Stderr.String()).To(MatchRegexp(`^lg: [^\n]*no-such-path: no such file or directory\n$`))
+	})
 })
