@@ -486,6 +486,25 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 	})
 
+	It("renames a member that rg would read as an ignore file, and records it", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: ".ignore", Body: "*\n"},
+			archives.Entry{Name: "sub/.rgignore", Body: "*\n"},
+			archives.Entry{Name: "sub/deeper/.GitIgnore", Body: "*\n"},
+			archives.Entry{Name: "sub/test.log", Body: "LG_MARKER hidden\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveKey(".ignore~lg"), HaveKey("sub/.rgignore~lg"), HaveKey("sub/deeper/.GitIgnore~lg"), HaveKey("sub/test.log"), HaveLen(5),
+		))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", ".ignore", "path", ".ignore~lg", "reason", "rg_ignore_file"),
+			record("archive", "artifact.zip", "name", "sub/.rgignore", "path", "sub/.rgignore~lg", "reason", "rg_ignore_file"),
+			record("archive", "artifact.zip", "name", "sub/deeper/.GitIgnore", "path", "sub/deeper/.GitIgnore~lg", "reason", "rg_ignore_file"),
+		))
+	})
+
 	It("names a member whose name is only dots and slashes none", func() {
 		f := newFixture(archives.Zip(archives.Entry{Name: "member.tar", Body: string(archives.Tar(archives.Entry{Name: ".", TarType: tar.TypeReg, Body: "dot\n"}))}))
 
