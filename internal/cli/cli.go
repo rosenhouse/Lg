@@ -55,7 +55,7 @@ type commands struct {
 	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
 	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
-	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another."`
+	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another, or failed alone on the default branch."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
