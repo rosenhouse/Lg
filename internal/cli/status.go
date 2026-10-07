@@ -23,9 +23,10 @@ type statusCmd struct {
 }
 
 func (statusCmd) Help() string {
-	return "lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run. " +
-		"Every lg command warns on stderr while syncs are blocked, while the last successful sync is older than " +
-		"twice the sync_interval that the last sync used, not the one config.yaml now sets, or while a unit has been pending that long."
+	return "The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run. " +
+		"Every lg command warns on stderr while syncs are blocked. " +
+		"It also warns while the last successful sync, or a pending unit, is older than twice sync_interval. " +
+		"That sync_interval is the one the last sync used, not the one config.yaml now sets."
 }
 
 func (c statusCmd) Run(deps *Deps) error {

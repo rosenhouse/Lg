@@ -23,8 +23,10 @@ func (initCmd) Help() string {
 	return "Writes host and repo to $LG_CONFIG, default ${XDG_CONFIG_HOME:-~/.config}/lg/config.yaml, " +
 		"and creates the store at $LG_HOME, default ${XDG_DATA_HOME:-~/.local/share}/lg. " +
 		"It refuses to overwrite an existing config.yaml. " +
-		fmt.Sprintf("Edit that file to set sync_interval (%s), backfill (%s), retention (%s), disk_cap (%s), artifact_max_bytes (%s), log_grace (%s) or api_url. ",
+		fmt.Sprintf("Edit that file to set sync_interval (%s), backfill (%s), retention (%s), disk_cap (%s), artifact_max_bytes (%s) or log_grace (%s). ",
 			d.SyncInterval, d.Backfill, d.Retention, d.DiskCap, d.ArtifactMaxBytes, d.LogGrace) +
+		"log_grace is how long lg retries a log or zip that GitHub answers with 404 before it writes a tombstone. " +
+		"api_url replaces the API URL that lg derives from host. " +
 		"lg reads its token from gh auth token --hostname HOST, so run gh auth login first."
 }
 

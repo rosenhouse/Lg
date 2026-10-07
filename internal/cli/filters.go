@@ -23,7 +23,7 @@ type filters struct {
 	Event      []string `sep:"none" help:"Only runs triggered by this event, such as push, pull_request or schedule."`
 	Conclusion []string `sep:"none" help:"Only this conclusion, such as failure, success, cancelled or skipped."`
 	Since      moment   `placeholder:"TIME" help:"Only since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
-	Until      moment   `placeholder:"TIME" help:"Only until this time, inclusive, in the forms --since takes. A date means its 00:00 UTC, so --until 2026-10-03 ends as that day starts."`
+	Until      moment   `placeholder:"TIME" help:"Only until this time, in the forms --since takes. A date means its 00:00 UTC, so --until 2026-10-03 stops at the start of that day."`
 }
 
 // validate refuses an empty value or a malformed --job glob, which a filter
