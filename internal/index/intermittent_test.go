@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
@@ -140,6 +142,37 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 	It("leaves out a run whose first attempt failed and whose latest attempt was cancelled", func(ctx SpecContext) {
 		r := scenario.AddRerunAttempt(failingUntouched(12, "push", 3), untouched)
 		addRuns(ctx, scenario.Cancel(r, 2))
+
+		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
+	})
+
+	// withoutFirstAttempt is a run re-run after run afterRun of Intermittent whose first attempt sync cannot fetch.
+	withoutFirstAttempt := func(id int64, event string, afterRun int) scenario.Run {
+		r := scenario.AddRerunAttempt(onMain(id, event, afterRun), untouched)
+		env.Fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, untouched)[0]), fakegithub.Fault{Status: http.StatusInternalServerError})
+		return r
+	}
+	addRunsWithoutFirstAttempt := func(ctx context.Context, runs ...scenario.Run) {
+		GinkgoHelper()
+		for _, r := range runs {
+			Expect(env.Fake.AddRun(r)).To(Succeed())
+		}
+		Expect(env.Sync(ctx)).NotTo(Succeed())
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+		for _, r := range runs {
+			Expect(filepath.Join(runDir(env.Data(), r.ID), "attempt-1")).NotTo(BeAnExistingFile())
+			Expect(filepath.Join(runDir(env.Data(), r.ID), "attempt-2")).To(BeADirectory())
+		}
+	}
+
+	It("treats a run whose first attempt is not on disk as a gap in each series of its workflow and branch", func(ctx SpecContext) {
+		addRunsWithoutFirstAttempt(ctx, withoutFirstAttempt(14, "push", 3))
+
+		Expect(failures(ctx, main)).To(BeEmpty())
+	})
+
+	It("leaves out pull_request runs and runs whose latest attempt was cancelled, though their first attempt is not on disk", func(ctx SpecContext) {
+		addRunsWithoutFirstAttempt(ctx, withoutFirstAttempt(15, "pull_request", 3), scenario.Cancel(withoutFirstAttempt(16, "push", 3), 2))
 
 		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
 	})
