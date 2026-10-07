@@ -181,9 +181,9 @@ type warned struct{ error }
 
 func (w warned) Unwrap() error { return w.error }
 
-// checkStore refuses a store that lg cannot own before any command but version runs.
+// checkStore refuses a store that lg cannot own before any command that uses the store runs.
 func checkStore(command string, env map[string]string) error {
-	if command == "version" {
+	if command == "version" || command == "skill install" {
 		return nil
 	}
 	roots, err := config.Locations(env)

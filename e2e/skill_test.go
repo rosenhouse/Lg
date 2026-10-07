@@ -39,6 +39,27 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		Expect(os.WriteFile(older, []byte("an older copy\n"), 0o644)).To(Succeed())
 		installsTo(older)
 	})
+
+	DescribeTable("installs when lg cannot use the store",
+		func(storeEnv func(env *harness.Env)) {
+			env := harness.New(lgPath)
+			claude := GinkgoT().TempDir()
+			env.Setenv("CLAUDE_CONFIG_DIR", claude)
+			storeEnv(env)
+
+			session := env.Lg("skill", "install")
+
+			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+			Expect(os.ReadFile(filepath.Join(claude, "skills", "lg", "SKILL.md"))).To(Equal([]byte(skill.Markdown)))
+		},
+		Entry("a store dir holding files lg did not write", func(env *harness.Env) {
+			foreign := GinkgoT().TempDir()
+			Expect(os.WriteFile(filepath.Join(foreign, "notes.txt"), []byte("hi\n"), 0o644)).To(Succeed())
+			env.Setenv("LG_HOME", foreign)
+		}),
+		Entry("no HOME or LG_HOME", func(env *harness.Env) { env.Setenv("HOME", "") }),
+		Entry("a relative LG_HOME", func(env *harness.Env) { env.Setenv("LG_HOME", "relative") }),
+	)
 })
 
 // These specs only read the store, so they share one sync and extract.
