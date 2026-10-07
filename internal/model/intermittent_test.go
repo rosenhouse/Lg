@@ -141,6 +141,25 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 		))
 	})
 
+	It("gives each run once, though another run started in the same second", func() {
+		series := model.FirstAttemptSeries([]model.RunJob{
+			firstAttempt(1, 1, 11, "test", "success"),
+			firstAttempt(2, 1, 12, "test", "success"),
+			firstAttempt(1, 1, 13, "test", "success"),
+		})
+
+		Expect(series).To(HaveExactElements(HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(2, "success")})))
+	})
+
+	It("gives a run's failing logs in the order of their job ids", func() {
+		series := model.FirstAttemptSeries([]model.RunJob{
+			firstAttempt(1, 1, 12, "test", "failure"),
+			firstAttempt(1, 1, 11, "test", "failure"),
+		})
+
+		Expect(series).To(HaveExactElements(HaveField("Runs", []model.RunOutcome{ran(1, "failure", "attempt-1/11/log.txt", "attempt-1/12/log.txt")})))
+	})
+
 	It("leaves its input as it was", func() {
 		notApplicable := firstAttempt(1, 1, 12, "test", "failure")
 		notApplicable.Kind = model.NotApplicable
