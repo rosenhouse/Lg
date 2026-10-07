@@ -398,23 +398,25 @@ func staged(env *harness.Env) {
 }
 
 var _ = Describe("lg extract interrupted", Label("extract"), func() {
-	It("leaves nothing in tmp/", func() {
+	It("stops, leaving nothing in tmp/", func() {
 		env := harness.New(lgPath)
-		dir := syncWithZip(env, zerosZip("zeros.log", 512<<20))
+		dir := syncWithZip(env, zerosZip("zeros.log", 128<<20))
+		expiring := artifactDir(env, 11275917910)
 
-		session := env.Lg("extract", dir)
+		session := env.Lg("extract", dir, expiring)
 		staged(env)
 		session.Interrupt()
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit())
 		Expect(env.Tmp()).To(matchers.BeSwept())
-		Expect(filepath.Join(dir, "extracted")).NotTo(BeADirectory())
+		Expect(extractedDirs(env)).To(BeEmpty())
+		Expect(session.Err).NotTo(gbytes.Say(regexp.QuoteMeta(expiring)))
 	})
 })
 
 var _ = Describe("lg extract of two artifacts", Label("extract"), func() {
 	It("lets a cycle waiting for the write lock run before the second", func() {
 		env := harness.New(lgPath)
-		pass := syncWithZip(env, zerosZip("zeros.log", 128<<20))
+		pass := syncWithZip(env, zerosZip("zeros.log", 256<<20))
 		expiring := artifactDir(env, 11275917910)
 
 		session := env.Lg("extract", pass, expiring)

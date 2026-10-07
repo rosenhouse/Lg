@@ -16,6 +16,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 )
@@ -74,11 +75,11 @@ func (c extractCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	s, release, err := openExisting(ctx, roots, deps, c.Timeout)
-	if err != nil {
+	w := &writeTurns{ctx: ctx, deps: deps, roots: roots, timeout: c.Timeout}
+	if err := w.take(); err != nil {
 		return failure.FromErrno(err)
 	}
-	defer release()
+	defer w.done()
 	dirs, selectErr := c.selected(deps, roots)
 	limits := extract.Defaults()
 	limits.MaxBytes = int64(c.MaxBytes)
@@ -86,9 +87,16 @@ func (c extractCmd) Run(deps *Deps) error {
 	var printErr error
 	anyExtracted := false
 	for _, dir := range dirs {
-		extracted, err := c.extract(ctx, deps, s, dir, limits)
+		if err := w.next(); err != nil {
+			errs = append(errs, failure.FromErrno(err))
+			break
+		}
+		extracted, err := c.extract(ctx, deps, w.store, dir, limits)
 		if err != nil {
 			errs = append(errs, err)
+			if ctx.Err() != nil {
+				break
+			}
 			continue
 		}
 		if extracted {
@@ -98,10 +106,58 @@ func (c extractCmd) Run(deps *Deps) error {
 			}
 		}
 	}
+	w.done()
 	if anyExtracted {
 		warnPastDiskCap(deps)
 	}
 	return errors.Join(append(errs, printErr)...)
+}
+
+// lg extract lets go of state/write.lock between artifacts once it has held it
+// for writeTurn, for long enough that a writer waiting for it, such as a
+// cycle, takes it.
+const (
+	writeTurn  = time.Second
+	writeYield = 2 * lock.PollInterval
+)
+
+// writeTurns holds state/write.lock in turns.
+type writeTurns struct {
+	ctx     context.Context
+	deps    *Deps
+	roots   config.Roots
+	timeout time.Duration
+	store   *store.Store
+	release func()
+	since   time.Time
+}
+
+func (w *writeTurns) take() error {
+	var err error
+	w.store, w.release, err = openExisting(w.ctx, w.roots, w.deps, w.timeout)
+	w.since = w.deps.Clock.Now()
+	return err
+}
+
+// next lets go of the lock and takes it again, once this turn has lasted writeTurn.
+func (w *writeTurns) next() error {
+	if w.deps.Clock.Now().Sub(w.since) < writeTurn {
+		return nil
+	}
+	w.done()
+	select {
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	case <-w.deps.Clock.After(writeYield):
+	}
+	return w.take()
+}
+
+func (w *writeTurns) done() {
+	if w.release != nil {
+		w.release()
+		w.release = nil
+	}
 }
 
 // warnPastDiskCap says when retention would now evict extracted/ trees. It
