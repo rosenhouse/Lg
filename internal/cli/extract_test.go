@@ -99,6 +99,15 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 		Expect(c.Stdout.String()).To(Equal(filepath.Join(good, "extracted") + "\n"))
 	})
 
+	It("names each PATH above a run dir in its error", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		owner := filepath.Join(c.Home, "data", "github.com", "rosenhouse")
+
+		Expect(c.Main("extract", owner)).To(Equal(1))
+		Expect(c.Stderr.String()).To(ContainSubstring("lg: " + owner + ": "))
+	})
+
 	It("resolves symlinks in each PATH and in LG_HOME, and prints dirs below LG_HOME", func() {
 		c := harness.NewCLI()
 		real := c.Home
