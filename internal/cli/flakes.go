@@ -3,11 +3,17 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/model"
+	"github.com/rosenhouse/lg/internal/status"
 )
 
 type flakesCmd struct {
@@ -18,7 +24,10 @@ type flakesCmd struct {
 
 func (flakesCmd) Help() string {
 	return "Only jobs that ran count. A name fails in an attempt if any of its jobs failed, was cancelled or timed out; skipped and neutral count as neither. " +
+		"A rerun flip is a name that failed in one attempt of a run and succeeded in another. " +
 		"An attempt that carries forward a failed job or step gives its name no success. " +
+		"An intermittent failure is a name whose first attempt failed on one run of the default branch and succeeded on the runs before and after it. " +
+		"The default branch is the one status.json records; --branch replaces it. Intermittent failures leave out pull_request and pull_request_target runs and runs whose first attempt was cancelled. " +
 		"--job selects job names. The other filters select runs, and every attempt of a run counts: " +
 		"--since and --until match the start of any attempt, and --conclusion the latest attempt."
 }
@@ -26,19 +35,68 @@ func (flakesCmd) Help() string {
 func (f flakesCmd) Validate() error { return f.validate() }
 
 func (f flakesCmd) Run(deps *Deps) error {
+	roots, err := config.Locations(deps.Env)
+	if err != nil {
+		return err
+	}
+	branches, unknown := f.Branch, error(nil)
+	if f.Kind != "rerun" && len(branches) == 0 {
+		branches, unknown = defaultBranches(roots.State)
+	}
+	printFlip, printIntermittent := printFlip, printIntermittent
+	if f.JSON {
+		printFlip, printIntermittent = printFlipJSON, printIntermittentJSON
+	}
 	return query(deps, func(ctx context.Context, ix *index.Index) error {
-		flips, unread := ix.RerunFlips(ctx, f.filter(deps.Clock.Now()))
-		write := printFlip
-		if f.JSON {
-			write = printFlipJSON
+		if unknown != nil {
+			return unknown
 		}
-		for _, flip := range flips {
-			if err := write(deps.Stdout, flip); err != nil {
-				return err
+		filter := f.filter(deps.Clock.Now())
+		var unread []error
+		if f.Kind != "intermittent" {
+			flips, err := ix.RerunFlips(ctx, filter)
+			unread = append(unread, err)
+			for _, flip := range flips {
+				if err := printFlip(deps.Stdout, flip); err != nil {
+					return err
+				}
 			}
 		}
-		return unread
+		if f.Kind != "rerun" {
+			filter.Branches = branches
+			series, err := ix.FirstAttemptOutcomes(ctx, filter)
+			unread = append(unread, err)
+			for _, s := range series {
+				if failures := s.IsolatedFailures(); len(failures) > 0 {
+					if err := printIntermittent(deps.Stdout, s, failures); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return errors.Join(unread...)
 	})
+}
+
+// defaultBranches gives the default branch of each repository status.json records.
+func defaultBranches(state string) ([]string, error) {
+	st, err := status.Read(filepath.Join(state, "status.json"))
+	if err != nil {
+		return nil, fmt.Errorf("%w; pass --branch", err)
+	}
+	var branches []string
+	if st != nil {
+		for _, repo := range st.Repos {
+			if repo.DefaultBranch != "" && !slices.Contains(branches, repo.DefaultBranch) {
+				branches = append(branches, repo.DefaultBranch)
+			}
+		}
+	}
+	if len(branches) == 0 {
+		return nil, errors.New("the default branch is unknown until lg sync records it in status.json; pass --branch")
+	}
+	slices.Sort(branches)
+	return branches, nil
 }
 
 // flipJSON is a rerun flip as lg flakes --json prints it.
@@ -92,5 +150,58 @@ func printFlip(w io.Writer, flip index.Flip) error {
 		line += "; failing steps: " + strings.Join(steps, ", ")
 	}
 	_, err := fmt.Fprintln(w, line)
+	return err
+}
+
+// intermittentJSON is an intermittent failure as lg flakes --json prints it.
+type intermittentJSON struct {
+	Kind       string        `json:"kind"`
+	WorkflowID int64         `json:"workflow_id"`
+	Workflow   string        `json:"workflow"`
+	Branch     string        `json:"branch"`
+	Job        string        `json:"job"`
+	Step       *string       `json:"step"`
+	Runs       int           `json:"runs"`
+	Failures   []failureJSON `json:"failures"`
+	Logs       []string      `json:"logs"`
+}
+
+type failureJSON struct {
+	RunID      int64  `json:"run_id"`
+	HeadSHA    string `json:"head_sha"`
+	Conclusion string `json:"conclusion"`
+}
+
+func printIntermittentJSON(w io.Writer, s model.Series, failures []model.RunOutcome) error {
+	out := intermittentJSON{
+		Kind: "intermittent", WorkflowID: s.WorkflowID, Workflow: s.Workflow, Branch: s.Branch, Job: s.Job,
+		Runs: len(s.Runs), Failures: []failureJSON{}, Logs: []string{},
+	}
+	if s.Step != "" {
+		out.Step = &s.Step
+	}
+	for _, f := range failures {
+		out.Failures = append(out.Failures, failureJSON{RunID: f.RunID, HeadSHA: f.HeadSHA, Conclusion: f.Conclusion})
+		out.Logs = append(out.Logs, f.Logs...)
+	}
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(out)
+}
+
+// printIntermittent prints a line such as
+//
+//	workflow "ci" on main: "test" / "unit": 1 of 6 runs failed alone: run 18234567890 (sha a1b2c3d) failure
+func printIntermittent(w io.Writer, s model.Series, failures []model.RunOutcome) error {
+	name := fmt.Sprintf("%q", s.Job)
+	if s.Step != "" {
+		name += fmt.Sprintf(" / %q", s.Step)
+	}
+	var runs []string
+	for _, f := range failures {
+		runs = append(runs, fmt.Sprintf("run %d (sha %.7s) %s", f.RunID, f.HeadSHA, f.Conclusion))
+	}
+	_, err := fmt.Fprintf(w, "workflow %q on %s: %s: %d of %d runs failed alone: %s\n",
+		s.Workflow, s.Branch, name, len(failures), len(s.Runs), strings.Join(runs, ", "))
 	return err
 }
