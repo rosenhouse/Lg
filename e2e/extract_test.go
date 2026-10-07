@@ -2,6 +2,8 @@ package e2e_test
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/archives"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
+	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
@@ -368,6 +371,42 @@ var _ = Describe("lg extract while a cycle holds the write lock", Label("extract
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(filepath.Join(env.Data(), fixtureRunDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
 		Expect(extractedDirs(env)).To(HaveLen(4))
+	})
+})
+
+// zerosZip gives a zip of one member of size zero bytes.
+func zerosZip(name string, size int) []byte {
+	GinkgoHelper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	f, err := w.Create(name)
+	Expect(err).NotTo(HaveOccurred())
+	chunk := make([]byte, 1<<20)
+	for written := 0; written < size; written += len(chunk) {
+		_, err = f.Write(chunk[:min(len(chunk), size-written)])
+		Expect(err).NotTo(HaveOccurred())
+	}
+	Expect(w.Close()).To(Succeed())
+	return buf.Bytes()
+}
+
+// staged waits for a file below tmp/.
+func staged(env *harness.Env) {
+	GinkgoHelper()
+	Eventually(func() []string { return filesBelow(env.Tmp()) }, harness.ExitTimeout, "10ms").ShouldNot(BeEmpty())
+}
+
+var _ = Describe("lg extract interrupted", Label("extract"), func() {
+	It("leaves nothing in tmp/", func() {
+		env := harness.New(lgPath)
+		dir := syncWithZip(env, zerosZip("zeros.log", 512<<20))
+
+		session := env.Lg("extract", dir)
+		staged(env)
+		session.Interrupt()
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit())
+		Expect(env.Tmp()).To(matchers.BeSwept())
+		Expect(filepath.Join(dir, "extracted")).NotTo(BeADirectory())
 	})
 })
 
