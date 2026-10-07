@@ -72,6 +72,20 @@ var _ = DescribeTable("lg extract exits 2", Label("extract"),
 	Entry("when LG_HOME holds no store", []string{"--all"}, "holds no lg store; check LG_HOME"),
 )
 
+var _ = Describe("lg extract --help", Label("extract"), func() {
+	It("names the member cap", func() {
+		var stdout bytes.Buffer
+		code := cli.Main([]string{"extract", "--help"}, cli.Deps{
+			Env:    map[string]string{"LG_HOME": GinkgoT().TempDir()},
+			Stdout: &stdout,
+			Stderr: &bytes.Buffer{},
+			Clock:  clock.Real{},
+		})
+		Expect(code).To(Equal(0))
+		Expect(stdout.String()).To(ContainSubstring("more than 100000 members"))
+	})
+})
+
 var _ = Describe("lg extract PATH", Label("extract"), func() {
 	It("exits 1 naming each PATH that is not in an artifact dir, and extracts the others", func() {
 		c := harness.NewCLI()
