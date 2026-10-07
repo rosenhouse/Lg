@@ -10,6 +10,12 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 )
 
+var _ = Describe("New", Label("skill"), func() {
+	It("stops a -race lg from sleeping a second as it exits", func() {
+		Expect(harness.New("/no/lg").Getenv("GORACE")).To(Equal("atexit_sleep_ms=0"))
+	})
+})
+
 var _ = Describe("Env.Bash", Label("skill"), func() {
 	DescribeTable("exits non-zero",
 		func(script string) {
