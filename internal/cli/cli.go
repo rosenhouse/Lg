@@ -81,15 +81,7 @@ func (e *errWriter) Write(p []byte) (int, error) {
 
 func Main(args []string, deps Deps) (code int) {
 	stdout := &errWriter{w: deps.Stdout}
-	parser := kong.Must(&commands{},
-		kong.Name("lg"),
-		kong.Vars{
-			"write_lock_wait":   writeLockWait.String(),
-			"cycle_wait":        cycleWait.String(),
-			"extract_max_bytes": config.Bytes(extract.Defaults().MaxBytes).String(),
-		},
-		kong.Writers(stdout, deps.Stderr),
-		kong.Exit(func(c int) { panic(kongExit(c)) }))
+	parser := newParser(stdout, deps.Stderr)
 	defer func() {
 		if r := recover(); r != nil {
 			c, ok := r.(kongExit)
@@ -142,6 +134,18 @@ func Main(args []string, deps Deps) (code int) {
 		return 1
 	}
 	return 0
+}
+
+func newParser(stdout, stderr io.Writer) *kong.Kong {
+	return kong.Must(&commands{},
+		kong.Name("lg"),
+		kong.Vars{
+			"write_lock_wait":   writeLockWait.String(),
+			"cycle_wait":        cycleWait.String(),
+			"extract_max_bytes": config.Bytes(extract.Defaults().MaxBytes).String(),
+		},
+		kong.Writers(stdout, stderr),
+		kong.Exit(func(c int) { panic(kongExit(c)) }))
 }
 
 // warn prints the line status.Warning gives for the store's status.json, if

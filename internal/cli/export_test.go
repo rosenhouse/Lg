@@ -54,3 +54,9 @@ func FindPlaces(data string, readDir func(dir string) ([]fs.DirEntry, error), hi
 var PrintFlipJSON = printFlipJSON
 
 var PrintIntermittentJSON = printIntermittentJSON
+
+// Parse parses args as Main does, without running the command.
+func Parse(args []string) error {
+	_, err := newParser(io.Discard, io.Discard).Parse(args)
+	return err
+}
