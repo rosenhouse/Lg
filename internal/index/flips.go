@@ -19,7 +19,7 @@ type Flip struct {
 }
 
 // flakeRuns selects runs by the start of any of their attempts and by the
-// conclusion of the latest.
+// conclusion of the latest. It takes no Filter.Jobs, which selects jobs, not runs.
 var flakeRuns = source{
 	from: "runs r JOIN attempts x ON " + within,
 	when: "x.run_started_at", conclusion: latestConclusion,
