@@ -70,11 +70,11 @@ func finding(job, step string, attempts []int, conclusions ...string) types.Gome
 	)
 }
 
-// findingsOf keeps the findings of the job, leaving out its steps' unless steps.
-func findingsOf(all []map[string]any, job string, steps bool) []map[string]any {
+// jobFindings keeps the findings of the job, leaving out its steps'.
+func jobFindings(all []map[string]any, job string) []map[string]any {
 	var kept []map[string]any
 	for _, f := range all {
-		if f["job"] == job && (steps || f["step"] == nil) {
+		if f["job"] == job && f["step"] == nil {
 			kept = append(kept, f)
 		}
 	}
@@ -159,7 +159,7 @@ var _ = Describe("a run where re-running one job carries another job's failure f
 		env := harness.New(lgPath)
 		syncRuns(env, carriedFlip(1))
 
-		pass := findingsOf(flakes(env), "pass", false)
+		pass := jobFindings(flakes(env), "pass")
 		Expect(pass).To(HaveExactElements(finding("pass", "", []int{1, 3}, "failure", "success")))
 		run := runDirOf(env, 1)
 		Expect(pass[0]["logs"]).To(HaveExactElements(
@@ -174,7 +174,7 @@ var _ = Describe("a run where one of two jobs named 'same name' fails in attempt
 		env := harness.New(lgPath)
 		syncRuns(env, sameNameFlip(1))
 
-		Expect(findingsOf(flakes(env), "same name", false)).To(HaveExactElements(finding("same name", "", []int{1, 2}, "failure", "success")))
+		Expect(jobFindings(flakes(env), "same name")).To(HaveExactElements(finding("same name", "", []int{1, 2}, "failure", "success")))
 	})
 })
 
@@ -204,7 +204,7 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 			HaveKeyWithValue("failing_steps", BeEmpty()),
 		)))
 		// Filters other than --job select runs, whose every attempt counts.
-		Expect(findingsOf(flakes(env, "--since", "2026-10-03T14:24:00Z"), "flaky", false)).To(HaveExactElements(
+		Expect(jobFindings(flakes(env, "--since", "2026-10-03T14:24:00Z"), "flaky")).To(HaveExactElements(
 			finding("flaky", "", []int{1, 2, 3}, "failure", "success", "success")))
 		Expect(runIDs("--since", "2026-10-03T14:30:00Z")).To(BeEmpty())
 		Expect(runIDs("--until", "2026-10-03T14:22:00Z")).To(BeEmpty())
@@ -212,7 +212,7 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(runIDs("--conclusion", "failure")).To(HaveExactElements(BeEquivalentTo(other)))
 
 		jobs := filepath.Join(env.Data(), fixtureRunDir)
-		flaky := findingsOf(flakes(env, "--sha", "1a51097"), "flaky", false)
+		flaky := jobFindings(flakes(env, "--sha", "1a51097"), "flaky")
 		Expect(flaky).To(HaveLen(1))
 		Expect(json.Marshal(flaky[0])).To(MatchJSON(`{
 			"kind": "rerun",
