@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -409,6 +410,27 @@ var _ = Describe("lg extract interrupted", Label("extract"), func() {
 		Expect(filepath.Join(dir, "extracted")).NotTo(BeADirectory())
 	})
 })
+
+var _ = Describe("lg extract of two artifacts", Label("extract"), func() {
+	It("lets a cycle waiting for the write lock run before the second", func() {
+		env := harness.New(lgPath)
+		pass := syncWithZip(env, zerosZip("zeros.log", 128<<20))
+		expiring := artifactDir(env, 11275917910)
+
+		session := env.Lg("extract", pass, expiring)
+		staged(env)
+		Eventually(env.Sync(), harness.ExitTimeout).Should(gexec.Exit(0))
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(modTime(filepath.Join(env.State(), "status.json"))).To(BeTemporally("<", modTime(filepath.Join(expiring, "extracted"))))
+	})
+})
+
+func modTime(path string) time.Time {
+	GinkgoHelper()
+	info, err := os.Stat(path)
+	Expect(err).NotTo(HaveOccurred())
+	return info.ModTime()
+}
 
 var _ = Describe("lg extract past disk_cap", Label("extract"), func() {
 	It("warns that the next cycle evicts extracted/ trees", func() {
