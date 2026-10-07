@@ -399,6 +399,40 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["renamed"]).To(HaveEach(HaveKeyWithValue("reason", "collision")))
 	})
 
+	It("keeps the members of a dir whose name another took together under one ~N", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "Logs/a.log", Body: "a\n"},
+			archives.Entry{Name: "logs/0.log", Body: "0\n"},
+			archives.Entry{Name: "logs/1.log", Body: "1\n"},
+			archives.Entry{Name: "f", Body: "f\n"},
+			archives.Entry{Name: "f/x.log", Body: "x\n"},
+			archives.Entry{Name: "f/y.log", Body: "y\n"},
+			archives.Entry{Name: "n.zip", Body: string(archives.Zip(archives.Entry{Name: "n.log", Body: "n\n"}))},
+			archives.Entry{Name: "n.zip.d/a", Body: "na\n"},
+			archives.Entry{Name: "n.zip.d/b", Body: "nb\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveKeyWithValue("Logs/a.log", "a\n"), HaveKeyWithValue("logs~1/0.log", "0\n"), HaveKeyWithValue("logs~1/1.log", "1\n"),
+			HaveKeyWithValue("f", "f\n"), HaveKeyWithValue("f~1/x.log", "x\n"), HaveKeyWithValue("f~1/y.log", "y\n"),
+			HaveKeyWithValue("n.zip.d/n.log", "n\n"), HaveKeyWithValue("n.zip.d~1/a", "na\n"), HaveKeyWithValue("n.zip.d~1/b", "nb\n"),
+		))
+		Expect(f.files()).To(HaveLen(11))
+	})
+
+	It("names many members of one name in time linear in their number", func() {
+		names := make([]string, 20_000)
+		for i := range names {
+			names[i] = "dup.log"
+		}
+
+		start := time.Now()
+		paths := extract.PlaceFiles(names...)
+		Expect(time.Since(start)).To(BeNumerically("<", time.Second))
+		Expect(paths[len(paths)-1]).To(Equal(fmt.Sprintf("dup.log~%d", len(names)-1)))
+	})
+
 	It("keeps a member whose name another took in another Unicode normalization, as APFS folds them", func() {
 		nfc, nfd := "caf\u00e9.log", "cafe\u0301.log"
 		f := newFixture(archives.Zip(archives.Entry{Name: nfc, Body: "nfc\n"}, archives.Entry{Name: nfd, Body: "nfd\n"}))

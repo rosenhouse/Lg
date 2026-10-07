@@ -21,15 +21,26 @@ const (
 
 // namer gives each member a path below extracted/ that no other member has,
 // even on a filesystem that ignores case and Unicode normalization.
-type namer struct{ root node }
+type namer struct{ root *node }
 
-// node is a dir, keyed by folded name.
-type node map[string]*entry
+// node is a dir.
+type node struct {
+	// entries are keyed by folded name.
+	entries map[string]*entry
+	// renamed are the dirs placed under another name, keyed by their own.
+	renamed map[string]*entry
+	// next is the ~N to try first, by folded name.
+	next map[string]int
+}
+
+func newNode() *node {
+	return &node{entries: map[string]*entry{}, renamed: map[string]*entry{}, next: map[string]int{}}
+}
 
 type entry struct {
 	name string
 	kind kind
-	node node
+	node *node
 }
 
 type kind int
@@ -42,7 +53,9 @@ const (
 )
 
 func newNamer() *namer {
-	return &namer{root: node{fold(layout.ExtractManifest): {name: layout.ExtractManifest, kind: file}}}
+	root := newNode()
+	root.entries[fold(layout.ExtractManifest)] = &entry{name: layout.ExtractManifest, kind: file}
+	return &namer{root: root}
 }
 
 // fold maps names that a case- and normalization-insensitive filesystem,
@@ -114,30 +127,46 @@ func (n *namer) dir(rel string) ([]string, string) {
 }
 
 // at gives the node of a dir already placed.
-func (n *namer) at(names []string) node {
+func (n *namer) at(names []string) *node {
 	at := n.root
 	for _, name := range names {
-		at = at[fold(name)].node
+		at = at.entries[fold(name)].node
 	}
 	return at
 }
 
 // place names a child of kind in the dir, reusing a dir of that name, else
 // suffixing ~N to a name that is taken.
-func (d node) place(name string, k kind) (string, node, bool) {
-	if e, ok := d[fold(name)]; ok && k == dir && e.kind == dir && e.name == name {
-		return name, e.node, false
+func (d *node) place(name string, k kind) (string, *node, bool) {
+	if k == dir {
+		if e, ok := d.entries[fold(name)]; ok && e.kind == dir && e.name == name {
+			return name, e.node, false
+		}
+		if e, ok := d.renamed[name]; ok {
+			return e.name, e.node, true
+		}
 	}
-	actual := name
-	for i := 1; d[fold(actual)] != nil; i++ {
-		suffix := fmt.Sprintf("~%d", i)
-		actual = truncate(name, maxComponent-len(suffix)) + suffix
+	actual, key := name, fold(name)
+	if d.entries[key] != nil {
+		i := d.next[key]
+		for {
+			i++
+			suffix := fmt.Sprintf("~%d", i)
+			actual = truncate(name, maxComponent-len(suffix)) + suffix
+			if d.entries[fold(actual)] == nil {
+				break
+			}
+		}
+		d.next[key] = i
 	}
 	e := &entry{name: actual, kind: k}
 	if k != file {
-		e.node = node{}
+		e.node = newNode()
 	}
-	d[fold(actual)] = e
+	d.entries[fold(actual)] = e
+	if k == dir && actual != name {
+		d.renamed[name] = e
+	}
 	return actual, e.node, actual != name
 }
 
