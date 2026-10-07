@@ -25,13 +25,18 @@ import (
 
 // Limits bound what Extract writes for one artifact.
 type Limits struct {
-	// MaxBytes bounds the bytes of every file written.
+	// MaxBytes bounds the total bytes of the files written.
 	MaxBytes int64
+	// MaxFiles bounds the members of every archive, skipped ones included.
+	MaxFiles int
 	// MaxNesting is how many levels of archives within artifact.zip are expanded.
 	MaxNesting int
 }
 
-func Defaults() Limits { return Limits{MaxBytes: 1_000_000_000, MaxNesting: 8} }
+func Defaults() Limits { return Limits{MaxBytes: 1_000_000_000, MaxFiles: 100_000, MaxNesting: 8} }
+
+// ErrTooManyFiles is an artifact of more than Limits.MaxFiles members.
+var ErrTooManyFiles = errors.New("too many files")
 
 const (
 	// Manifest is the file in extracted/ that records how it was made.
@@ -41,7 +46,8 @@ const (
 
 // Extract expands artifactDir/artifact.zip into artifactDir/extracted,
 // staged in tmp/ and published whole. Past limits.MaxBytes, it publishes
-// nothing and returns store.ErrTooLarge.
+// nothing and returns store.ErrTooLarge, and past limits.MaxFiles,
+// ErrTooManyFiles.
 func Extract(s *store.Store, artifactDir string, limits Limits, now time.Time) error {
 	zipFile, err := os.Open(filepath.Join(artifactDir, source))
 	if err != nil {
@@ -78,6 +84,8 @@ type extraction struct {
 	written  int64
 	// files counts the files written.
 	files int
+	// members counts the members met.
+	members int
 }
 
 // member is a file of an archive.
@@ -172,6 +180,9 @@ func tarSkipped(typeflag byte) string {
 // write writes m below dir, the components of the dir its archive expands
 // into, and expands it when it is an archive.
 func (x *extraction) write(m member, archive string, dir []string, level int) error {
+	if x.members++; x.members > x.limits.MaxFiles {
+		return fmt.Errorf("%w: more than %d", ErrTooManyFiles, x.limits.MaxFiles)
+	}
 	rec := record{Archive: archive, Name: m.name}
 	if m.skip == "" {
 		m.skip = escapes(m.name)

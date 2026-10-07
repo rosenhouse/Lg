@@ -506,6 +506,24 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
 	})
 
+	It("stops past MaxFiles members, skipped ones and those of nested archives too, and leaves no extracted/", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "a.log"},
+			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "a.log"},
+			archives.Entry{Name: "b.tar", Body: string(archives.Tar(archives.Entry{Name: "b.log"}))},
+		))
+		limits := extract.Defaults()
+		Expect(limits.MaxFiles).To(Equal(100_000))
+		limits.MaxFiles = 3
+
+		Expect(f.extract(limits)).To(MatchError(extract.ErrTooManyFiles))
+		Expect(f.extracted).NotTo(BeADirectory())
+		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
+
+		limits.MaxFiles++
+		Expect(f.extract(limits)).To(Succeed())
+	})
+
 	It("fails on an artifact.zip that does not read as a zip, publishing nothing", func() {
 		f := newFixture([]byte("not a zip"))
 
