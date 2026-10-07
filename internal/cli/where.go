@@ -41,6 +41,10 @@ func (w whereCmd) Run(deps *Deps) error {
 	defer finder.close()
 	var failed error
 	err = eachInput(w.Hits, deps.Stdin, func(hit string) error {
+		if file, ok := finder.binaryNotice(hit); ok {
+			_, _ = fmt.Fprintf(deps.Stderr, "lg: skipped rg's notice that %s is binary\n", file)
+			return nil
+		}
 		p, err := finder.find(hit)
 		if err != nil {
 			printError(deps.Stderr, err)
@@ -53,6 +57,20 @@ func (w whereCmd) Run(deps *Deps) error {
 		return err
 	}
 	return failed
+}
+
+// rgBinaryNotice is the line rg prints in place of the hits in a binary file.
+var rgBinaryNotice = regexp.MustCompile(`^(.+): (binary file matches|WARNING: stopped searching binary file after match) \(found ".*" byte around offset [0-9]+\)$`)
+
+// binaryNotice gives the file of rg's notice about a binary file. A hit whose
+// text looks like a notice names no file before its text.
+func (f *placeFinder) binaryNotice(hit string) (string, bool) {
+	m := rgBinaryNotice.FindStringSubmatch(hit)
+	if m == nil {
+		return "", false
+	}
+	_, isDir, found := f.existing(m[1], stat)
+	return m[1], found && !isDir
 }
 
 // eachInput calls f with each of hits, or else with each line of stdin that

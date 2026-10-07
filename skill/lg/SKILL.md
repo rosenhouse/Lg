@@ -179,7 +179,7 @@ Each attempt's `artifacts.json` is a snapshot of the run's listing when lg fetch
 
 Zips are not searched until lg extract expands them into `extracted/` beside each zip.
 Give it filters, paths, or `lg extract --all`.
-A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`, so rg may report "binary file matches" for the archive. Read the `.d/` text instead, and pass `-I` to grep to skip binary files.
+A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`, so rg may report "binary file matches" for the archive, and `lg where` skips that line. Read the `.d/` text instead, and pass `-I` to grep to skip binary files.
 `lg where` on an extracted file adds `inner_path`, its path below `extracted/`.
 A member named `.ignore`, `.rgignore` or `.gitignore` is renamed `<name>~lg`, so rg still searches its tree.
 `extracted/.lg-extract.json` records every renamed or skipped member.

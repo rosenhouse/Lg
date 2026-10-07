@@ -26,8 +26,8 @@ type filters struct {
 	Until      moment   `placeholder:"TIME" help:"Only until this time, inclusive. A date means its 00:00 UTC."`
 }
 
-// validate refuses an empty value, which a filter would take as matching every
-// run or none.
+// validate refuses an empty value or a malformed --job glob, which a filter
+// would take as matching every run or none.
 func (p filters) validate() error {
 	flags := map[string][]string{
 		"branch": p.Branch, "sha": p.SHA, "workflow": p.Workflow, "job": p.Job, "event": p.Event, "conclusion": p.Conclusion,
@@ -35,6 +35,11 @@ func (p filters) validate() error {
 	for _, flag := range slices.Sorted(maps.Keys(flags)) {
 		if slices.Contains(flags[flag], "") {
 			return fmt.Errorf("--%s must not be empty", flag)
+		}
+	}
+	for _, job := range p.Job {
+		if err := index.CheckGlob(job); err != nil {
+			return fmt.Errorf("--job '%s': %w; write [[] for a literal [", job, err)
 		}
 	}
 	return nil

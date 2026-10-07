@@ -148,6 +148,17 @@ var _ = Describe("lg extract --all after syncing after-attempt-1", Label("extrac
 		))
 	})
 
+	It("makes `lg paths -0 | xargs -0 -r rg --no-config -Hn LG_MARKER | lg where` decode only hits with a line", func() {
+		Expect(extract(env, "--all")).To(gexec.Exit(0))
+
+		session := env.Bash("lg paths -0 | xargs -0 -r rg --no-config -Hn LG_MARKER | lg where")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		hits := decoded(session)
+		Expect(hits).To(ContainElement(HaveKeyWithValue("inner_path", "inner.zip.d/zip/nested.log")))
+		Expect(hits).To(HaveEach(HaveKeyWithValue("line", BeNumerically(">", 0))))
+		Expect(session.Err).To(gbytes.Say(`skipped rg's notice that .*/inner\.zip is binary`))
+	})
+
 	It("extracts every artifact when its reader stops reading after one line", func() {
 		Eventually(env.Sh("lg extract --all | head -1"), harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(extractedDirs(env)).To(HaveLen(4))
