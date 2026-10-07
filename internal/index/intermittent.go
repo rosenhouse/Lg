@@ -18,13 +18,13 @@ type Intermittent struct {
 // that failed alone in the first attempt of a run f selects. A series holds
 // every run of f's branches, workflows and events, among the jobs whose names
 // match f.Jobs; the rest of f selects only the failures. It leaves out
-// pull_request and pull_request_target runs, and runs whose first attempt was
-// cancelled. With the series it returns the error of each log of their
+// pull_request and pull_request_target runs, and runs whose first or latest
+// attempt was cancelled. With the series it returns the error of each log of their
 // failures it could not read.
 func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermittent, error) {
 	seriesRuns := Filter{Branches: f.Branches, Workflows: f.Workflows, Events: f.Events, Jobs: f.Jobs}
 	jobs, restarted, err := ix.flakeJobs(ctx, seriesRuns, below("x.path", "r.path || '/attempt-1'"),
-		"r.event NOT IN ('pull_request', 'pull_request_target')", "a.conclusion IS NOT 'cancelled'")
+		"r.event NOT IN ('pull_request', 'pull_request_target')", "a.conclusion IS NOT 'cancelled'", latestConclusion+" IS NOT 'cancelled'")
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}

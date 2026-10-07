@@ -25,7 +25,7 @@ func (flakesCmd) Help() string {
 		"A rerun flip is a name that failed in one attempt of a run and succeeded in another. " +
 		"An attempt that carries forward a failed job or step gives its name no success. " +
 		"An intermittent failure is a name that failed in the first attempt of one run of the default branch and succeeded in the first attempts of the runs before and after it. " +
-		"The default branch is the one status.json records; --branch replaces it. Intermittent failures leave out pull_request and pull_request_target runs and runs whose first attempt was cancelled. " +
+		"The default branch is the one status.json records; --branch replaces it. Intermittent failures leave out pull_request and pull_request_target runs and runs whose first or latest attempt was cancelled. " +
 		"--job selects job names. The other filters select runs: --since and --until match the start of any attempt, and --conclusion the latest attempt. " +
 		"Intermittent failures are judged among every run of their branch and workflow that --branch, --workflow and --event select, " +
 		"so --sha, --pr, --conclusion, --since and --until select failures, not neighbours."
