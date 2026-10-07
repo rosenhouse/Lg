@@ -14,13 +14,6 @@ type Intermittent struct {
 	Failures []model.RunOutcome
 }
 
-// firstAttemptRuns selects runs by the start of their first attempt and by
-// the conclusion of their latest.
-var firstAttemptRuns = source{
-	from: "runs r JOIN attempts x ON x.path = r.path || '/attempt-1'",
-	when: "x.run_started_at", conclusion: latestConclusion,
-}
-
 // IntermittentFailures gives each series, of a job name or a step name of it,
 // that failed alone in the first attempt of a run f selects. A series holds
 // every run of f's branches, workflows and events, among the jobs whose names
@@ -36,7 +29,7 @@ func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermit
 		return nil, errors.Join(restarted, err)
 	}
 	failureRuns := Filter{SHAs: f.SHAs, PRs: f.PRs, Conclusions: f.Conclusions, Since: f.Since, Until: f.Until}
-	selected, err := ix.runIDs(ctx, firstAttemptRuns, failureRuns)
+	selected, err := ix.runIDs(ctx, flakeRuns, failureRuns)
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
