@@ -602,3 +602,16 @@ var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
 		Expect(func() { scenario.AddRerunAttempt(run, "none") }).To(PanicWith(ContainSubstring(`"none"`)))
 	})
 })
+
+var _ = Describe("EndingAt", Label("flakes"), func() {
+	It("moves every time of the runs by the same amount, so that the newest was created at the time", func() {
+		older := scenario.CloneAt(1, "after-attempt-2", time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+		newer := scenario.CloneAt(2, "after-attempt-1", time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
+
+		moved := scenario.EndingAt([]scenario.Run{newer, older}, time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC))
+
+		Expect(field(moved[0], "run.json", "created_at")).To(Equal("2026-12-01T00:00:00Z"))
+		Expect(field(moved[1], "run.json", "created_at")).To(Equal("2026-11-29T00:00:00Z"))
+		Expect(field(moved[1], "attempt-2/attempt.json", "run_started_at")).To(Equal("2026-11-29T00:02:14Z"))
+	})
+})
