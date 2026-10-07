@@ -167,30 +167,11 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 
 	It("gives every job dir of runs 37129390741, 37129738159 and 37129867594 job.json plus exactly one of log.txt, log.txt.tombstone or an id in fetch.json carried_forward_jobs", func() {
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
-			attempts, err := filepath.Glob(filepath.Join(runDir(env, runID), "attempt-*"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(attempts).NotTo(BeEmpty(), "run %d", runID)
-			for _, attempt := range attempts {
-				carriedForward := carriedForwardJobs(attempt)
-				jobs, err := filepath.Glob(filepath.Join(attempt, "jobs", "*"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(jobs).NotTo(BeEmpty(), attempt)
-				for _, job := range jobs {
+			for _, attempt := range glob(runDir(env, runID), "attempt-*") {
+				for _, job := range glob(attempt, "jobs", "*") {
 					Expect(filepath.Join(job, "job.json")).To(BeARegularFile())
-					id, ok := layout.DirID(filepath.Base(job))
-					Expect(ok).To(BeTrue(), job)
-					holds := 0
-					for _, held := range []bool{
-						exists(filepath.Join(job, "log.txt")),
-						exists(filepath.Join(job, "log.txt.tombstone")),
-						slices.Contains(carriedForward, id),
-					} {
-						if held {
-							holds++
-						}
-					}
-					Expect(holds).To(Equal(1), job)
 				}
+				storedKinds(attempt)
 			}
 		}
 	})
@@ -199,12 +180,12 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		session := env.Lg("flakes", "--sha", "1a51097", "--json").Wait(harness.ExitTimeout)
 		Expect(session).To(gexec.Exit(0))
 		failingSteps := map[string][]string{}
-		for _, line := range strings.Split(strings.TrimSpace(string(session.Out.Contents())), "\n") {
+		for _, line := range outputLines(session) {
 			var finding struct {
-				Kind         string
-				RunID        int64 `json:"run_id"`
-				Job          string
-				Step         *string
+				Kind         string   `json:"kind"`
+				RunID        int64    `json:"run_id"`
+				Job          string   `json:"job"`
+				Step         *string  `json:"step"`
 				FailingSteps []string `json:"failing_steps"`
 			}
 			Expect(json.Unmarshal([]byte(line), &finding)).To(Succeed(), line)
@@ -227,17 +208,14 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 	It("decodes an LG_MARKER hit from `lg paths` + grep with lg where", func() {
 		session := env.Bash("lg paths --sha 1a51097 -0 | xargs -0 -r rg --no-config -Hn LG_MARKER | lg where").Wait(harness.ExitTimeout)
 		Expect(session).To(gexec.Exit(0))
-		var decoded []map[string]any
-		for _, line := range strings.Split(strings.TrimSpace(string(session.Out.Contents())), "\n") {
-			var hit map[string]any
-			Expect(json.Unmarshal([]byte(line), &hit)).To(Succeed(), line)
+		hits := decoded(session)
+		for _, hit := range hits {
 			Expect(hit).To(HaveKeyWithValue("run_id", BeEquivalentTo(fixtureRun)))
 			Expect(hit).To(HaveKeyWithValue("text", ContainSubstring("LG_MARKER")))
 			Expect(hit).To(HaveKeyWithValue("line", BeNumerically(">", 0)))
 			Expect(lineOf(hit["path"].(string), int(hit["line"].(float64)))).To(Equal(hit["text"]))
-			decoded = append(decoded, hit)
 		}
-		Expect(decoded).To(ContainElement(SatisfyAll(
+		Expect(hits).To(ContainElement(SatisfyAll(
 			HaveKeyWithValue("attempt", BeEquivalentTo(1)),
 			HaveKeyWithValue("job", "flaky"),
 			HaveKeyWithValue("job_conclusion", "failure"),
@@ -252,10 +230,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
 			dir := runDir(env, runID)
 			Expect(filepath.Glob(filepath.Join(dir, "artifacts", "*_"+expiringName))).To(BeEmpty(), "run %d", runID)
-			snapshots, err := filepath.Glob(filepath.Join(dir, "attempt-*", "artifacts.json"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(snapshots).NotTo(BeEmpty(), "run %d", runID)
-			for _, snapshot := range snapshots {
+			for _, snapshot := range glob(dir, "attempt-*", "artifacts.json") {
 				Expect(os.ReadFile(snapshot)).NotTo(ContainSubstring(expiringName), snapshot)
 			}
 		}
@@ -319,22 +294,6 @@ func recordedZipStatus(runID, artifactID int64) int {
 	i := slices.IndexFunc(lines, func(l recordings.Line) bool { return l.Path == path })
 	Expect(i).NotTo(BeNumerically("<", 0), path)
 	return lines[i].Final
-}
-
-func carriedForwardJobs(attemptDir string) []int64 {
-	GinkgoHelper()
-	var fetch struct {
-		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
-	}
-	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
-	Expect(err).NotTo(HaveOccurred())
-	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
-	return fetch.CarriedForwardJobs
-}
-
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
 }
 
 // lineOf gives line n of the file at path, without its newline.
@@ -494,7 +453,13 @@ func countKinds(kinds map[int64]model.JobKind) map[model.JobKind]int {
 // not_applicable from its tombstone's reason.
 func storedKinds(attemptDir string) map[int64]model.JobKind {
 	GinkgoHelper()
-	carriedForward := carriedForwardJobs(attemptDir)
+	var fetch struct {
+		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+	}
+	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
+	Expect(err).NotTo(HaveOccurred())
+	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+
 	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
 	Expect(err).NotTo(HaveOccurred())
 	kinds := map[int64]model.JobKind{}
@@ -502,7 +467,7 @@ func storedKinds(attemptDir string) map[int64]model.JobKind {
 		digits, _, _ := strings.Cut(entry.Name(), "_")
 		id, err := strconv.ParseInt(digits, 10, 64)
 		Expect(err).NotTo(HaveOccurred(), entry.Name())
-		kinds[id] = storedKind(attemptDir, id, slices.Contains(carriedForward, id))
+		kinds[id] = storedKind(attemptDir, id, slices.Contains(fetch.CarriedForwardJobs, id))
 	}
 	return kinds
 }
