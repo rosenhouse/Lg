@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -62,6 +64,8 @@ func (c extractCmd) Validate() error {
 
 // Run prints the extracted/ dir of each artifact it extracts.
 func (c extractCmd) Run(deps *Deps) error {
+	// A closed stdout must not stop extract between artifacts.
+	signal.Ignore(syscall.SIGPIPE)
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
@@ -75,6 +79,7 @@ func (c extractCmd) Run(deps *Deps) error {
 	limits := extract.Defaults()
 	limits.MaxBytes = int64(c.MaxBytes)
 	errs := []error{selectErr}
+	var printErr error
 	anyExtracted := false
 	for _, dir := range dirs {
 		extracted, err := c.extract(deps, s, dir, limits)
@@ -84,15 +89,15 @@ func (c extractCmd) Run(deps *Deps) error {
 		}
 		if extracted {
 			anyExtracted = true
-			if _, err := fmt.Fprintln(deps.Stdout, filepath.Join(dir, "extracted")); err != nil {
-				return err
+			if printErr == nil {
+				_, printErr = fmt.Fprintln(deps.Stdout, filepath.Join(dir, "extracted"))
 			}
 		}
 	}
 	if anyExtracted {
 		warnPastDiskCap(deps)
 	}
-	return errors.Join(errs...)
+	return errors.Join(append(errs, printErr)...)
 }
 
 // warnPastDiskCap says when data/ exceeds disk_cap, since retention then

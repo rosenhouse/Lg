@@ -143,6 +143,11 @@ var _ = Describe("lg extract --all after syncing after-attempt-1", Label("extrac
 		))
 	})
 
+	It("extracts every artifact when its reader stops reading after one line", func() {
+		Eventually(env.Sh("lg extract --all | head -1"), harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(extractedDirs(env)).To(HaveLen(4))
+	})
+
 	It("leaves artifact.zip byte-identical, and a second run changes nothing", func() {
 		zip := filepath.Join(pass, "artifact.zip")
 		before, err := os.ReadFile(zip)
