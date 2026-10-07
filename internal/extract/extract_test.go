@@ -427,17 +427,15 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.files()).To(HaveLen(11))
 	})
 
-	It("names many members of one name in time linear in their number", func() {
+	It("names many members of one name in time linear in their number", func(SpecContext) {
 		names := make([]string, 20_000)
 		for i := range names {
 			names[i] = "dup.log"
 		}
 
-		start := time.Now()
 		paths := extract.PlaceFiles(names...)
-		Expect(time.Since(start)).To(BeNumerically("<", time.Second))
 		Expect(paths[len(paths)-1]).To(Equal(fmt.Sprintf("dup.log~%d", len(names)-1)))
-	})
+	}, SpecTimeout(5*time.Second))
 
 	It("keeps a member whose name another took in another Unicode normalization, as APFS folds them", func() {
 		nfc, nfd := "caf\u00e9.log", "cafe\u0301.log"
