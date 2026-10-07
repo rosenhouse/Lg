@@ -18,6 +18,7 @@ type flakesCmd struct {
 
 func (flakesCmd) Help() string {
 	return "Only jobs that ran count. A name fails in an attempt if any of its jobs failed, was cancelled or timed out; skipped and neutral count as neither. " +
+		"An attempt that carries forward a failed job or step gives its name no success. " +
 		"--job selects job names. The other filters select runs, and every attempt of a run counts: " +
 		"--since and --until match the start of any attempt, and --conclusion the latest attempt."
 }
