@@ -170,7 +170,10 @@ func artifactDirs(data string, paths []string) ([]string, error) {
 			continue
 		}
 		loc, err := layout.Parse(rel)
-		if err == nil && loc.ArtifactDir == "" {
+		switch {
+		case err != nil:
+			err = fmt.Errorf("%s: %w", path, err)
+		case loc.ArtifactDir == "":
 			err = fmt.Errorf("%s is not in an artifact dir", path)
 		}
 		if err != nil {
