@@ -170,10 +170,11 @@ func skipped(mode fs.FileMode) string {
 	return ""
 }
 
-// tarSkipped gives why a tar member of typeflag is not written, or "".
+// tarSkipped gives why a tar member of typeflag is not written, or "". Go's
+// tar reader serves a sparse or contiguous file's data as a regular file's.
 func tarSkipped(typeflag byte) string {
 	switch typeflag {
-	case tar.TypeReg:
+	case tar.TypeReg, tar.TypeGNUSparse, tar.TypeCont:
 		return ""
 	case tar.TypeSymlink:
 		return "symlink"
