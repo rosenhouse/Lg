@@ -14,7 +14,8 @@ go install github.com/rosenhouse/lg/cmd/lg@latest
 ```
 
 From a clone, run `go install ./cmd/lg`.
-go install puts lg in `$(go env GOPATH)/bin`; add that dir to PATH.
+Go 1.21 to 1.24 download Go 1.25 first, which needs network access; `GOTOOLCHAIN` controls this.
+go install puts lg in `$GOBIN`, or in `$(go env GOPATH)/bin` when GOBIN is unset; add that dir to PATH.
 
 ## Quick start
 
@@ -29,10 +30,12 @@ lg status
 ```
 
 `lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to `~/.config/lg/config.yaml`; it must not exceed `retention`.
-The first `lg sync` can take several minutes and prints nothing until it finishes.
-`lg daemon install` runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
+The first `lg sync` can take several minutes. It warns that lg never synced, then prints nothing more unless it fails.
+`lg daemon install` is optional. It runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
+Without the daemon, every command warns once the last successful sync is older than twice `sync_interval`, and a successful `lg sync` clears it.
 With the daemon running, `lg sync` only asks for a sync; `lg sync --wait` also waits for it.
 `lg status` shows the last sync, the lag, pending units and why syncs are blocked.
+The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run.
 If it shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
 `lg daemon uninstall` removes the service.
 The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
@@ -47,6 +50,7 @@ lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar' 
 ```
 
 `rg --no-config` keeps your ripgrep config from changing the hit format that `lg where` reads.
+When rg finds no match in a batch of files, xargs exits 123, or 1 on macOS, so judge by the output and stderr.
 
 Find flaky jobs and steps:
 
@@ -61,6 +65,8 @@ lg extract --branch main
 lg paths --unit extracted -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
 ```
 
+lg extract says "nothing to extract" when no artifact.zip matches its filters, or when each one is extracted already or is a tombstone.
+
 Teach Claude Code to do all this:
 
 ```sh
@@ -73,11 +79,13 @@ lg skill install
 
 | What | Default | Override |
 |---|---|---|
-| Config | `~/.config/lg/config.yaml` | `LG_CONFIG`, or `XDG_CONFIG_HOME` |
-| Store | `~/.local/share/lg` | `LG_HOME`, or `XDG_DATA_HOME` |
+| Config | `~/.config/lg/config.yaml` | `LG_CONFIG` names the file. `XDG_CONFIG_HOME` replaces `~/.config`. |
+| Store | `~/.local/share/lg` | `LG_HOME` names the dir. `XDG_DATA_HOME` replaces `~/.local/share`. |
+
+`LG_HOME` does not move the config.
 
 `lg root` prints the store's `data/` dir, which holds each run at `<host>/<owner>/<repo>/runs/<date>/<run_id>_<workflow>_<branch>/`.
-`<owner>/<repo>` is spelled as GitHub spells the repository's full name.
+`<owner>/<repo>` is spelled as GitHub spells the repository's full name, while config.yaml and `lg status` keep the spelling given to `lg init --repo OWNER/NAME`.
 `<date>` is the run's UTC creation date.
 `<workflow>` and `<branch>` are slugs, so branch `feat/x` becomes `feat-x`.
 Each `attempt-N/`, artifact dir and `extracted/` dir is complete once it appears, and its files never change.

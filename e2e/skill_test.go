@@ -160,6 +160,7 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 			ContainSubstring(`{"host":"github.com","repo":"rosenhouse/Lg",`),
 			ContainSubstring("pass-artifact\tinner.tar.gz.d/tgz/nested.log\n"),
 			ContainSubstring("37129390741\t1\tflaky\n"),
+			ContainSubstring("37129390741\t1\ttimeout\n"),
 			ContainSubstring(`run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"`+"\n"),
 			ContainSubstring("/extracted/.pytest_cache/v/cache/lastfailed\n"),
 			MatchRegexp(`(?m)^[^\t\n]+\t[^\t\n]+/log\.txt$`),

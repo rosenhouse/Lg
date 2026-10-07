@@ -172,7 +172,7 @@ blocked: rate_limit since 2026-10-03T17:55:00Z, retry_at 2026-10-03T18:01:00Z: 4
 daemon: running
 github.com/rosenhouse/lg:
   default branch: main
-  newest completed run: 2026-10-03T14:22:54Z, lag: 3h37m6s
+  newest completed run created: 2026-10-03T14:22:54Z, lag: 3h37m6s
   runs: 3, attempts: 4, bytes: 123456
   pending units: 1
     run 37129390741 attempt 2: 502 Bad Gateway

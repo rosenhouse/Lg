@@ -23,8 +23,9 @@ type flakesCmd struct {
 func (flakesCmd) Help() string {
 	return `A name fails in an attempt if any job of that name failed, was cancelled or timed out. Only jobs that ran count. Each finding names a job, or a job and step.
 
-A rerun flip is a name that failed in one attempt of a run and succeeded in another. A carried-forward failure counts as no success. A line reads:
+A rerun flip is a name that failed in one attempt of a run and succeeded in another. A carried-forward failure counts as no success. lg judges a job and each of its steps on their own, so one flip often gives a line for the job and a line for the step:
   run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"
+  run 37129390741 (sha 1a51097): "flaky" / "Fail on first attempt only": 1:failure 2:success 3:success
 
 An intermittent failure is a name that failed in attempt 1 of a run on the default branch, while attempt 1 of the runs just before and after it succeeded. Runs where the name was skipped or neutral are passed over. A failure next to a run whose attempt 1 is not on disk is not reported. pull_request and pull_request_target runs, and runs whose first or latest attempt was cancelled, are left out. The default branch comes from status.json; --branch replaces it.
 

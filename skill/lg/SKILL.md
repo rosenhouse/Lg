@@ -13,7 +13,9 @@ Do not call the GitHub API for data that lg mirrors.
 
 Always run `lg status` first.
 It shows the last sync, the lag, pending units, and why a sync is blocked.
+The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run.
 Every lg command also prints `lg: warning: ...` to stderr while the mirror is stale or blocked, or while units stay pending.
+Stale means the last successful sync is older than twice the sync_interval that the last sync used, not the one config.yaml now sets.
 A mirror that is behind can miss recent runs, so run `lg sync --wait --timeout 90s` before you conclude there is no match.
 It waits for a fresh sync, by the daemon if one runs.
 Exit 4 means the sync has not finished, so do not conclude there is no match.
@@ -139,6 +141,7 @@ lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg w
 ## Flakes
 
 `lg flakes` reports flakes per job name and per (job name, step name).
+It judges a job and each of its steps on their own, so one flip often gives a line for the job and a line for the step.
 `lg flakes --kind rerun` finds a job or step that failed in one attempt of a run and passed in another, on the same SHA.
 An attempt that carries forward a failed job or step gives its name no success.
 `lg flakes --kind intermittent` finds an attempt 1 on the default branch that failed while attempt 1 of the runs before and after it succeeded.
@@ -151,10 +154,11 @@ Failing means `failure`, `cancelled` or `timed_out`, and only jobs that ran coun
 A step can flip while its job does not.
 A `continue-on-error` step that fails still reports success, so lg flakes never sees it; grep its log for `##[error]`.
 
-A line of `lg flakes --kind rerun` reads:
+Lines of `lg flakes --kind rerun` read:
 
 ```text
 run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"
+run 37129390741 (sha 1a51097): "flaky" / "Fail on first attempt only": 1:failure 2:success 3:success
 ```
 
 ```sh
@@ -167,7 +171,7 @@ lg flakes --kind intermittent --branch main --since 30d
 
 ```sh
 lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .conclusion, .run_started_at] | @tsv'
-lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/jobs.json")) | .[] | select(.conclusion == "failure") | [.run_id, .run_attempt, .name] | @tsv'
+lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/jobs.json")) | .[] | select(.conclusion | IN("failure", "cancelled", "timed_out")) | [.run_id, .run_attempt, .name] | @tsv'
 lg paths --pr 42 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .event, .conclusion] | @tsv'
 lg paths --pr 42 --unit job -0 | xargs -0 -r jq -r '[.run_attempt, .name, .conclusion] | @tsv'
 ```

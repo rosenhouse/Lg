@@ -140,7 +140,7 @@ blocked: no
 daemon: not running
 github.com/rosenhouse/lg:
   default branch: main
-  newest completed run: none, lag: none
+  newest completed run created: none, lag: none
   runs: 0, attempts: 0, bytes: 0
   pending units: 0
   horizon: none

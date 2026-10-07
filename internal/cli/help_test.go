@@ -42,6 +42,10 @@ var _ = DescribeTable("--help says", Label("cli"),
 	Entry("how to pipe rg into lg where", []string{"where"},
 		"lg paths -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'"),
 	Entry("when lg status --json fails", []string{"status"}, "It fails before the first sync."),
+	Entry("what lag is", []string{"status"},
+		"lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run."),
+	Entry("which sync_interval the staleness warning uses", []string{"status"},
+		"twice the sync_interval that the last sync used, not the one config.yaml now sets,"),
 	Entry("how --job matches", []string{"paths"}, "Only jobs whose whole name matches this case-sensitive glob, such as 'build*'."),
 	Entry("where a date --until ends", []string{"paths"}, "A date means its 00:00 UTC, so --until 2026-10-03 ends as that day starts."),
 )
@@ -52,17 +56,17 @@ var _ = Describe("lg flakes --help", Label("flakes"), func() {
 			"--json prints " + jsonFields(cli.FlipJSON{}) + " for a flip, and " + jsonFields(cli.IntermittentJSON{}) + " for an intermittent failure."))
 	})
 
-	It("shows a rerun flip line as lg flakes prints it", func() {
-		var line bytes.Buffer
-		Expect(cli.PrintFlip(&line, index.Flip{
-			Flip: model.Flip{
-				RunID: 37129390741, Job: "flaky",
-				Outcomes:     []model.Outcome{{Attempt: 1, Conclusion: "failure"}, {Attempt: 2, Conclusion: "success"}, {Attempt: 3, Conclusion: "success"}},
-				FailingSteps: []string{"Fail on first attempt only"},
-			},
-			HeadSHA: "1a51097e",
-		})).To(Succeed())
-		Expect(help("flakes")).To(ContainSubstring("A line reads: " + strings.TrimSpace(line.String())))
+	It("shows a job's and a step's rerun flip lines as lg flakes prints them", func() {
+		outcomes := []model.Outcome{{Attempt: 1, Conclusion: "failure"}, {Attempt: 2, Conclusion: "success"}, {Attempt: 3, Conclusion: "success"}}
+		var lines bytes.Buffer
+		for _, flip := range []model.Flip{
+			{RunID: 37129390741, Job: "flaky", Outcomes: outcomes, FailingSteps: []string{"Fail on first attempt only"}},
+			{RunID: 37129390741, Job: "flaky", Step: "Fail on first attempt only", Outcomes: outcomes},
+		} {
+			Expect(cli.PrintFlip(&lines, index.Flip{Flip: flip, HeadSHA: "1a51097e"})).To(Succeed())
+		}
+		Expect(help("flakes")).To(ContainSubstring("so one flip often gives a line for the job and a line for the step: " +
+			strings.Join(strings.Fields(lines.String()), " ")))
 	})
 })
 

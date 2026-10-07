@@ -22,6 +22,12 @@ type statusCmd struct {
 	JSON bool `name:"json" help:"Print $LG_HOME/state/status.json as it is. It fails before the first sync."`
 }
 
+func (statusCmd) Help() string {
+	return "lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run. " +
+		"Every lg command warns on stderr while syncs are blocked, while the last successful sync is older than " +
+		"twice the sync_interval that the last sync used, not the one config.yaml now sets, or while a unit has been pending that long."
+}
+
 func (c statusCmd) Run(deps *Deps) error {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
@@ -86,7 +92,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 		lines = append(lines,
 			name+":",
 			"  default branch: "+cmp.Or(r.DefaultBranch, "unknown"),
-			fmt.Sprintf("  newest completed run: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
+			fmt.Sprintf("  newest completed run created: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
 			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
 			fmt.Sprintf("  pending units: %d", r.PendingUnits))
 		for _, pending := range r.Pending {
