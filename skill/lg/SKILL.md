@@ -72,17 +72,18 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 - The date dir is the UTC date the run was created. A rerun stays under that date.
 - Names keep `[A-Za-z0-9.-]`, so branch `feat/retry upload` becomes `feat-retry-upload`. The id before the first `_` is exact.
 - A dir that exists is complete, and files never change. Expiry and eviction remove whole dirs.
-- JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
+- JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg --no-config '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
 - `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
 - Each `log.txt` starts with a UTF-8 BOM, and every line starts with GitHub's timestamp prefix and a space, as in `2026-10-03T14:22:57.6677717Z ##[error]...`. Anchor patterns after it with `^[^ ]+ `, and drop it with `cut -d' ' -f2-`.
 
+Run `rg --no-config`, so that a ripgrep config file named by `RIPGREP_CONFIG_PATH` cannot change its output.
 When rg walks the store, pass `-uu`, so that it searches hidden files and no ignore file hides any.
 Assign `lg root` on its own line, as below, so a script stops when lg fails instead of searching the current dir.
 
 ```sh
 data=$(lg root)
 cd "$data"
-rg -uu -l '"head_sha": "1a51097' --glob attempt.json
+rg --no-config -uu -l '"head_sha": "1a51097' --glob attempt.json
 lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -f2- | sort | uniq -c | sort -rn
 ```
 
@@ -116,9 +117,9 @@ When did `foo bar` first appear on main or release-3?
 The run's date and id are in each path.
 
 ```sh
-lg paths --branch main --branch release-3 -0 | xargs -0 -r rg -l 'foo bar' \
+lg paths --branch main --branch release-3 -0 | xargs -0 -r rg --no-config -l 'foo bar' \
   | sed -E 's#.*/runs/([0-9-]+)/([0-9]+)_.*#\1 run \2#' | sort -u
-lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r rg -Hn 'foo bar'
+lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
 ```
 
 A rerun's hits sit under the run's creation date; the timestamp prefix on the hit line, or `run_started_at` in the attempt's `attempt.json`, says when it ran.
@@ -126,7 +127,7 @@ Pass `-H` to rg or grep, so a batch of one file still prints its path.
 `lg where` decodes a path or an `rg -Hn` hit into JSON: run, attempt, job, SHA, PRs, conclusions and the GitHub URL.
 
 ```sh
-lg paths --branch release-3 -0 | xargs -0 -r rg -Hn 'foo bar' | lg where \
+lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where \
   | jq -r '[.run_id, .attempt, .job, .artifact, .sha[0:7], .html_url] | @tsv'
 ```
 
@@ -190,7 +191,7 @@ lg paths --unit extracted -0 | xargs -0 -r grep -lI 'nested in tar.gz' | lg wher
   | jq -r '[.run_id, .artifact_id, .artifact, .inner_path] | @tsv'
 data=$(lg root)
 cd "$data"
-rg -uu -l 'test_retry'
+rg --no-config -uu -l 'test_retry'
 ```
 
 ## Gaps
@@ -204,7 +205,7 @@ A unit that failed for a transient reason, such as a GitHub outage, is pending: 
 ```sh
 data=$(lg root)
 cd "$data"
-rg -uu -l '"reason": "deleted"' --glob '*.tombstone'
+rg --no-config -uu -l '"reason": "deleted"' --glob '*.tombstone'
 ```
 
 ## Expiry and eviction
