@@ -181,8 +181,9 @@ func (d *node) place(name string, k entryKind) (string, *node, bool) {
 }
 
 // components splits a member's name into names for files and dirs, cutting
-// one that is too long, and slugifying one that a filesystem may refuse, or
-// whose newline lg paths would refuse.
+// one that is too long, slugifying one that a filesystem may refuse, or
+// whose newline lg paths would refuse, and renaming a file that would hide
+// others from rg.
 func components(name string) ([]string, string) {
 	clean := path.Clean(name)
 	if clean == "." {
@@ -199,10 +200,15 @@ func components(name string) ([]string, string) {
 			parts[i], reason = layout.Slug(part), first(reason, "invalid")
 		case len(part) > maxComponent:
 			parts[i], reason = shrink(part, maxComponent), first(reason, "too_long")
+		case i == len(parts)-1 && rgIgnoreFiles[fold(part)]:
+			parts[i], reason = part+"~lg", first(reason, "rg_ignore_file")
 		}
 	}
 	return parts, reason
 }
+
+// rgIgnoreFiles are the files whose patterns rg applies to the dir holding them.
+var rgIgnoreFiles = map[string]bool{".ignore": true, ".rgignore": true, ".gitignore": true}
 
 // trimDotSlash drops the ./ prefixes that tar often gives members.
 func trimDotSlash(name string) string {
