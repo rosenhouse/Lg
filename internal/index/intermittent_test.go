@@ -170,13 +170,13 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		Expect(failures(ctx, index.Filter{Branches: []string{"release-3"}})).To(BeEmpty())
 	})
 
-	It("matches Since and Until against the start of a run's first attempt", func(ctx SpecContext) {
+	It("matches Since and Until against the start of any attempt of a run", func(ctx SpecContext) {
 		var rerun struct {
 			RunStartedAt time.Time `json:"run_started_at"`
 		}
 		Expect(json.Unmarshal(intermittent.Main[2].Files["attempt-2/attempt.json"].Data, &rerun)).To(Succeed())
 
-		Expect(failures(ctx, onlyMain(index.Filter{Since: rerun.RunStartedAt, Until: rerun.RunStartedAt}))).To(BeEmpty())
+		Expect(failures(ctx, onlyMain(index.Filter{Since: rerun.RunStartedAt, Until: rerun.RunStartedAt}))).To(ConsistOf(integration))
 	})
 
 	It("selects job names with Filter.Jobs", func(ctx SpecContext) {
