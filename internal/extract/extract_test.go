@@ -205,6 +205,19 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", strings.TrimSuffix(dir, ".d/"), "name", "n9.zip", "path", dir+"n9.zip", "reason", "nesting")))
 	})
 
+	It("expands a nested archive only when its files would be at most 32 deep", func() {
+		nested := string(archives.Zip(archives.Entry{Name: "a.log", Body: "a\n"}))
+		shallow := strings.Repeat("s/", 30) + "x.zip"
+		deep := strings.Repeat("d/", 31) + "x.zip"
+		f := newFixture(archives.Zip(archives.Entry{Name: shallow, Body: nested}, archives.Entry{Name: deep, Body: nested}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(HaveKeyWithValue(shallow+".d/a.log", "a\n"))
+		Expect(f.files()).To(HaveKey(deep))
+		Expect(f.files()).NotTo(HaveKey(HavePrefix(deep + ".d")))
+		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", deep, "path", deep, "reason", "too_deep")))
+	})
+
 	It("keeps a nested archive that does not read as a file, and records why", func() {
 		f := newFixture(archives.Zip(archives.Entry{Name: "broken.zip", Body: "PK\x03\x04 truncated"}))
 
