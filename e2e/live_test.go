@@ -30,12 +30,9 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 )
 
-// liveSyncTimeout bounds one sync of every run github.com lists for rosenhouse/Lg.
-const liveSyncTimeout = 15 * time.Minute
-
-// maxLiveRuns is how many runs one sync fetches within liveSyncTimeout, at
-// about 3.4 s each.
-const maxLiveRuns = 200
+// maxRateLimitWait bounds how long syncLive waits out a rate-limit block.
+// Others share the token, so they can drain it.
+const maxRateLimitWait = 15 * time.Minute
 
 const (
 	fixtureStage       = "after-attempt-3"
@@ -325,17 +322,16 @@ func liveWindowDays() int {
 	return days
 }
 
-// expectSyncableWindow fails when github.com lists more runs in the live
-// window than one sync fetches within liveSyncTimeout.
-func expectSyncableWindow() {
+// liveSyncTimeout bounds one sync of every run github.com lists in the live
+// window, at 6 s a run, since one takes about 4 s.
+func liveSyncTimeout() time.Duration {
 	GinkgoHelper()
 	since := clock.Real{}.Now().AddDate(0, 0, -liveWindowDays()).Format(time.DateOnly)
 	var listing struct {
 		TotalCount int `json:"total_count"`
 	}
 	Expect(json.Unmarshal(get("https://api.github.com/repos/rosenhouse/Lg/actions/runs?per_page=1&created=%3E%3D"+since), &listing)).To(Succeed())
-	Expect(listing.TotalCount).To(BeNumerically("<=", maxLiveRuns),
-		"%d runs since %s; re-record the fixture runs to shrink the window", listing.TotalCount, since)
+	return max(15*time.Minute, time.Duration(listing.TotalCount)*6*time.Second)
 }
 
 // unexpiredRecordedArtifacts fails once the recorded artifacts expire,
@@ -351,25 +347,51 @@ func unexpiredRecordedArtifacts() []model.Artifact {
 	return recorded
 }
 
-// syncLive retries a sync that exits 1, because one transient GitHub error on
-// any run fails a sync, and the next sync resumes where it stopped. It waits
-// before each retry, since a transient error can outlast a quick one. It
-// asserts each sync left data/ append-only, and gives the last sync.
+// syncLive retries a sync twice when retryWait allows. It waits at least 30 s,
+// then 1 m, since a transient error can outlast a quick retry. It asserts each
+// sync left data/ append-only, and gives the last sync.
 func syncLive(env *harness.Env) *gexec.Session {
 	GinkgoHelper()
-	expectSyncableWindow()
-	var session *gexec.Session
-	for _, wait := range []time.Duration{30 * time.Second, time.Minute, 0} {
+	timeout := liveSyncTimeout()
+	backoffs := []time.Duration{30 * time.Second, time.Minute}
+	for {
 		before := treesnap.Snapshot(env.Data())
-		session = env.Lg("sync").Wait(liveSyncTimeout)
+		session := env.Lg("sync").Wait(timeout)
 		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
-		if session.ExitCode() != 1 || wait == 0 {
-			break
+		if session.ExitCode() != 0 {
+			GinkgoWriter.Printf("live sync exited %d: %s\n", session.ExitCode(), session.Err.Contents())
 		}
-		GinkgoWriter.Printf("live sync exited 1: %s\nretrying in %s\n", session.Err.Contents(), wait)
+		wait, retry := retryWait(env, session)
+		if !retry || len(backoffs) == 0 {
+			return session
+		}
+		wait = max(wait, backoffs[0])
+		backoffs = backoffs[1:]
+		GinkgoWriter.Printf("retrying in %s\n", wait)
 		<-clock.Real{}.After(wait)
 	}
-	return session
+}
+
+// retryWait tells whether and when to retry a live sync. One transient GitHub
+// error on any run fails a sync with exit 1, and the next sync resumes where
+// it stopped. A rate-limit block lifts at its retry_at.
+func retryWait(env *harness.Env, session *gexec.Session) (time.Duration, bool) {
+	GinkgoHelper()
+	switch session.ExitCode() {
+	case 1:
+		return 0, true
+	case 3:
+		blocked, _ := env.Status()["blocked"].(map[string]any)
+		retryAt, _ := blocked["retry_at"].(string)
+		if blocked["kind"] != "rate_limit" || retryAt == "" {
+			return 0, false
+		}
+		at, err := time.Parse(time.RFC3339, retryAt)
+		Expect(err).NotTo(HaveOccurred())
+		wait := at.Sub(clock.Real{}.Now()) + 5*time.Second
+		return wait, wait <= maxRateLimitWait
+	}
+	return 0, false
 }
 
 func get(url string) []byte {
