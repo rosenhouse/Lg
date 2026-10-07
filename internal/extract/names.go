@@ -17,7 +17,8 @@ const (
 	// maxPath bounds a path below extracted/, before ~N suffixes, so it fits
 	// macOS's PATH_MAX of 1024 below a typical store.
 	maxPath = 512
-	// minName is the room a collapsed or expanded name always keeps below maxPath.
+	// minName is the room a collapsed or expanded name always keeps below
+	// maxPath. A slug fits in it.
 	minName = 60
 )
 
@@ -69,7 +70,7 @@ func fold(name string) string { return strings.ToLower(norm.NFC.String(name)) }
 func (n *namer) file(base []string, name string) (string, string) {
 	parts, reason := components(name)
 	if keep := maxDepth - len(base) - 1; len(parts) > keep+1 {
-		parts = collapse(parts, keep, maxComponent)
+		parts = collapse(parts, keep)
 		reason = first(reason, "too_deep")
 	}
 	if pathLen(base, parts) > maxPath {
@@ -91,28 +92,19 @@ func (n *namer) file(base []string, name string) (string, string) {
 	return strings.Join(placed, "/"), reason
 }
 
-// collapse joins parts from keep on into one name of at most size bytes.
-func collapse(parts []string, keep, size int) []string {
-	return append(parts[:keep:keep], shrink(strings.Join(parts[keep:], "-"), size))
+// collapse joins parts from keep on into one slug.
+func collapse(parts []string, keep int) []string {
+	return append(parts[:keep:keep], layout.Slug(strings.Join(parts[keep:], "/")))
 }
 
-// shorten collapses as few of parts below base as fit their path in maxPath,
-// leaving the collapsed name at least minName bytes.
+// shorten collapses as few of parts below base as leave minName bytes for
+// the slug within maxPath.
 func shorten(base, parts []string) []string {
 	keep := len(parts) - 1
 	for keep > 0 && maxPath-pathLen(base, parts[:keep])-1 < minName {
 		keep--
 	}
-	return collapse(parts, keep, min(maxPath-pathLen(base, parts[:keep])-1, maxComponent))
-}
-
-// shrink cuts name to at most size bytes, keeping its extension.
-func shrink(name string, size int) string {
-	ext := path.Ext(name)
-	if len(ext) >= size {
-		ext = ""
-	}
-	return truncate(strings.TrimSuffix(name, ext), size-len(ext)) + ext
+	return collapse(parts, keep)
 }
 
 func pathLen(base, parts []string) int {
@@ -180,10 +172,10 @@ func (d *node) place(name string, k entryKind) (string, *node, bool) {
 	return actual, e.node, actual != name
 }
 
-// components splits a member's name into names for files and dirs, cutting
-// one that is too long, slugifying one that a filesystem may refuse, or
-// whose newline lg paths would refuse, and renaming a file that would hide
-// others from rg.
+// components splits a member's name into names for files and dirs,
+// slugifying one that is too long, that a filesystem may refuse, or whose
+// newline lg paths would refuse, and renaming a file that would hide others
+// from rg.
 func components(name string) ([]string, string) {
 	clean := path.Clean(name)
 	if clean == "." {
@@ -199,7 +191,7 @@ func components(name string) ([]string, string) {
 		case strings.ContainsFunc(part, isControl) || !utf8.ValidString(part):
 			parts[i], reason = layout.Slug(part), first(reason, "invalid")
 		case len(part) > maxComponent:
-			parts[i], reason = shrink(part, maxComponent), first(reason, "too_long")
+			parts[i], reason = layout.Slug(part), first(reason, "too_long")
 		case i == len(parts)-1 && rgIgnoreFiles[fold(part)]:
 			parts[i], reason = part+"~lg", first(reason, "rg_ignore_file")
 		}
