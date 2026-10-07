@@ -39,11 +39,12 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 ## Install
 
 1. `go install github.com/rosenhouse/lg/cmd/lg@latest`
-2. Run `gh auth login`. lg takes its token from `gh auth token` and has no token setting.
-3. `lg init --repo OWNER/NAME` writes the config. For GitHub Enterprise Server, run `lg init --repo OWNER/NAME --host HOST`.
-4. `lg sync` fetches the last 7 days.
-5. `lg daemon install` installs a systemd user unit or a launchd agent that syncs every 10 minutes.
-6. `lg skill install` installs this skill into `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/lg/`.
+2. Install ripgrep and jq, as with `brew install ripgrep jq` or `apt install ripgrep jq`. Check that `command -v rg jq` prints two paths, because xargs cannot run a shell alias.
+3. Run `gh auth login`. lg takes its token from `gh auth token` and has no token setting.
+4. `lg init --repo OWNER/NAME` writes the config. For GitHub Enterprise Server, run `lg init --repo OWNER/NAME --host HOST`.
+5. `lg sync` fetches the last 7 days.
+6. `lg daemon install` installs a systemd user unit or a launchd agent that syncs every 10 minutes.
+7. `lg skill install` installs this skill into `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/lg/`.
 
 ## Layout
 
