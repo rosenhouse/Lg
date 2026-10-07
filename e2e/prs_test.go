@@ -41,8 +41,8 @@ var _ = Describe("lg paths --pr over runs whose pull_requests GitHub emptied", O
 		fromBranch = scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID}
 
 		prRun = scenario.WithCommitPulls(scenario.WithoutArtifacts(scenario.WithEvent(scenario.OnBranch(push(11, 'a', 30), branch), "pull_request")), fromBranch)
-		// sameSHA is a push on main of prRun's head SHA.
-		sameSHA    = push(12, 'a', 29)
+		// sameSHA is a push on main of prRun's head SHA, synced before prRun.
+		sameSHA    = push(12, 'a', 31)
 		squash     = scenario.WithCommitPulls(push(13, 'b', 28), fromBranch)
 		forkSquash = scenario.WithCommitPulls(push(14, 'c', 27), scenario.CommitPull{Number: forkPR, HeadRef: "main"})
 	)

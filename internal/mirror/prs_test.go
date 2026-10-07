@@ -83,9 +83,10 @@ var _ = Describe("a sync whose commit lookup returns 403 with X-Accepted-GitHub-
 var _ = Describe("the commit lookup", Label("prs"), func() {
 	var (
 		env *harness.InProcessEnv
-		// rerun and pushed share a head SHA, whose commit lists PR pr from branch.
-		rerun  = scenario.WithCommitPulls(scenario.OnBranch(scenario.CloneAt(22, "after-attempt-2", harness.DefaultNow().Add(-3*scenario.Day)), branch), scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID})
-		pushed = scenario.OnBranch(scenario.CloneAt(23, "after-attempt-1", harness.DefaultNow().Add(-2*scenario.Day)), "main")
+		// rerun and pushed share a head SHA, whose commit lists PR pr from
+		// branch. The cycle publishes pushed, the older, first.
+		rerun  = scenario.WithCommitPulls(scenario.OnBranch(scenario.CloneAt(22, "after-attempt-2", harness.DefaultNow().Add(-2*scenario.Day)), branch), scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID})
+		pushed = scenario.OnBranch(scenario.CloneAt(23, "after-attempt-1", harness.DefaultNow().Add(-3*scenario.Day)), "main")
 	)
 	const sha = "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
 
