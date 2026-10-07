@@ -27,3 +27,13 @@ func (ix *Index) FirstAttemptOutcomes(ctx context.Context, f Filter) ([]model.Se
 	}
 	return series, errors.Join(logs.unread...)
 }
+
+// Intermittent is a series with the runs that failed alone in it.
+type Intermittent struct {
+	model.Series
+	Failures []model.RunOutcome
+}
+
+func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermittent, error) {
+	return nil, nil
+}
