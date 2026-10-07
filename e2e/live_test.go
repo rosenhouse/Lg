@@ -24,7 +24,6 @@ import (
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/model"
-	"github.com/rosenhouse/lg/internal/testsupport/fakegh"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
@@ -33,6 +32,10 @@ import (
 
 // liveSyncTimeout bounds one sync of every run github.com lists for rosenhouse/Lg.
 const liveSyncTimeout = 15 * time.Minute
+
+// maxLiveRuns is how many runs one sync fetches within liveSyncTimeout, at
+// about 3.4 s each.
+const maxLiveRuns = 200
 
 const (
 	fixtureStage       = "after-attempt-3"
@@ -65,8 +68,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 
 	BeforeAll(func() {
 		env = harness.NewLive(lgPath)
-		window := liveWindow()
-		env.WriteLiveConfig("backfill: "+window, "retention: "+window)
+		env.WriteLiveConfig(windowConfig()...)
 
 		Expect(syncLive(env)).To(gexec.Exit(0))
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
@@ -75,7 +77,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 	It("syncs rosenhouse/Lg and lg status reports no blocked state", func() {
 		session := env.Lg("status").Wait(harness.ExitTimeout)
 		Expect(session).To(gexec.Exit(0))
-		Expect(session.Out).To(gbytes.Say("blocked: no"))
+		Expect(session.Out).To(gbytes.Say(`(?m)^blocked: no$`))
 		Expect(env.Status()).To(SatisfyAll(
 			HaveKeyWithValue("blocked", BeNil()),
 			HaveKeyWithValue("last_sync_errors", BeEmpty()),
@@ -83,7 +85,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		))
 	})
 
-	Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), func() {
+	Describe("lg sync against github.com/rosenhouse/Lg", func() {
 		It("mirrors run 37129390741 with attempts 1–3, the recorded job ids and the recorded job kinds", func() {
 			for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
 				dir := layout.AttemptDir(fixtureDir, attempt)
@@ -168,10 +170,11 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 	It("gives every job dir of runs 37129390741, 37129738159 and 37129867594 job.json plus exactly one of log.txt, log.txt.tombstone or an id in fetch.json carried_forward_jobs", func() {
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
 			for _, attempt := range glob(runDir(env, runID), "attempt-*") {
-				for _, job := range glob(attempt, "jobs", "*") {
+				jobs := glob(attempt, "jobs", "*")
+				for _, job := range jobs {
 					Expect(filepath.Join(job, "job.json")).To(BeARegularFile())
 				}
-				storedKinds(attempt)
+				Expect(storedKinds(attempt)).To(HaveLen(len(jobs)), attempt)
 			}
 		}
 	})
@@ -236,7 +239,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		}
 
 		By("retrying them in a store that listed them before they expired")
-		// R1 recorded 404 for 11275917910, which a rerun deleted, and 410 for the other two.
+		// A rerun deleted 11275917910 before it expired.
 		recorded := []struct {
 			runID, artifactID int64
 			reason            string
@@ -246,47 +249,34 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 			{fixtureRun, expiredArtifact, "expired", http.StatusGone},
 			{logsDeletedRun, 11276237903, "expired", http.StatusGone},
 		}
-		early := harness.NewLive(lgPath)
-		realGH := early.Getenv("LG_GH")
+		live := harness.NewLive(lgPath)
+		seed := harness.New(lgPath)
+		seed.Setenv("LG_HOME", live.Getenv("LG_HOME"))
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
 		// A failed download leaves each one pending until the live sync.
 		for _, r := range recorded {
 			fake.Fail("api", fmt.Sprintf("/artifacts/%d/zip", r.artifactID), fakegithub.Fault{Status: http.StatusServiceUnavailable})
 		}
-		early.Setenv("LG_GH", fakegh.New(GinkgoT().TempDir()).Path)
-		early.Setenv("LG_TEST_NOW", harness.DefaultNow().Format(time.RFC3339))
-		window := liveWindow()
-		early.WriteConfig(fake.URL(), "backfill: "+window, "retention: "+window)
-		Expect(early.Sync()).To(gexec.Exit(1))
+		seed.WriteConfig(fake.URL(), windowConfig()...)
+		Expect(seed.Sync()).To(gexec.Exit(1))
 		// Attempt 3 lists 11276327411.
 		Expect(fake.Advance(fixtureRun, fixtureStage)).To(Succeed())
-		Expect(early.Sync()).To(gexec.Exit(1))
+		Expect(seed.Sync()).To(gexec.Exit(1))
 
-		early.Setenv("LG_GH", realGH)
-		early.Setenv("LG_TEST_NOW", "")
-		early.WriteLiveConfig("backfill: "+window, "retention: "+window)
-		Expect(syncLive(early)).To(gexec.Exit(0))
+		live.WriteLiveConfig(windowConfig()...)
+		Expect(syncLive(live)).To(gexec.Exit(0))
 
 		for _, r := range recorded {
-			tombstone := filepath.Join(layout.ArtifactDir(runDir(early, r.runID), r.artifactID, expiringName), "artifact.zip.tombstone")
+			tombstone := filepath.Join(layout.ArtifactDir(runDir(live, r.runID), r.artifactID, expiringName), "artifact.zip.tombstone")
 			Expect(readJSON(tombstone)).To(SatisfyAll(
 				HaveKeyWithValue("reason", r.reason),
 				HaveKeyWithValue("http_status", BeEquivalentTo(r.status)),
+				HaveKeyWithValue("url", HavePrefix("https://api.github.com/")),
 			), "artifact %d", r.artifactID)
 		}
 	})
 })
-
-// lineOf gives line n of the file at path, without its newline.
-func lineOf(path string, n int) string {
-	GinkgoHelper()
-	raw, err := os.ReadFile(path)
-	Expect(err).NotTo(HaveOccurred())
-	lines := strings.Split(string(raw), "\n")
-	Expect(n).To(BeNumerically("<=", len(lines)), path)
-	return lines[n-1]
-}
 
 var _ = Describe("the GitHub API", Label("live"), func() {
 	It("returns compact JSON to lg's User-Agent, as the fake does", func() {
@@ -300,9 +290,16 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 	})
 })
 
-// liveWindow is 90d, or longer once a fixture run is older, so the fixture
+// windowConfig gives the backfill and retention lines of liveWindowDays.
+func windowConfig() []string {
+	GinkgoHelper()
+	window := fmt.Sprintf("%dd", liveWindowDays())
+	return []string{"backfill: " + window, "retention: " + window}
+}
+
+// liveWindowDays is 90, or more once a fixture run is older, so the fixture
 // runs stay in backfill and retention as they age.
-func liveWindow() string {
+func liveWindowDays() int {
 	GinkgoHelper()
 	days := 90
 	now := clock.Real{}.Now()
@@ -311,7 +308,20 @@ func liveWindow() string {
 		Expect(err).NotTo(HaveOccurred())
 		days = max(days, int(now.Sub(run.CreatedAt).Hours()/24)+2)
 	}
-	return fmt.Sprintf("%dd", days)
+	return days
+}
+
+// expectSyncableWindow fails when github.com lists more runs in the live
+// window than one sync fetches within liveSyncTimeout.
+func expectSyncableWindow() {
+	GinkgoHelper()
+	since := clock.Real{}.Now().AddDate(0, 0, -liveWindowDays()).Format(time.DateOnly)
+	var listing struct {
+		TotalCount int `json:"total_count"`
+	}
+	Expect(json.Unmarshal(get("https://api.github.com/repos/rosenhouse/Lg/actions/runs?per_page=1&created=%3E%3D"+since), &listing)).To(Succeed())
+	Expect(listing.TotalCount).To(BeNumerically("<=", maxLiveRuns),
+		"%d runs since %s; re-record the fixture runs to shrink the window", listing.TotalCount, since)
 }
 
 // unexpiredRecordedArtifacts fails once the recorded artifacts expire,
@@ -328,18 +338,22 @@ func unexpiredRecordedArtifacts() []model.Artifact {
 }
 
 // syncLive retries a sync that exits 1, because one transient GitHub error on
-// any run fails a sync, and the next sync resumes where it stopped. It
+// any run fails a sync, and the next sync resumes where it stopped. It waits
+// before each retry, since a transient error can outlast a quick one. It
 // asserts each sync left data/ append-only, and gives the last sync.
 func syncLive(env *harness.Env) *gexec.Session {
 	GinkgoHelper()
+	expectSyncableWindow()
 	var session *gexec.Session
-	for range 3 {
+	for _, wait := range []time.Duration{30 * time.Second, time.Minute, 0} {
 		before := treesnap.Snapshot(env.Data())
 		session = env.Lg("sync").Wait(liveSyncTimeout)
 		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
-		if session.ExitCode() != 1 {
+		if session.ExitCode() != 1 || wait == 0 {
 			break
 		}
+		GinkgoWriter.Printf("live sync exited 1: %s\nretrying in %s\n", session.Err.Contents(), wait)
+		<-clock.Real{}.After(wait)
 	}
 	return session
 }
@@ -476,4 +490,14 @@ func storedKind(attemptDir string, id int64, carriedForward bool) model.JobKind 
 	}
 	Expect(stone.Reason).To(BeElementOf("expired", "deleted"), "job %d", id)
 	return model.Ran
+}
+
+// lineOf gives line n of the file at path, without its newline.
+func lineOf(path string, n int) string {
+	GinkgoHelper()
+	raw, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred())
+	lines := strings.Split(string(raw), "\n")
+	Expect(n).To(BeNumerically("<=", len(lines)), path)
+	return lines[n-1]
 }
