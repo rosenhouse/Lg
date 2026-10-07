@@ -24,6 +24,7 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 	const (
 		carried   = 2
 		twoSteps  = 3
+		noSteps   = 4
 		stepEmit  = "Emit log markers"
 		stepBuild = "Build nested archives"
 	)
@@ -40,12 +41,18 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 		r = scenario.SetJobConclusion(r, 1, r.JobIDs(1, "pass")[0], "failure")
 		env.Fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, "flaky")[0]), fakegithub.Fault{Status: http.StatusNotFound})
 		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(scenario.AddRerunAttempt(r, "flaky"), "pass"))).To(Succeed())
-		// In attempt 1 two steps of "pass" fail; attempt 2 re-runs it.
+		// In attempt 1 two steps of "pass", listed out of number order, fail; attempt 2 re-runs it.
 		r = scenario.WithSHA(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), twoSteps), strings.Repeat("3", 40))
 		pass := r.JobIDs(1, "pass")[0]
+		r = scenario.ReverseSteps(r, 1, pass)
 		r = scenario.SetStepConclusion(r, 1, pass, stepBuild, "failure")
 		r = scenario.SetStepConclusion(r, 1, pass, stepEmit, "failure")
 		r = scenario.SetJobConclusion(r, 1, pass, "failure")
+		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(r, "pass"))).To(Succeed())
+		// In attempt 1 "pass" ran no step and failed; attempt 2 re-runs it.
+		r = scenario.WithSHA(scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), noSteps), strings.Repeat("4", 40))
+		pass = r.JobIDs(1, "pass")[0]
+		r = scenario.SetJobConclusion(scenario.ClearSteps(r, 1, pass), 1, pass, "failure")
 		Expect(env.Fake.AddRun(scenario.AddRerunAttempt(r, "pass"))).To(Succeed())
 		syncStages(ctx, env, "after-attempt-1", "after-attempt-2", "after-attempt-3")
 		var err error
@@ -90,6 +97,12 @@ var _ = Describe("index.RerunFlips", Label("flakes"), func() {
 			jobFlip(carried, "pass", model.Outcome{Attempt: 1, Conclusion: "failure"}, model.Outcome{Attempt: 3, Conclusion: "success"}),
 			HaveField("Flip.Logs", HaveLen(2)),
 		)))
+	})
+
+	It("gives the flip of a job that ran no step", func(ctx SpecContext) {
+		Expect(flips(ctx, index.Filter{SHAs: []string{"4"}})).To(HaveExactElements(
+			jobFlip(noSteps, "pass", model.Outcome{Attempt: 1, Conclusion: "failure"}, model.Outcome{Attempt: 2, Conclusion: "success"}),
+		))
 	})
 
 	It("lists only logs that are regular files", func(ctx SpecContext) {
