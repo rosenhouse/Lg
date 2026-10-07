@@ -170,11 +170,23 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 	It("gives every job dir of runs 37129390741, 37129738159 and 37129867594 job.json plus exactly one of log.txt, log.txt.tombstone or an id in fetch.json carried_forward_jobs", func() {
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
 			for _, attempt := range glob(runDir(env, runID), "attempt-*") {
+				carried := carriedForwardJobs(attempt)
 				jobs := glob(attempt, "jobs", "*")
+				Expect(jobs).NotTo(BeEmpty(), attempt)
 				for _, job := range jobs {
 					Expect(filepath.Join(job, "job.json")).To(BeARegularFile())
+					present := 0
+					for _, has := range []bool{
+						exists(filepath.Join(job, "log.txt")),
+						exists(filepath.Join(job, "log.txt.tombstone")),
+						slices.Contains(carried, jobIDOf(filepath.Base(job))),
+					} {
+						if has {
+							present++
+						}
+					}
+					Expect(present).To(Equal(1), job)
 				}
-				Expect(storedKinds(attempt)).To(HaveLen(len(jobs)), attempt)
 			}
 		}
 	})
@@ -449,23 +461,40 @@ func countKinds(kinds map[int64]model.JobKind) map[model.JobKind]int {
 // not_applicable from its tombstone's reason.
 func storedKinds(attemptDir string) map[int64]model.JobKind {
 	GinkgoHelper()
+	carried := carriedForwardJobs(attemptDir)
+	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
+	Expect(err).NotTo(HaveOccurred())
+	kinds := map[int64]model.JobKind{}
+	for _, entry := range entries {
+		id := jobIDOf(entry.Name())
+		kinds[id] = storedKind(attemptDir, id, slices.Contains(carried, id))
+	}
+	return kinds
+}
+
+func carriedForwardJobs(attemptDir string) []int64 {
+	GinkgoHelper()
 	var fetch struct {
 		CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
 	}
 	raw, err := os.ReadFile(filepath.Join(attemptDir, "fetch.json"))
 	Expect(err).NotTo(HaveOccurred())
 	Expect(json.Unmarshal(raw, &fetch)).To(Succeed())
+	return fetch.CarriedForwardJobs
+}
 
-	entries, err := os.ReadDir(filepath.Join(attemptDir, "jobs"))
-	Expect(err).NotTo(HaveOccurred())
-	kinds := map[int64]model.JobKind{}
-	for _, entry := range entries {
-		digits, _, _ := strings.Cut(entry.Name(), "_")
-		id, err := strconv.ParseInt(digits, 10, 64)
-		Expect(err).NotTo(HaveOccurred(), entry.Name())
-		kinds[id] = storedKind(attemptDir, id, slices.Contains(fetch.CarriedForwardJobs, id))
-	}
-	return kinds
+// jobIDOf gives the id of a job dir named <id>_<slug>.
+func jobIDOf(name string) int64 {
+	GinkgoHelper()
+	digits, _, _ := strings.Cut(name, "_")
+	id, err := strconv.ParseInt(digits, 10, 64)
+	Expect(err).NotTo(HaveOccurred(), name)
+	return id
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func storedKind(attemptDir string, id int64, carriedForward bool) model.JobKind {
