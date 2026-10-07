@@ -78,8 +78,10 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		session := env.Lg("status").Wait(harness.ExitTimeout)
 		Expect(session).To(gexec.Exit(0))
 		Expect(session.Out).To(gbytes.Say(`(?m)^blocked: no$`))
+		Expect(string(session.Err.Contents())).NotTo(ContainSubstring("lg: warning"))
 		Expect(env.Status()).To(SatisfyAll(
 			HaveKeyWithValue("blocked", BeNil()),
+			HaveKeyWithValue("last_sync_ok_at", Not(BeNil())),
 			HaveKeyWithValue("last_sync_errors", BeEmpty()),
 			HaveKeyWithValue("repos", HaveKey("github.com/rosenhouse/lg")),
 		))
