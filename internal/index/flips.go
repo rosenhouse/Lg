@@ -58,8 +58,9 @@ type logsOnDisk struct {
 
 func newLogsOnDisk() *logsOnDisk { return &logsOnDisk{regular: map[string]bool{}} }
 
+// keep gives a new slice of the logs that are regular files.
 func (d *logsOnDisk) keep(logs []string) []string {
-	return slices.DeleteFunc(logs, func(log string) bool {
+	return slices.DeleteFunc(slices.Clone(logs), func(log string) bool {
 		if _, seen := d.regular[log]; !seen {
 			files, err := regular(filepath.Dir(log), filepath.Base(log))
 			d.regular[log] = len(files) > 0

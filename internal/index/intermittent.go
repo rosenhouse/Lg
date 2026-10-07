@@ -38,7 +38,7 @@ func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermit
 	for _, s := range model.FirstAttemptSeries(jobs) {
 		failures := slices.DeleteFunc(s.IsolatedFailures(), func(r model.RunOutcome) bool { return !selected[r.RunID] })
 		for i := range failures {
-			failures[i].Logs = logs.keep(slices.Clone(failures[i].Logs))
+			failures[i].Logs = logs.keep(failures[i].Logs)
 		}
 		if len(failures) > 0 {
 			found = append(found, Intermittent{Series: s, Failures: failures})
