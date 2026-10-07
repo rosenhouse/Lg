@@ -11,7 +11,7 @@ import (
 )
 
 type flakesCmd struct {
-	Kind    string `default:"all" enum:"rerun,all" help:"Report this kind of flake (${enum})."`
+	Kind    string `default:"all" enum:"rerun,intermittent,all" help:"Report this kind of flake (${enum})."`
 	filters `embed:""`
 	JSON    bool `name:"json" help:"Print one JSON object per finding."`
 }
