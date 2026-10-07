@@ -128,7 +128,7 @@ func (c extractCmd) extract(deps *Deps, s *store.Store, dir string, limits extra
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: skipped %s, whose artifact.zip is a tombstone\n", dir)
 		return false, nil
 	}
-	err := extract.Extract(s, dir, limits, deps.Clock.Now())
+	err := extract.Extract(context.Background(), s, dir, limits, deps.Clock.Now())
 	if errors.Is(err, store.ErrTooLarge) {
 		return false, fmt.Errorf("%s: extracted nothing, since its files exceed --max-bytes %d", dir, limits.MaxBytes)
 	}

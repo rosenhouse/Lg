@@ -2,6 +2,7 @@ package extract_test
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -46,7 +47,7 @@ func newFixture(zip []byte) fixture {
 }
 
 func (f fixture) extract(limits extract.Limits) error {
-	return extract.Extract(f.s, f.artifact, limits, now)
+	return extract.Extract(context.Background(), f.s, f.artifact, limits, now)
 }
 
 // files maps the path of each file below extracted/ to its bytes.
@@ -663,6 +664,16 @@ var _ = Describe("Extract", Label("extract"), func() {
 			record("archive", "artifact.zip", "name", "b.tar", "path", "b.tar", "reason", "partial: too_many_files"),
 			record("archive", "artifact.zip", "name", "c.zip", "path", "c.zip", "reason", "too_many_files"),
 		))
+	})
+
+	It("stops when ctx is done, publishing nothing and leaving nothing in tmp/", func() {
+		f := newFixture(archives.Zip(archives.Entry{Name: "a.log", Body: "a\n"}))
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		Expect(extract.Extract(ctx, f.s, f.artifact, extract.Defaults(), now)).To(MatchError(context.Canceled))
+		Expect(f.extracted).NotTo(BeADirectory())
+		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
 	})
 
 	It("fails on an artifact.zip that does not read as a zip, publishing nothing", func() {

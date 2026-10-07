@@ -4,6 +4,7 @@ package extract
 
 import (
 	"archive/tar"
+	"context"
 	"archive/zip"
 	"bufio"
 	"bytes"
@@ -50,7 +51,7 @@ const source = "artifact.zip"
 // staged in tmp/ and published whole. Past limits.MaxBytes, it publishes
 // nothing and returns store.ErrTooLarge, and when artifact.zip alone has
 // more than limits.MaxFiles members, ErrTooManyFiles.
-func Extract(s *store.Store, artifactDir string, limits Limits, now time.Time) error {
+func Extract(ctx context.Context, s *store.Store, artifactDir string, limits Limits, now time.Time) error {
 	zipFile, err := os.Open(filepath.Join(artifactDir, source))
 	if err != nil {
 		return err
