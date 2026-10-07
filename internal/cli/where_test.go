@@ -322,6 +322,18 @@ var _ = Describe("lg where", Label("where"), func() {
 		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Dir(attempt) + ": cannot read its artifact 11276401837_flaky-report"))
 	})
 
+	It("gives inner_path, the path below extracted/, for a file lg extract wrote, and none for artifact.zip", func() {
+		artifact := filepath.Join(filepath.Dir(attempt), "artifacts", "11276272069_pass-artifact")
+		nested := filepath.Join(artifact, "extracted", "inner.zip.d", "zip", "nested.log")
+		Expect(c.Main("extract", artifact)).To(Equal(0), c.Stderr.String())
+
+		Expect(c.Main("where", nested, filepath.Join(artifact, "artifact.zip"))).To(Equal(0), c.Stderr.String())
+		lines := strings.Split(strings.TrimSuffix(c.Stdout.String(), "\n"), "\n")
+		Expect(lines).To(HaveLen(2))
+		Expect(lines[0]).To(ContainSubstring(`"inner_path":"inner.zip.d/zip/nested.log"`))
+		Expect(lines[1]).NotTo(ContainSubstring(`inner_path`))
+	})
+
 	It("exits 1 naming job.json when it does not parse", func() {
 		Expect(os.WriteFile(filepath.Join(job, "job.json"), []byte("{"), 0o644)).To(Succeed())
 
