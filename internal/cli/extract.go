@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -128,19 +126,18 @@ func (c extractCmd) selected(deps *Deps, roots config.Roots) ([]string, error) {
 	return dirs, err
 }
 
-// artifactDirs gives the artifact dir under data holding each path, once.
+// artifactDirs gives the artifact dir under data holding each path.
 func artifactDirs(data string, paths []string) ([]string, error) {
+	realData, err := filepath.EvalSymlinks(data)
+	if err != nil {
+		return nil, err
+	}
 	var dirs []string
 	var errs []error
 	for _, path := range paths {
-		abs, err := filepath.Abs(path)
+		rel, err := relToData(realData, data, path)
 		if err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		rel, err := filepath.Rel(data, abs)
-		if err != nil || !filepath.IsLocal(rel) {
-			errs = append(errs, fmt.Errorf("%s is outside %s", path, data))
 			continue
 		}
 		loc, err := layout.Parse(rel)
@@ -151,14 +148,7 @@ func artifactDirs(data string, paths []string) ([]string, error) {
 			errs = append(errs, err)
 			continue
 		}
-		dir := filepath.Join(data, loc.ArtifactDir)
-		if _, err := os.Stat(dir); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if !slices.Contains(dirs, dir) {
-			dirs = append(dirs, dir)
-		}
+		dirs = append(dirs, filepath.Join(data, loc.ArtifactDir))
 	}
 	return dirs, errors.Join(errs...)
 }

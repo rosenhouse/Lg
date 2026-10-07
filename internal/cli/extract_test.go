@@ -72,7 +72,23 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 
 		Expect(c.Main("extract", filepath.Join(run, "attempt-1"), outside, filepath.Join(artifact, "artifact.zip"))).To(Equal(1))
 		Expect(c.Stderr.String()).To(ContainSubstring(filepath.Join(run, "attempt-1") + " is not in an artifact dir"))
-		Expect(c.Stderr.String()).To(ContainSubstring(outside + " is outside " + filepath.Join(c.Home, "data")))
+		Expect(c.Stderr.String()).To(ContainSubstring(outside + " is outside the store " + filepath.Join(c.Home, "data")))
 		Expect(c.Stdout.String()).To(Equal(filepath.Join(artifact, "extracted") + "\n"))
+	})
+
+	It("resolves symlinks in each PATH and in LG_HOME, and prints dirs below LG_HOME", func() {
+		c := harness.NewCLI()
+		real := c.Home
+		c.Home = filepath.Join(GinkgoT().TempDir(), "home-link")
+		Expect(os.Symlink(real, c.Home)).To(Succeed())
+		Expect(c.Main("sync")).To(Equal(0))
+		artifacts := filepath.Join("data", "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "37129390741_lg-fixture_lg-fixture", "artifacts")
+		pass := filepath.Join(artifacts, "11276272069_pass-artifact")
+		expiring := filepath.Join(artifacts, "11275917910_expires-in-1-day")
+		link := filepath.Join(GinkgoT().TempDir(), "link")
+		Expect(os.Symlink(real, link)).To(Succeed())
+
+		Expect(c.Main("extract", filepath.Join(real, pass), filepath.Join(link, expiring))).To(Equal(0), c.Stderr.String())
+		Expect(c.Stdout.String()).To(Equal(filepath.Join(c.Home, pass, "extracted") + "\n" + filepath.Join(c.Home, expiring, "extracted") + "\n"))
 	})
 })
