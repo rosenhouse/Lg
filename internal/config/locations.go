@@ -76,3 +76,10 @@ func resolve(env map[string]string, what string, sources ...source) (string, err
 	last := len(names) - 1
 	return "", Error(fmt.Sprintf("cannot locate %s: set %s or %s", what, strings.Join(names[:last], ", "), names[last]))
 }
+
+// SkillFile resolves lg's Claude Code skill as CLAUDE_CONFIG_DIR > HOME/.claude.
+func SkillFile(env map[string]string) (string, error) {
+	return resolve(env, "SKILL.md",
+		source{name: "CLAUDE_CONFIG_DIR", elems: []string{"skills", "lg", "SKILL.md"}},
+		source{name: "HOME", elems: []string{".claude", "skills", "lg", "SKILL.md"}})
+}

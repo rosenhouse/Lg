@@ -75,3 +75,25 @@ var _ = Describe("File", Label("cli"), func() {
 			`HOME must be an absolute path: "relhome"`),
 	)
 })
+
+var _ = Describe("SkillFile", Label("skill"), func() {
+	DescribeTable("resolves lg's skill as CLAUDE_CONFIG_DIR/skills/lg/SKILL.md > HOME/.claude/skills/lg/SKILL.md",
+		func(env map[string]string, skillFile string) {
+			Expect(config.SkillFile(env)).To(Equal(skillFile))
+		},
+		Entry("CLAUDE_CONFIG_DIR wins", map[string]string{"CLAUDE_CONFIG_DIR": "/c", "HOME": "/h"}, "/c/skills/lg/SKILL.md"),
+		Entry("HOME last", map[string]string{"HOME": "/h"}, "/h/.claude/skills/lg/SKILL.md"),
+		Entry("empty values count as unset", map[string]string{"CLAUDE_CONFIG_DIR": "", "HOME": "/h"}, "/h/.claude/skills/lg/SKILL.md"),
+	)
+
+	DescribeTable("returns a config.Error",
+		func(env map[string]string, msg string) {
+			_, err := config.SkillFile(env)
+			Expect(err).To(MatchError(config.Error(msg)))
+		},
+		Entry("when nothing locates it", map[string]string{},
+			"cannot locate SKILL.md: set CLAUDE_CONFIG_DIR or HOME"),
+		Entry("for a relative CLAUDE_CONFIG_DIR", map[string]string{"CLAUDE_CONFIG_DIR": "c", "HOME": "/h"},
+			`CLAUDE_CONFIG_DIR must be an absolute path: "c"`),
+	)
+})

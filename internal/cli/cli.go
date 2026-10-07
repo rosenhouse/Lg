@@ -60,6 +60,7 @@ type commands struct {
 	Extract extractCmd `cmd:"" help:"Expand artifacts' zips, and the archives in them, into extracted/ beside each zip, for grep or rg."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
+	Skill   skillCmd   `cmd:"" help:"Teach Claude Code to search the store."`
 }
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.
@@ -81,15 +82,7 @@ func (e *errWriter) Write(p []byte) (int, error) {
 
 func Main(args []string, deps Deps) (code int) {
 	stdout := &errWriter{w: deps.Stdout}
-	parser := kong.Must(&commands{},
-		kong.Name("lg"),
-		kong.Vars{
-			"write_lock_wait":   writeLockWait.String(),
-			"cycle_wait":        cycleWait.String(),
-			"extract_max_bytes": config.Bytes(extract.Defaults().MaxBytes).String(),
-		},
-		kong.Writers(stdout, deps.Stderr),
-		kong.Exit(func(c int) { panic(kongExit(c)) }))
+	parser := newParser(stdout, deps.Stderr)
 	defer func() {
 		if r := recover(); r != nil {
 			c, ok := r.(kongExit)
@@ -144,6 +137,18 @@ func Main(args []string, deps Deps) (code int) {
 	return 0
 }
 
+func newParser(stdout, stderr io.Writer) *kong.Kong {
+	return kong.Must(&commands{},
+		kong.Name("lg"),
+		kong.Vars{
+			"write_lock_wait":   writeLockWait.String(),
+			"cycle_wait":        cycleWait.String(),
+			"extract_max_bytes": config.Bytes(extract.Defaults().MaxBytes).String(),
+		},
+		kong.Writers(stdout, stderr),
+		kong.Exit(func(c int) { panic(kongExit(c)) }))
+}
+
 // warn prints the line status.Warning gives for the store's status.json, if
 // any, with its hint unless command already runs it.
 func warn(deps *Deps, command string) {
@@ -176,9 +181,11 @@ type warned struct{ error }
 
 func (w warned) Unwrap() error { return w.error }
 
-// checkStore refuses a store that lg cannot own before any command but version runs.
+// checkStore refuses a store that lg cannot own before any command that uses
+// the store runs.
 func checkStore(command string, env map[string]string) error {
-	if command == "version" {
+	switch command {
+	case "version", "skill install":
 		return nil
 	}
 	roots, err := config.Locations(env)

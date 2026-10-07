@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const (
@@ -625,6 +626,49 @@ func ReplaceFileFS(fsys FS, path string, data []byte) error {
 	if err := fsys.RemoveAll(tmp); err != nil {
 		return err
 	}
+	return replaceVia(fsys, tmp, path, data)
+}
+
+// ReplaceFileUnlocked is ReplaceFileFS for callers that hold no lock, and
+// makes path's missing parents. Each call stages its own temp file, and
+// removes those that crashed calls left over a minute before now.
+func ReplaceFileUnlocked(fsys FS, path string, data []byte, now time.Time) error {
+	dir, prefix := filepath.Dir(path), "."+filepath.Base(path)+"."
+	if err := mkdirAll(fsys, dir); err != nil {
+		return err
+	}
+	if err := removeStaleTemps(fsys, dir, prefix, now.Add(-time.Minute)); err != nil {
+		return err
+	}
+	return replaceVia(fsys, filepath.Join(dir, prefix+randomName()+".tmp"), path, data)
+}
+
+func removeStaleTemps(fsys FS, dir, prefix string, before time.Time) error {
+	entries, err := fsys.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), prefix) || !strings.HasSuffix(e.Name(), ".tmp") {
+			continue
+		}
+		info, err := fsys.Lstat(filepath.Join(dir, e.Name()))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.ModTime().Before(before) {
+			if err := fsys.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func replaceVia(fsys FS, tmp, path string, data []byte) error {
 	f, err := fsys.Create(tmp)
 	if err != nil {
 		return err

@@ -36,6 +36,8 @@ func New(lgPath string) *Env {
 	vars := Scrub(os.Environ(), filepath.Dir(lgPath))
 	vars["HOME"] = ginkgo.GinkgoT().TempDir()
 	vars["LG_TEST_NOW"] = DefaultNow().Format(time.RFC3339)
+	// A -race binary otherwise sleeps 1s as it exits.
+	vars["GORACE"] = "atexit_sleep_ms=0"
 	gh := fakegh.New(ginkgo.GinkgoT().TempDir())
 	vars["LG_GH"] = gh.Path
 	return &Env{lgPath: lgPath, vars: vars, gh: gh}
@@ -70,6 +72,21 @@ func (e *Env) start(cmd *exec.Cmd) *gexec.Session {
 
 // Sh runs a shell script with lg first on PATH.
 func (e *Env) Sh(script string) *gexec.Session { return e.start(e.command("sh", "-c", script)) }
+
+// Bash runs a script with /bin/bash -euo pipefail in HOME, with lg first on PATH.
+func (e *Env) Bash(script string) *gexec.Session {
+	cmd := e.command("/bin/bash", "-euo", "pipefail", "-c", script)
+	cmd.Dir = e.Home()
+	return e.start(cmd)
+}
+
+// BashUnchecked runs a script with /bin/bash in HOME, without -e, -u or
+// pipefail, as agents' shells do.
+func (e *Env) BashUnchecked(script string) *gexec.Session {
+	cmd := e.command("/bin/bash", "-c", script)
+	cmd.Dir = e.Home()
+	return e.start(cmd)
+}
 
 // WriteConfig writes config.yaml for rosenhouse/lg served at apiURL, plus any further lines.
 func (e *Env) WriteConfig(apiURL string, lines ...string) {
