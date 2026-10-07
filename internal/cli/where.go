@@ -41,6 +41,10 @@ func (w whereCmd) Run(deps *Deps) error {
 	defer finder.close()
 	var failed error
 	err = eachInput(w.Hits, deps.Stdin, func(hit string) error {
+		if m := rgBinaryNotice.FindStringSubmatch(hit); m != nil {
+			_, _ = fmt.Fprintf(deps.Stderr, "lg: skipped rg's notice that %s is binary\n", m[1])
+			return nil
+		}
 		p, err := finder.find(hit)
 		if err != nil {
 			printError(deps.Stderr, err)
@@ -54,6 +58,9 @@ func (w whereCmd) Run(deps *Deps) error {
 	}
 	return failed
 }
+
+// rgBinaryNotice is the line rg prints in place of the hits in a binary file.
+var rgBinaryNotice = regexp.MustCompile(`^(.+): (binary file matches|WARNING: stopped searching binary file after match) \(found ".*" byte around offset [0-9]+\)$`)
 
 // eachInput calls f with each of hits, or else with each line of stdin that
 // is neither blank nor rg's -- separator.

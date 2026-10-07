@@ -122,6 +122,18 @@ var _ = Describe("lg where", Label("where"), func() {
 		))
 	})
 
+	It("skips rg's notices about binary files, noting each on stderr", func() {
+		log := filepath.Join(job, "log.txt")
+		Expect(os.WriteFile(log, []byte("one\n"), 0o644)).To(Succeed())
+		c.Stdin = strings.NewReader(log + `: binary file matches (found "\0" byte around offset 5)` + "\n" +
+			log + `: WARNING: stopped searching binary file after match (found "\0" byte around offset 9)` + "\n" +
+			log + ":1:one\n")
+
+		Expect(c.Main("where")).To(Equal(0), c.Stderr.String())
+		Expect(decoded()).To(HaveExactElements(HaveKeyWithValue("line", BeEquivalentTo(1))))
+		Expect(c.Stderr.String()).To(Equal(strings.Repeat("lg: skipped rg's notice that "+log+" is binary\n", 2)))
+	})
+
 	It("gives a line only when the file has that line and it holds the text", func() {
 		log := filepath.Join(job, "log.txt")
 		Expect(os.WriteFile(log, []byte("start\n10:15:00 ERROR disk full"), 0o644)).To(Succeed())
