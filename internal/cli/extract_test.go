@@ -86,6 +86,19 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 		Expect(c.Stdout.String()).To(Equal(filepath.Join(artifact, "extracted") + "\n"))
 	})
 
+	It("exits 1 naming an artifact that fails to extract, and extracts the others", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		artifacts := filepath.Join(c.Home, "data", "github.com", "rosenhouse", "Lg", "runs", "2026-10-03", "37129390741_lg-fixture_lg-fixture", "artifacts")
+		bad := filepath.Join(artifacts, "11276272069_pass-artifact")
+		good := filepath.Join(artifacts, "11275917910_expires-in-1-day")
+		Expect(os.WriteFile(filepath.Join(bad, "artifact.zip"), []byte("not a zip"), 0o644)).To(Succeed())
+
+		Expect(c.Main("extract", bad, good)).To(Equal(1))
+		Expect(c.Stderr.String()).To(ContainSubstring("lg: " + bad + ": "))
+		Expect(c.Stdout.String()).To(Equal(filepath.Join(good, "extracted") + "\n"))
+	})
+
 	It("resolves symlinks in each PATH and in LG_HOME, and prints dirs below LG_HOME", func() {
 		c := harness.NewCLI()
 		real := c.Home
