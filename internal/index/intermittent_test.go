@@ -147,6 +147,13 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
 	})
 
+	It("leaves out a run whose first attempt was cancelled and whose latest attempt succeeded", func(ctx SpecContext) {
+		r := scenario.Cancel(scenario.AddRerunAttempt(onMain(12, "push", 3), untouched), 1)
+		addRuns(ctx, scenario.SetJobConclusion(r, 1, r.JobIDs(1, untouched)[0], "cancelled"))
+
+		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
+	})
+
 	// withoutFirstAttempt is a run re-run after run afterRun of Intermittent whose first attempt sync cannot fetch.
 	withoutFirstAttempt := func(id int64, event string, afterRun int) scenario.Run {
 		r := scenario.AddRerunAttempt(scenario.WithSHA(onMain(id, event, afterRun), strings.Repeat("e", 40)), untouched)
