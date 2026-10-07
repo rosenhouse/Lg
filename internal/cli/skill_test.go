@@ -17,7 +17,7 @@ import (
 )
 
 var _ = Describe("lg skill install", Label("skill"), func() {
-	It("writes through the store's filesystem", func() {
+	It("exits 1 with the error when it cannot write SKILL.md", func() {
 		fsys := faultfs.New()
 		fsys.FailOn("create", syscall.EROFS)
 		var stderr bytes.Buffer
@@ -43,10 +43,8 @@ var _ = Describe("SKILL.md", Label("skill"), func() {
 			Expect(cli.Parse(c.Args)).To(Succeed(), "line %d: lg %s", c.Line, strings.Join(c.Args, " "))
 		}
 	})
-})
 
-var _ = Describe("SKILL.md", Label("skill"), func() {
-	It("names a flag outside an `lg …` line only as some `lg …` line passes it", func() {
+	It("passes every flag its prose names in some `lg …` line", func() {
 		commands := doctest.LgCommands(skill.Markdown)
 		for _, span := range doctest.FlagSpans(skill.Markdown) {
 			Expect(slices.ContainsFunc(commands, func(c doctest.Command) bool { return containsRun(c.Args, span.Args) })).
