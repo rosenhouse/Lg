@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -108,6 +109,16 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			SatisfyAll(HaveField("Step", "unit"), HaveField("Runs", []model.RunOutcome{ran(1, "failure", "attempt-1/11/log.txt"), ran(2, "success")})),
 			SatisfyAll(HaveField("Step", "e2e"), HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(2, "success")})),
 		))
+	})
+	It("leaves its input as it was", func() {
+		notApplicable := firstAttempt(1, 1, 12, "test", "failure")
+		notApplicable.Kind = model.NotApplicable
+		jobs := []model.RunJob{firstAttempt(2, 2, 21, "test", "success"), notApplicable, firstAttempt(1, 1, 11, "test", "failure")}
+		given := slices.Clone(jobs)
+
+		model.FirstAttemptSeries(jobs)
+
+		Expect(jobs).To(Equal(given))
 	})
 })
 

@@ -183,7 +183,7 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		Expect(failures(ctx, onlyMain(index.Filter{Jobs: []string{"integ*"}}))).To(ConsistOf(integration))
 	})
 
-	It("lists only logs that are regular files, with the error of each it cannot read", func(ctx SpecContext) {
+	It("lists only failures' logs that are regular files, with the error of each it cannot read, and leaves the series' logs as they were", func(ctx SpecContext) {
 		Expect(os.Remove(attempt1Log(3, "integration"))).To(Succeed())
 		spoiled := filepath.Dir(attempt1Log(4, "suite"))
 		Expect(os.RemoveAll(spoiled)).To(Succeed())
@@ -191,7 +191,11 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 
 		got, err := ix.IntermittentFailures(ctx, main)
 		Expect(err).To(MatchError(ContainSubstring(spoiled)))
-		Expect(got).To(ContainElement(SatisfyAll(integration, HaveField("Failures", HaveEach(HaveField("Logs", BeEmpty()))))))
+		Expect(got).To(ContainElement(SatisfyAll(
+			integration,
+			HaveField("Failures", HaveEach(HaveField("Logs", BeEmpty()))),
+			HaveField("Runs", ContainElement(HaveField("Logs", []string{attempt1Log(3, "integration")}))),
+		)))
 	})
 
 	It("reads no log of a failure that was not alone", func(ctx SpecContext) {
