@@ -138,3 +138,25 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 		Expect(c.Stdout.String()).To(Equal(filepath.Join(c.Home, pass, "extracted") + "\n" + filepath.Join(c.Home, expiring, "extracted") + "\n"))
 	})
 })
+
+var _ = Describe("lg extract with nothing to extract", Label("extract"), func() {
+	It("says so on stderr when no artifact matches", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+
+		Expect(c.Main("extract", "--branch", "no-such-branch")).To(Equal(0))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: no artifact matches\n"))
+	})
+
+	It("says so on stderr when every artifact it selects is extracted already", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		Expect(c.Main("extract", "--all")).To(Equal(0))
+		Expect(c.Stderr.String()).To(BeEmpty())
+
+		Expect(c.Main("extract", "--all")).To(Equal(0))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone\n"))
+	})
+})

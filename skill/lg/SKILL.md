@@ -95,8 +95,11 @@ It prints only files that exist, never tombstones.
 - `lg paths --branch main --branch release-3 --sha 1a51097 --pr 42 --workflow lg-fixture --job 'build*' --event push --conclusion failure` shows every filter. `--sha` takes a prefix and `--job` a glob.
 - Filters may repeat. Repeats of one flag match any value, and different flags must all match.
 - `--since` and `--until` take `30d`, `12h`, `2026-09-01` (UTC) or RFC 3339, as in `lg paths --since 30d --until 2026-10-01`. A date means its 00:00 UTC, so `--until 2026-10-01` stops at the start of October 1.
-- `--branch` skips runs from forks.
+- `--branch` takes the branch as GitHub names it, such as `feat/retry upload`, not its slug in a path, such as `feat-retry-upload`. It skips runs from forks.
 - `--pr` finds the runs of open and merged pull requests from this repository, even after GitHub drops them from `pull_requests`; it may miss fork runs and runs of pull requests closed without merging, which `lg paths --event pull_request` or `lg paths --sha 1a51097` find.
+
+`lg paths` has no run filter.
+Select one run with `--sha`, or with `lg paths | grep /37129390741_`.
 
 | Unit | Prints |
 |---|---|
@@ -125,10 +128,12 @@ lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r rg --no-c
 A rerun's hits sit under the run's creation date; the timestamp prefix on the hit line, or `run_started_at` in the attempt's `attempt.json`, says when it ran.
 Pass `-H` to rg or grep, so a batch of one file still prints its path.
 `lg where` decodes a path or an `rg -Hn` hit into JSON: run, attempt, job, SHA, PRs, conclusions and the GitHub URL.
+`jq -c 'del(.path)'` prints each object on one line, without the long path.
 
 ```sh
 lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where \
   | jq -r '[.run_id, .attempt, .job, .artifact, .sha[0:7], .html_url] | @tsv'
+lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'
 ```
 
 ## Flakes
@@ -146,9 +151,15 @@ Failing means `failure`, `cancelled` or `timed_out`, and only jobs that ran coun
 A step can flip while its job does not.
 A `continue-on-error` step that fails still reports success, so lg flakes never sees it; grep its log for `##[error]`.
 
+A line of `lg flakes --kind rerun` reads:
+
+```text
+run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"
+```
+
 ```sh
 lg flakes --kind rerun --sha 1a51097
-lg flakes --kind rerun --json | jq -r 'select(.run_id == 37129390741) | [.job, .step // "", (.conclusions | join(" "))] | @tsv'
+lg flakes --kind rerun --json | jq -r 'select(.run_id == 37129390741) | [.job, .step // "", (.attempts | map(tostring) | join(" ")), (.conclusions | join(" "))] | @tsv'
 lg flakes --kind intermittent --branch main --since 30d
 ```
 
@@ -172,6 +183,7 @@ lg paths --unit job | lg where | jq -r 'select(.carried_forward) | [.job, .origi
 ```
 
 Artifacts belong to the run, under `artifacts/`.
+Artifacts of one name repeat across runs, and across attempts of one run, each under its own id.
 Each attempt's `artifacts.json` is a snapshot of the run's listing when lg fetched that attempt, not a list of what the attempt uploaded.
 `lg where` on an artifact path gives `attributed_attempt` and how it was decided in `attribution`.
 
@@ -179,6 +191,7 @@ Each attempt's `artifacts.json` is a snapshot of the run's listing when lg fetch
 
 Zips are not searched until lg extract expands them into `extracted/` beside each zip.
 Give it filters, paths, or `lg extract --all`.
+It prints each `extracted/` dir it writes, and says on stderr when it has nothing to extract.
 A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`, so rg may report "binary file matches" for the archive, and `lg where` skips that line. Read the `.d/` text instead, and pass `-I` to grep to skip binary files.
 `lg where` on an extracted file adds `inner_path`, its path below `extracted/`.
 A member named `.ignore`, `.rgignore` or `.gitignore` is renamed `<name>~lg`, so rg still searches its tree.

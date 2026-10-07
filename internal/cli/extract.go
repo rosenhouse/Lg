@@ -107,10 +107,17 @@ func (c extractCmd) Run(deps *Deps) error {
 		}
 	}
 	w.done()
-	if anyExtracted {
+	err = errors.Join(append(errs, printErr)...)
+	switch {
+	case anyExtracted:
 		warnPastDiskCap(deps)
+	case err != nil:
+	case len(dirs) == 0:
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: no artifact matches")
+	default:
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone")
 	}
-	return errors.Join(append(errs, printErr)...)
+	return err
 }
 
 // lg extract lets go of state/write.lock between artifacts once it has held it
