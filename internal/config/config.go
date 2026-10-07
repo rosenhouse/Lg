@@ -242,3 +242,5 @@ func baseURL(s string) (u *url.URL, shown string, ok bool) {
 	}
 	return u, s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
 }
+
+func (b Bytes) String() string { return "" }
