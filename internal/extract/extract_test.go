@@ -309,6 +309,20 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Entry("a FIFO", archives.Entry{Name: "fifo", Mode: fs.ModeNamedPipe | 0o600}, "fifo"),
 	)
 
+	DescribeTable("writes a tar member that Go's tar reader serves as regular data",
+		func(typeflag byte) {
+			f := newFixture(archives.Zip(archives.Entry{Name: "member.tar", Body: string(archives.Tar(
+				archives.Entry{Name: "data.log", TarType: typeflag, Body: "LG_MARKER data\n"},
+			))}))
+
+			Expect(f.extract(extract.Defaults())).To(Succeed())
+			Expect(f.files()).To(HaveKeyWithValue("member.tar.d/data.log", "LG_MARKER data\n"))
+			Expect(f.manifest()["skipped"]).To(BeEmpty())
+		},
+		Entry("a GNU sparse file", byte(tar.TypeGNUSparse)),
+		Entry("a contiguous file", byte(tar.TypeCont)),
+	)
+
 	It("skips, and records, a zip's symlink, device and FIFO members", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "../../../etc/passwd"},

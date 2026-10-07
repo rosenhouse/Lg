@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"compress/flate"
 	"compress/gzip"
+	"fmt"
 	"hash/crc32"
 	"io/fs"
 	"time"
@@ -89,7 +90,8 @@ func writeRaw(w *zip.Writer, header *zip.FileHeader, body []byte, badCRC bool) {
 	must(err)
 }
 
-// Tar gives a tar of the entries.
+// Tar gives a tar of the entries. A GNU sparse entry holds Body as one
+// region of data.
 func Tar(entries ...Entry) []byte {
 	var buf bytes.Buffer
 	w := tar.NewWriter(&buf)
@@ -100,15 +102,39 @@ func Tar(entries ...Entry) []byte {
 		if e.TarType != 0 {
 			header.Typeflag = e.TarType
 		}
-		if header.Typeflag != tar.TypeReg {
+		switch header.Typeflag {
+		case tar.TypeReg, tar.TypeCont:
+		case tar.TypeGNUSparse:
+			header.Format = tar.FormatGNU
+		default:
 			header.Size = 0
 		}
 		must(w.WriteHeader(header))
+		if header.Typeflag == tar.TypeGNUSparse {
+			mapSparse(buf.Bytes()[buf.Len()-blockSize:], header.Size)
+		}
 		_, err = w.Write([]byte(e.Body[:header.Size]))
 		must(err)
 	}
 	must(w.Close())
 	return buf.Bytes()
+}
+
+const blockSize = 512
+
+// mapSparse gives a GNU sparse header block one region of size bytes at
+// offset 0, which Go's tar.Writer leaves empty.
+func mapSparse(block []byte, size int64) {
+	octal := func(offset int, v int64) { copy(block[offset:offset+12], fmt.Sprintf("%011o\x00", v)) }
+	octal(386, 0)
+	octal(398, size)
+	octal(483, size)
+	copy(block[148:156], "        ")
+	var sum int64
+	for _, b := range block {
+		sum += int64(b)
+	}
+	copy(block[148:156], fmt.Sprintf("%06o\x00 ", sum))
 }
 
 // TarGz gives a gzipped tar of the entries.
