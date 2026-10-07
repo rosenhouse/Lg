@@ -57,10 +57,9 @@ var recordedKinds = map[int64]map[int]map[model.JobKind]int{
 	},
 }
 
-var _ = Describe("live", Label("live"), Ordered, func() {
+var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 	var (
 		env        *harness.Env
-		synced     *gexec.Session
 		fixtureDir string
 	)
 
@@ -69,13 +68,11 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 		window := liveWindow()
 		env.WriteLiveConfig("backfill: "+window, "retention: "+window)
 
-		synced = syncLive(env)
+		Expect(syncLive(env)).To(gexec.Exit(0))
 		fixtureDir = filepath.Join(env.Data(), fixtureRunDir)
 	})
 
-	// Ordered skips the specs after a failed one, so this one goes first.
 	It("syncs rosenhouse/Lg and lg status reports no blocked state", func() {
-		Expect(synced).To(gexec.Exit(0))
 		session := env.Lg("status").Wait(harness.ExitTimeout)
 		Expect(session).To(gexec.Exit(0))
 		Expect(session.Out).To(gbytes.Say("blocked: no"))
@@ -86,84 +83,86 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 		))
 	})
 
-	It("mirrors run 37129390741 with attempts 1–3, the recorded job ids and the recorded job kinds", func() {
-		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
-			dir := layout.AttemptDir(fixtureDir, attempt)
-			Expect(dir).To(BeADirectory())
-			kinds := storedKinds(dir)
-			Expect(slices.Collect(maps.Keys(kinds))).To(ConsistOf(recordedJobIDs(fixtureRun, fixtureStage, attempt)), "attempt %d", attempt)
-			Expect(countKinds(kinds)).To(Equal(recordedKinds[fixtureRun][attempt]), "attempt %d", attempt)
-		}
-	})
+	Describe("lg sync against github.com/rosenhouse/Lg", Label("live"), func() {
+		It("mirrors run 37129390741 with attempts 1–3, the recorded job ids and the recorded job kinds", func() {
+			for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
+				dir := layout.AttemptDir(fixtureDir, attempt)
+				Expect(dir).To(BeADirectory())
+				kinds := storedKinds(dir)
+				Expect(slices.Collect(maps.Keys(kinds))).To(ConsistOf(recordedJobIDs(fixtureRun, fixtureStage, attempt)), "attempt %d", attempt)
+				Expect(countKinds(kinds)).To(Equal(recordedKinds[fixtureRun][attempt]), "attempt %d", attempt)
+			}
+		})
 
-	It("stores each log byte-identical to the recording, or a tombstone with reason expired or deleted", func() {
-		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
-			dir := layout.AttemptDir(fixtureDir, attempt)
-			logs := recordedLogs(fixtureRun, fixtureStage, attempt)
-			ran := 0
-			for id, kind := range storedKinds(dir) {
+		It("stores each log byte-identical to the recording, or a tombstone with reason expired or deleted", func() {
+			for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
+				dir := layout.AttemptDir(fixtureDir, attempt)
+				logs := recordedLogs(fixtureRun, fixtureStage, attempt)
+				ran := 0
+				for id, kind := range storedKinds(dir) {
+					if kind != model.Ran {
+						continue
+					}
+					ran++
+					Expect(logs).To(HaveKey(id), "attempt %d job %d", attempt, id)
+					Expect(recordings.CompareLog(logs[id], jobDir(dir, strconv.FormatInt(id, 10)))).To(Succeed(), "attempt %d job %d", attempt, id)
+				}
+				Expect(ran).To(Equal(recordedKinds[fixtureRun][attempt][model.Ran]), "attempt %d", attempt)
+			}
+		})
+
+		It("writes deleted tombstones for the 10 ran jobs of run 37129738159", func() {
+			dir := layout.AttemptDir(runDir(env, logsDeletedRun), 1)
+			kinds := storedKinds(dir)
+			Expect(countKinds(kinds)).To(Equal(recordedKinds[logsDeletedRun][1]))
+			for id, kind := range kinds {
 				if kind != model.Ran {
 					continue
 				}
-				ran++
-				Expect(logs).To(HaveKey(id), "attempt %d job %d", attempt, id)
-				Expect(recordings.CompareLog(logs[id], jobDir(dir, strconv.FormatInt(id, 10)))).To(Succeed(), "attempt %d job %d", attempt, id)
+				job := jobDir(dir, strconv.FormatInt(id, 10))
+				Expect(filepath.Join(job, "log.txt")).NotTo(BeAnExistingFile())
+				Expect(readJSON(filepath.Join(job, "log.txt.tombstone"))).To(HaveKeyWithValue("reason", "deleted"), "job %d", id)
 			}
-			Expect(ran).To(Equal(recordedKinds[fixtureRun][attempt][model.Ran]), "attempt %d", attempt)
-		}
-	})
+		})
 
-	It("writes deleted tombstones for the 10 ran jobs of run 37129738159", func() {
-		dir := layout.AttemptDir(runDir(env, logsDeletedRun), 1)
-		kinds := storedKinds(dir)
-		Expect(countKinds(kinds)).To(Equal(recordedKinds[logsDeletedRun][1]))
-		for id, kind := range kinds {
-			if kind != model.Ran {
-				continue
+		It("stores attempt.json matching the recording on id, run_attempt, head_sha, status, conclusion and run_started_at", func() {
+			compare := func(runDir string, runID int64, stage string, attempt int) {
+				GinkgoHelper()
+				want := readJSON(filepath.Join(recordings.Dir(runID, stage), fmt.Sprintf("attempt-%d", attempt), "attempt.json"))
+				got := readJSON(filepath.Join(layout.AttemptDir(runDir, attempt), "attempt.json"))
+				for _, key := range []string{"id", "run_attempt", "head_sha", "status", "conclusion", "run_started_at"} {
+					Expect(got).To(HaveKeyWithValue(key, want[key]), "run %d attempt %d", runID, attempt)
+				}
 			}
-			job := jobDir(dir, strconv.FormatInt(id, 10))
-			Expect(filepath.Join(job, "log.txt")).NotTo(BeAnExistingFile())
-			Expect(readJSON(filepath.Join(job, "log.txt.tombstone"))).To(HaveKeyWithValue("reason", "deleted"), "job %d", id)
-		}
-	})
-
-	It("stores attempt.json matching the recording on id, run_attempt, head_sha, status, conclusion and run_started_at", func() {
-		compare := func(runDir string, runID int64, stage string, attempt int) {
-			GinkgoHelper()
-			want := readJSON(filepath.Join(recordings.Dir(runID, stage), fmt.Sprintf("attempt-%d", attempt), "attempt.json"))
-			got := readJSON(filepath.Join(layout.AttemptDir(runDir, attempt), "attempt.json"))
-			for _, key := range []string{"id", "run_attempt", "head_sha", "status", "conclusion", "run_started_at"} {
-				Expect(got).To(HaveKeyWithValue(key, want[key]), "run %d attempt %d", runID, attempt)
+			for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
+				compare(fixtureDir, fixtureRun, fixtureStage, attempt)
 			}
-		}
-		for attempt := 1; attempt <= fixtureLastAttempt; attempt++ {
-			compare(fixtureDir, fixtureRun, fixtureStage, attempt)
-		}
-		compare(runDir(env, logsDeletedRun), logsDeletedRun, logsDeletedStage, 1)
-	})
+			compare(runDir(env, logsDeletedRun), logsDeletedRun, logsDeletedStage, 1)
+		})
 
-	It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
-		recorded := unexpiredRecordedArtifacts()
-		listed := artifactIDs(storedArtifacts(fixtureDir, fixtureLastAttempt))
-		Expect(listed).To(ConsistOf(artifactIDs(recorded)))
-		Expect(listed).NotTo(ContainElement(expiredArtifact))
-	})
+		It("lists the artifacts of run 37129390741 as the after-expiry recording does, without the expired artifact 11276327411", func() {
+			recorded := unexpiredRecordedArtifacts()
+			listed := artifactIDs(storedArtifacts(fixtureDir, fixtureLastAttempt))
+			Expect(listed).To(ConsistOf(artifactIDs(recorded)))
+			Expect(listed).NotTo(ContainElement(expiredArtifact))
+		})
 
-	It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
-		unexpiredRecordedArtifacts()
-		listed := storedArtifacts(fixtureDir, fixtureLastAttempt)
-		Expect(listed).NotTo(BeEmpty())
+		It("writes a zip, or an expired or deleted tombstone, for every artifact listed for run 37129390741", func() {
+			unexpiredRecordedArtifacts()
+			listed := storedArtifacts(fixtureDir, fixtureLastAttempt)
+			Expect(listed).NotTo(BeEmpty())
 
-		for _, artifact := range listed {
-			dir := layout.ArtifactDir(fixtureDir, artifact.ID, artifact.Name)
-			zip, err := os.ReadFile(filepath.Join(dir, "artifact.zip"))
-			if err == nil {
-				recorded := filepath.Join(recordings.Dir(fixtureRun, fixtureStage), "artifacts", fmt.Sprintf("%d.zip", artifact.ID))
-				Expect(os.ReadFile(recorded)).To(Equal(zip), "artifact %d", artifact.ID)
-				continue
+			for _, artifact := range listed {
+				dir := layout.ArtifactDir(fixtureDir, artifact.ID, artifact.Name)
+				zip, err := os.ReadFile(filepath.Join(dir, "artifact.zip"))
+				if err == nil {
+					recorded := filepath.Join(recordings.Dir(fixtureRun, fixtureStage), "artifacts", fmt.Sprintf("%d.zip", artifact.ID))
+					Expect(os.ReadFile(recorded)).To(Equal(zip), "artifact %d", artifact.ID)
+					continue
+				}
+				Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(HaveKeyWithValue("reason", BeElementOf("expired", "deleted")), "artifact %d", artifact.ID)
 			}
-			Expect(readJSON(filepath.Join(dir, "artifact.zip.tombstone"))).To(HaveKeyWithValue("reason", BeElementOf("expired", "deleted")), "artifact %d", artifact.ID)
-		}
+		})
 	})
 
 	It("gives every job dir of runs 37129390741, 37129738159 and 37129867594 job.json plus exactly one of log.txt, log.txt.tombstone or an id in fetch.json carried_forward_jobs", func() {
