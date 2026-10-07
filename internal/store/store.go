@@ -589,7 +589,7 @@ func (m *member) Close() error {
 // on its own line for grep.
 func (u *Unit) WriteJSON(name string, raw []byte) error {
 	var buf bytes.Buffer
-	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+	if err := json.Indent(&buf, bytes.TrimRight(raw, " \t\r\n"), "", "  "); err != nil {
 		return err
 	}
 	buf.WriteByte('\n')

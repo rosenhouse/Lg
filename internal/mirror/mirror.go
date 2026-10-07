@@ -386,18 +386,7 @@ func (m *Mirror) addJob(ctx context.Context, gh github.Client, s *staged, attemp
 }
 
 func writeTombstone(unit *store.Unit, dir string, ts tombstone.Tombstone) error {
-	return writeValue(unit, filepath.Join(dir, ts.Target+".tombstone"), ts)
-}
-
-// writeValue stores v as JSON with <, > and & as they are, so rg finds them.
-func writeValue(unit *store.Unit, name string, v any) error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return err
-	}
-	return unit.WriteJSON(name, buf.Bytes())
+	return unit.WriteValue(filepath.Join(dir, ts.Target+".tombstone"), ts)
 }
 
 // fetch is an attempt's fetch.json.
@@ -446,7 +435,7 @@ type source struct {
 }
 
 func (m *Mirror) writeFetch(s *staged, run listedRun, attempt github.Run) error {
-	return writeValue(s.unit, "fetch.json", fetch{
+	return s.unit.WriteValue("fetch.json", fetch{
 		unitFetch:          m.unitFetch(run.Run, run.artifacts.origin),
 		Attempt:            attempt.RunAttempt,
 		Sources:            s.sources,

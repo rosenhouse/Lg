@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -59,7 +58,7 @@ func Extract(s *store.Store, artifactDir string, limits Limits, now time.Time) e
 	}
 	if err == nil {
 		x.manifest.Bytes = x.written
-		err = writeJSON(unit, Manifest, x.manifest)
+		err = unit.WriteValue(Manifest, x.manifest)
 	}
 	if err == nil {
 		err = s.Publish(unit, filepath.Join(artifactDir, "extracted"))
@@ -346,14 +345,4 @@ type record struct {
 	// Path is where the member went below extracted/.
 	Path   string `json:"path,omitempty"`
 	Reason string `json:"reason,omitempty"`
-}
-
-func writeJSON(unit *store.Unit, name string, v any) error {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return err
-	}
-	return unit.WriteJSON(name, buf.Bytes())
 }

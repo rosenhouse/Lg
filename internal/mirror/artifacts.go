@@ -210,7 +210,7 @@ func (m *Mirror) writeArtifactFetch(s *staged, run github.Run, o origin) error {
 	for i, pr := range run.PullRequests {
 		prs[i] = pr.Number
 	}
-	return writeValue(s.unit, "fetch.json", artifactFetch{
+	return s.unit.WriteValue("fetch.json", artifactFetch{
 		unitFetch:    m.unitFetch(run, o),
 		WorkflowID:   run.WorkflowID,
 		WorkflowName: run.Name,
