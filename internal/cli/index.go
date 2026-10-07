@@ -30,14 +30,14 @@ func (indexRebuildCmd) Run(deps *Deps) error {
 	return index.Rebuild(context.Background(), db, roots.Data, waitingFor(deps, db+".lock"))
 }
 
-// query runs read on the index of data/, reconciled. Before the first sync
-// creates data/, it reads nothing.
+// query runs read on the index of data/, reconciled. Before a sync puts
+// anything in data/, it reads nothing.
 func query(deps *Deps, read func(context.Context, *index.Index, config.Roots) error) error {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
 	}
-	if _, err := os.Lstat(roots.Data); errors.Is(err, fs.ErrNotExist) {
+	if entries, err := os.ReadDir(roots.Data); errors.Is(err, fs.ErrNotExist) || err == nil && len(entries) == 0 {
 		return nil
 	}
 	ctx := context.Background()
