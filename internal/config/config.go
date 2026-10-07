@@ -50,17 +50,26 @@ func (b *Bytes) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode {
 		return fmt.Errorf("line %d: want a size such as 500MB, not %s", node.Line, node.ShortTag())
 	}
-	m := size.FindStringSubmatch(node.Value)
+	parsed, err := ParseBytes(node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: %w", node.Line, err)
+	}
+	*b = parsed
+	return nil
+}
+
+// ParseBytes parses a size such as 500MB.
+func ParseBytes(s string) (Bytes, error) {
+	m := size.FindStringSubmatch(s)
 	if m == nil {
-		return fmt.Errorf("line %d: want a size such as 500MB, not %q", node.Line, node.Value)
+		return 0, fmt.Errorf("want a size such as 500MB, not %q", s)
 	}
 	n, err := strconv.ParseInt(m[1], 10, 64)
 	unit := sizeUnits[m[2]]
 	if err != nil || n > math.MaxInt64/unit {
-		return fmt.Errorf("line %d: size %q is too large", node.Line, node.Value)
+		return 0, fmt.Errorf("size %q is too large", s)
 	}
-	*b = Bytes(n * unit)
-	return nil
+	return Bytes(n * unit), nil
 }
 
 // Duration is a Go duration such as 1h or 0s, a whole number of days such
