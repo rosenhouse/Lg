@@ -69,7 +69,7 @@ func Intermittent() IntermittentRuns {
 
 	fork := FromFork(WithEvent(run(7, first.Add(3*Day+6*time.Hour)), "pull_request"), "someone/Lg")
 	runs.Fork = conclude(fork, "steady", "", "failure")
-	cancelled := run(8, first.Add(4*Day+6*time.Hour)).conclude(1, "completed", "cancelled")
+	cancelled := Cancel(run(8, first.Add(4*Day+6*time.Hour)), 1)
 	runs.Cancelled = conclude(cancelled, "steady", "", "cancelled")
 	return runs
 }
