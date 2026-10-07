@@ -256,6 +256,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 		Expect(f.files()).NotTo(HaveKey(HavePrefix("notes.gz.d")))
 		Expect(f.files()).NotTo(HaveKey(HavePrefix("fake.zip.d")))
+		Expect(f.manifest()["not_expanded"]).To(BeEmpty())
 	})
 
 	It("expands nested archives to 8 levels; deeper ones stay as files and are recorded", func() {
