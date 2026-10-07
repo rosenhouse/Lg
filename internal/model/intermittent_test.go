@@ -40,8 +40,8 @@ var _ = Describe("IsolatedFailures", Label("flakes"), func() {
 
 // firstAttempt is a job that ran in the first attempt of run on main of workflow 100,
 // which started hour hours after midnight.
-func firstAttempt(run int64, hour int, id int64, name, conclusion string, steps ...string) model.FirstAttemptJob {
-	return model.FirstAttemptJob{
+func firstAttempt(run int64, hour int, id int64, name, conclusion string, steps ...string) model.RunJob {
+	return model.RunJob{
 		AttemptJob: job(run, 1, id, name, conclusion, steps...),
 		HeadSHA:    fmt.Sprint("sha", run),
 		WorkflowID: 100, Workflow: "ci", Branch: "main",
@@ -49,12 +49,12 @@ func firstAttempt(run int64, hour int, id int64, name, conclusion string, steps 
 	}
 }
 
-func inWorkflow(j model.FirstAttemptJob, id int64, name string) model.FirstAttemptJob {
+func inWorkflow(j model.RunJob, id int64, name string) model.RunJob {
 	j.WorkflowID, j.Workflow = id, name
 	return j
 }
 
-func onBranch(j model.FirstAttemptJob, branch string) model.FirstAttemptJob {
+func onBranch(j model.RunJob, branch string) model.RunJob {
 	j.Branch = branch
 	return j
 }
@@ -65,7 +65,7 @@ func ran(run int64, conclusion string, logs ...string) model.RunOutcome {
 
 var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 	It("groups outcomes by workflow_id, branch and job name, and by step name within them, ordered by run_started_at", func() {
-		series := model.FirstAttemptSeries([]model.FirstAttemptJob{
+		series := model.FirstAttemptSeries([]model.RunJob{
 			firstAttempt(3, 1, 31, "test", "success", "go test", "success"),
 			// Workflow 100 is renamed by run 1, the latest.
 			inWorkflow(firstAttempt(1, 3, 11, "test", "failure", "go test", "failure"), 100, "CI"),
@@ -93,7 +93,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 	It("ignores skipped steps and jobs that did not run, and fails a name when any job of it failed", func() {
 		notApplicable := firstAttempt(3, 3, 31, "test", "failure", "unit", "failure")
 		notApplicable.Kind = model.NotApplicable
-		series := model.FirstAttemptSeries([]model.FirstAttemptJob{
+		series := model.FirstAttemptSeries([]model.RunJob{
 			firstAttempt(1, 1, 11, "test", "failure", "unit", "failure", "e2e", "skipped"),
 			firstAttempt(1, 1, 12, "test", "success", "unit", "success", "e2e", "success"),
 			firstAttempt(2, 2, 21, "test", "success", "unit", "success", "e2e", "success"),

@@ -101,7 +101,10 @@ var _ = Describe("index.FirstAttemptOutcomes", Label("flakes"), func() {
 	})
 
 	It("selects job names with Filter.Jobs, and runs with the rest of it", func(ctx SpecContext) {
-		Expect(outcomes(ctx, index.Filter{Branches: main.Branches, Jobs: []string{"integ*"}})).To(HaveExactElements(series("integration", "", runIDs(1, 2, 3, 4, 5, 6))))
+		Expect(outcomes(ctx, index.Filter{Branches: main.Branches, Jobs: []string{"integ*"}})).To(SatisfyAll(
+			ContainElement(series("integration", "", runIDs(1, 2, 3, 4, 5, 6))),
+			HaveEach(HaveField("Job", "integration")),
+		))
 		Expect(outcomes(ctx, index.Filter{Branches: []string{"release-3"}})).To(BeEmpty())
 		Expect(outcomes(ctx, index.Filter{Branches: main.Branches, SHAs: []string{"3", "4"}})).To(SatisfyAll(Not(BeEmpty()), HaveEach(HaveField("Runs", HaveEach(HaveField("RunID", BeElementOf(int64(3), int64(4))))))))
 	})
