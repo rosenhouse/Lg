@@ -4,11 +4,11 @@ package extract
 
 import (
 	"archive/tar"
-	"context"
 	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -61,7 +61,7 @@ func Extract(ctx context.Context, s *store.Store, artifactDir string, limits Lim
 	if err != nil {
 		return err
 	}
-	x := &extraction{unit: unit, limits: limits, names: newNamer(), manifest: newManifest(limits, now)}
+	x := &extraction{ctx: ctx, unit: unit, limits: limits, names: newNamer(), manifest: newManifest(limits, now)}
 	err = x.expandZip(zipFile, source, nil, 0)
 	if errors.As(err, new(corrupt)) {
 		err = fmt.Errorf("%s: %w", source, err)
@@ -80,6 +80,8 @@ func Extract(ctx context.Context, s *store.Store, artifactDir string, limits Lim
 }
 
 type extraction struct {
+	// ctx stops the copying of members when it is done.
+	ctx      context.Context
 	unit     *store.Unit
 	limits   Limits
 	names    *namer
@@ -262,7 +264,7 @@ func (x *extraction) copy(m member, rel string) error {
 		return err
 	}
 	// A member writes none of a chunk past its cap, so n is what it holds.
-	n, err := io.Copy(w, readErrors{r})
+	n, err := io.Copy(w, readErrors{x.ctx, r})
 	x.written += n
 	if closeErr := w.Close(); err == nil {
 		return closeErr
@@ -275,10 +277,17 @@ func (x *extraction) copy(m member, rel string) error {
 	return err
 }
 
-// readErrors marks the errors of reading an archive as corrupt.
-type readErrors struct{ r io.Reader }
+// readErrors marks the errors of reading an archive as corrupt, and stops
+// reading when ctx is done.
+type readErrors struct {
+	ctx context.Context
+	r   io.Reader
+}
 
 func (r readErrors) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
 	n, err := r.r.Read(p)
 	if err != nil && !errors.Is(err, io.EOF) {
 		err = corrupt{err}
