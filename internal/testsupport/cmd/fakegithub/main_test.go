@@ -289,7 +289,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		}
 
 		Expect(newest("-now", "2026-12-01T00:00:00Z")).To(Equal(time.Date(2026, 11, 30, 0, 0, 0, 0, time.UTC)))
-		Expect(newest()).To(BeTemporally("~", time.Now().Add(-24*time.Hour), time.Minute))
+		Expect(newest()).To(BeTemporally("~", clock.Real{}.Now().Add(-24*time.Hour), time.Minute))
 	})
 
 	It("exits 2 naming an unknown -scenario", Label("paths"), func() {
