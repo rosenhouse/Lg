@@ -19,6 +19,7 @@ Stale means the last successful sync is older than twice the sync_interval that 
 A mirror that is behind can miss recent runs, so run `lg sync --wait --timeout 90s` before you conclude there is no match.
 It waits for a fresh sync, by the daemon if one runs.
 Exit 4 means the sync has not finished, so do not conclude there is no match.
+Without a daemon, lg sync runs the sync itself, and `--timeout` limits only its wait for another lg, so a first sync can take minutes.
 
 ```sh
 lg status
@@ -75,7 +76,7 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 - `<owner>/<repo>` takes GitHub's spelling of the repository's name, whatever case the config uses, so take paths from `lg paths` or a glob rather than typing them.
 - The date dir is the UTC date the run was created. A rerun stays under that date.
 - Names keep `[A-Za-z0-9.-]`, so branch `feat/retry_upload` becomes `feat-retry-upload`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
-- A dir that exists is complete, and files never change. Expiry and eviction remove whole dirs.
+- Each `attempt-<N>/` and `extracted/` dir is complete once it appears, and files never change. A run dir gains attempts and artifacts, and an artifact dir gains `extracted/`. Expiry and eviction remove whole dirs.
 - JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg --no-config '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
 - `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
 - Each `log.txt` starts with a UTF-8 BOM, and every line starts with GitHub's timestamp prefix and a space, as in `2026-10-03T14:22:57.6677717Z ##[error]...`. Anchor patterns after it with `^[^ ]+ `, and drop it with `cut -d' ' -f2-`.
@@ -141,6 +142,7 @@ lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg w
 ## Flakes
 
 `lg flakes` reports flakes per job name and per (job name, step name).
+Without `--kind`, it reports both kinds.
 It judges a job and each of its steps on their own, so one flip often gives a line for the job and a line for the step.
 `lg flakes --kind rerun` finds a job or step that failed in one attempt of a run and passed in another, on the same SHA.
 An attempt that carries forward a failed job or step gives its name no success.
@@ -159,6 +161,12 @@ Lines of `lg flakes --kind rerun` read:
 ```text
 run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"
 run 37129390741 (sha 1a51097): "flaky" / "Fail on first attempt only": 1:failure 2:success 3:success
+```
+
+Lines of `lg flakes --kind intermittent` read:
+
+```text
+workflow "ci" on main: "test": 1 of 6 runs failed alone: run 18234567890 (sha a1b2c3d) failure
 ```
 
 ```sh

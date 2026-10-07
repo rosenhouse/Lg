@@ -15,6 +15,8 @@ import (
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/doctest"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	skill "github.com/rosenhouse/lg/skill/lg"
@@ -80,6 +82,17 @@ var _ = Describe("README.md", Label("skill"), func() {
 		} {
 			Expect(readme()).To(ContainSubstring(fmt.Sprintf("`%s`, %s by default", key, value)))
 		}
+	})
+})
+
+var _ = Describe("SKILL.md", Label("skill"), func() {
+	It("shows an intermittent line as lg flakes prints it", func() {
+		var line bytes.Buffer
+		Expect(cli.PrintIntermittent(&line, index.Intermittent{
+			Series:   model.Series{Workflow: "ci", Branch: "main", Job: "test", Runs: make([]model.RunOutcome, 6)},
+			Failures: []model.RunOutcome{{RunID: 18234567890, HeadSHA: "a1b2c3d4", Conclusion: "failure"}},
+		})).To(Succeed())
+		Expect(skill.Markdown).To(ContainSubstring("```text\n" + line.String() + "```\n"))
 	})
 })
 

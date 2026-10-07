@@ -37,6 +37,7 @@ With the daemon running, `lg sync` only asks for a sync; `lg sync --wait` also w
 `lg status` shows the last sync, the lag, pending units and why syncs are blocked.
 The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run.
 If it shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
+`lg status` names the fix, usually `gh auth login --insecure-storage`.
 `lg daemon uninstall` removes the service.
 The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
 On a headless Linux machine, run `loginctl enable-linger` so the unit outlives your login.
@@ -65,7 +66,7 @@ lg extract --branch main
 lg paths --unit extracted -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
 ```
 
-lg extract says "nothing to extract" when no artifact.zip matches its filters, or when each one is extracted already or is a tombstone.
+lg extract says "nothing to extract" when no artifact.zip matches its filters, or when each one is extracted already or its zip was gone or too large to fetch.
 
 Teach Claude Code to do all this:
 
@@ -88,7 +89,7 @@ lg skill install
 `<owner>/<repo>` is spelled as GitHub spells the repository's full name, while config.yaml and `lg status` keep the spelling given to `lg init --repo OWNER/NAME`.
 `<date>` is the run's UTC creation date.
 `<workflow>` and `<branch>` are slugs, so branch `feat/x` becomes `feat-x`.
-Each `attempt-N/`, artifact dir and `extracted/` dir is complete once it appears, and its files never change.
+Each `attempt-N/` and `extracted/` dir is complete once it appears, and files never change.
 A run dir gains attempts and artifacts as they finish, and an artifact dir gains `extracted/` when lg extract expands it.
 lg removes runs older than `retention`, 90d by default.
 While `data/` exceeds `disk_cap`, 50GB by default, lg removes `extracted/` trees first, then the oldest runs.

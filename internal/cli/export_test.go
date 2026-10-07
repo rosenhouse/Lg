@@ -73,3 +73,5 @@ var PrintFlip = printFlip
 type FlipJSON = flipJSON
 
 type IntermittentJSON = intermittentJSON
+
+var PrintIntermittent = printIntermittent
