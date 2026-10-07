@@ -47,7 +47,7 @@ func (c gcCmd) Run(deps *Deps) error {
 		}
 		return err
 	}
-	s, release, err := openExisting(roots, deps, c.Timeout)
+	s, release, err := openExisting(context.Background(), roots, deps, c.Timeout)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

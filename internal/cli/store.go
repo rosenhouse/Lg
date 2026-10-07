@@ -44,11 +44,11 @@ func checkHasStore(roots config.Roots) error {
 }
 
 // openExisting is openForWriting for a store that must already exist.
-func openExisting(roots config.Roots, deps *Deps, timeout time.Duration) (*store.Store, func(), error) {
+func openExisting(ctx context.Context, roots config.Roots, deps *Deps, timeout time.Duration) (*store.Store, func(), error) {
 	if err := checkHasStore(roots); err != nil {
 		return nil, nil, err
 	}
-	return openForWriting(roots, deps, timeout, func() error {
+	return openForWriting(ctx, roots, deps, timeout, func() error {
 		if !exists(filepath.Join(roots.Store, "FORMAT")) {
 			return noStore(roots)
 		}
@@ -62,8 +62,8 @@ const writeLockWait = 5 * time.Minute
 // openForWriting takes state/write.lock, as lockWrites does. Then it runs
 // check, unless it is nil, initializes the store and sweeps what dead writers
 // left in tmp/.
-func openForWriting(roots config.Roots, deps *Deps, timeout time.Duration, check func() error) (*store.Store, func(), error) {
-	held, err := lockWrites(context.Background(), roots, deps, timeout)
+func openForWriting(ctx context.Context, roots config.Roots, deps *Deps, timeout time.Duration, check func() error) (*store.Store, func(), error) {
+	held, err := lockWrites(ctx, roots, deps, timeout)
 	if err != nil {
 		return nil, nil, err
 	}

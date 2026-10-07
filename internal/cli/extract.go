@@ -67,11 +67,14 @@ func (c extractCmd) Validate() error {
 func (c extractCmd) Run(deps *Deps) error {
 	// A closed stdout must not stop extract between artifacts.
 	signal.Ignore(syscall.SIGPIPE)
+	// Ending ctx on a signal removes the artifact's staging from tmp/.
+	ctx, stop := signalContext()
+	defer stop()
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
 	}
-	s, release, err := openExisting(roots, deps, c.Timeout)
+	s, release, err := openExisting(ctx, roots, deps, c.Timeout)
 	if err != nil {
 		return failure.FromErrno(err)
 	}
@@ -83,7 +86,7 @@ func (c extractCmd) Run(deps *Deps) error {
 	var printErr error
 	anyExtracted := false
 	for _, dir := range dirs {
-		extracted, err := c.extract(deps, s, dir, limits)
+		extracted, err := c.extract(ctx, deps, s, dir, limits)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -120,7 +123,7 @@ func warnPastDiskCap(deps *Deps) {
 
 // extract extracts the artifact in dir, unless it has been, or its zip is a
 // tombstone, and reports whether it did.
-func (c extractCmd) extract(deps *Deps, s *store.Store, dir string, limits extract.Limits) (bool, error) {
+func (c extractCmd) extract(ctx context.Context, deps *Deps, s *store.Store, dir string, limits extract.Limits) (bool, error) {
 	switch {
 	case exists(filepath.Join(dir, "extracted")):
 		return false, nil
@@ -128,7 +131,7 @@ func (c extractCmd) extract(deps *Deps, s *store.Store, dir string, limits extra
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: skipped %s, whose artifact.zip is a tombstone\n", dir)
 		return false, nil
 	}
-	err := extract.Extract(context.Background(), s, dir, limits, deps.Clock.Now())
+	err := extract.Extract(ctx, s, dir, limits, deps.Clock.Now())
 	if errors.Is(err, store.ErrTooLarge) {
 		return false, fmt.Errorf("%s: extracted nothing, since its files exceed --max-bytes %d", dir, limits.MaxBytes)
 	}
