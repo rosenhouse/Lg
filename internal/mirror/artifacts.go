@@ -177,8 +177,8 @@ func (m *Mirror) stageZip(ctx context.Context, gh github.Client, s *staged, arti
 		return err
 	}
 	// A zip that does not match its digest is Transient, so the next cycle downloads it again.
-	if got, ok := s.sources["artifact.zip"]; ok && want != "" && got.SHA256 != want {
-		return failure.Transient{Err: fmt.Errorf("%s: sha256 %s does not match digest sha256:%s", url, got.SHA256, want)}
+	if got, ok := s.sources["artifact.zip"]; ok && want != "" && *got.SHA256 != want {
+		return failure.Transient{Err: fmt.Errorf("%s: sha256 %s does not match digest sha256:%s", url, *got.SHA256, want)}
 	}
 	return nil
 }

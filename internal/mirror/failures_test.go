@@ -295,6 +295,9 @@ var _ = Describe("attempt-N/fetch.json", Label("failures"), func() {
 		api := env.Fake.URL() + "/repos/rosenhouse/lg/actions/"
 		urls := map[string]string{}
 		for name, source := range fetch.Sources {
+			if name == "commit_pr_numbers" {
+				continue
+			}
 			urls[name] = source.URL
 			switch name {
 			case "jobs.json":

@@ -140,7 +140,7 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 	if err != nil {
 		return report, err
 	}
-	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs)
+	attemptsFailed, err := m.attemptPhase(ctx, gh, d.runs, lookups{})
 	report.Pending = append(report.Pending, attemptsFailed...)
 	if err != nil {
 		return report, err
@@ -222,14 +222,14 @@ func (m *Mirror) artifactPhase(ctx context.Context, gh github.Client, runs []lis
 // listed, and whose run_attempt it read after that, since each attempt holds
 // both. It goes oldest run first. It returns the errors that runScoped
 // accepts, and stops at any other.
-func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun) ([]UnitError, error) {
+func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []listedRun, l lookups) ([]UnitError, error) {
 	var failed []UnitError
 	for i := range runs {
 		run := &runs[i]
 		if run.artifacts == nil || !run.artifacts.runRead {
 			continue
 		}
-		runFailed, err := m.syncAttempts(ctx, gh, run)
+		runFailed, err := m.syncAttempts(ctx, gh, run, l)
 		failed = append(failed, runFailed...)
 		if err != nil {
 			return failed, err
@@ -241,10 +241,10 @@ func (m *Mirror) attemptPhase(ctx context.Context, gh github.Client, runs []list
 // syncAttempts publishes the run's planned attempts, and marks the run gone
 // at a 404. It returns the errors that runScoped accepts, and stops at any
 // other.
-func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun) ([]UnitError, error) {
+func (m *Mirror) syncAttempts(ctx context.Context, gh github.Client, run *listedRun, l lookups) ([]UnitError, error) {
 	var failed []UnitError
 	for _, n := range run.planned {
-		err := m.publishAttempt(ctx, gh, *run, n, layout.AttemptDir(run.dir, n))
+		err := m.publishAttempt(ctx, gh, *run, n, layout.AttemptDir(run.dir, n), l)
 		switch {
 		case errors.Is(err, errRunGone):
 			run.gone = true
@@ -305,7 +305,7 @@ func runScoped(err error) bool {
 // errRunGone is a 404 on an attempt or its jobs, which skips the run.
 var errRunGone = errors.New("run not found")
 
-func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run listedRun, n int, target string) error {
+func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run listedRun, n int, target string, l lookups) error {
 	attempt, attemptSource, err := gh.GetAttempt(ctx, run.ID, n)
 	if errors.Is(err, github.ErrNotFound) {
 		return errRunGone
@@ -329,11 +329,15 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run liste
 	if i := slices.IndexFunc(jobs, func(job github.Job) bool { return job.Status != "completed" }); i >= 0 {
 		return failure.Transient{Err: fmt.Errorf("job %d is %s", jobs[i].ID, jobs[i].Status)}
 	}
+	prs, prsSource, err := l.commitPRs(ctx, gh, attempt)
+	if err != nil {
+		return err
+	}
 	unit, err := m.Store.NewUnit()
 	if err != nil {
 		return err
 	}
-	s := &staged{unit: unit, sources: map[string]source{}, carriedForward: []int64{}}
+	s := &staged{unit: unit, sources: map[string]source{"commit_pr_numbers": prsSource}, carriedForward: []int64{}}
 	err = s.writeJSON("attempt.json", attempt.Raw, attemptSource)
 	if err == nil {
 		err = s.writeJSON("jobs.json", jsonArray(jobs, func(j github.Job) json.RawMessage { return j.Raw }), jobsSource)
@@ -345,7 +349,7 @@ func (m *Mirror) publishAttempt(ctx context.Context, gh github.Client, run liste
 		err = m.stageJobs(ctx, gh, s, attempt, jobs)
 	}
 	if err == nil {
-		err = m.writeFetch(s, run, attempt)
+		err = m.writeFetch(s, run, attempt, prs)
 	}
 	if err == nil {
 		err = m.Store.Publish(unit, target)
@@ -396,6 +400,8 @@ type fetch struct {
 	Sources map[string]source `json:"sources"`
 	// CarriedForwardJobs are the jobs whose logs are under the attempt that ran them.
 	CarriedForwardJobs []int64 `json:"carried_forward_jobs"`
+	// CommitPRNumbers are the pull requests from the run's head that list its head SHA.
+	CommitPRNumbers []int `json:"commit_pr_numbers"`
 }
 
 // unitFetch is what every fetch.json records.
@@ -426,20 +432,23 @@ func (m *Mirror) unitFetch(run github.Run, o origin) unitFetch {
 	}
 }
 
+// source is where a file, or the value of a fetch.json field, came from.
 type source struct {
 	URL    string `json:"url"`
 	Status int    `json:"status"`
 	Pages  int    `json:"pages,omitempty"`
-	Bytes  int64  `json:"bytes"`
-	SHA256 string `json:"sha256"`
+	// Bytes and SHA256 are a file's, and nil for a field's value.
+	Bytes  *int64  `json:"bytes,omitempty"`
+	SHA256 *string `json:"sha256,omitempty"`
 }
 
-func (m *Mirror) writeFetch(s *staged, run listedRun, attempt github.Run) error {
+func (m *Mirror) writeFetch(s *staged, run listedRun, attempt github.Run, prs []int) error {
 	return s.unit.WriteValue("fetch.json", fetch{
 		unitFetch:          m.unitFetch(run.Run, run.artifacts.origin),
 		Attempt:            attempt.RunAttempt,
 		Sources:            s.sources,
 		CarriedForwardJobs: s.carriedForward,
+		CommitPRNumbers:    prs,
 	})
 }
 
@@ -462,7 +471,7 @@ func (s *staged) record(name string, from github.Source) error {
 	if err != nil {
 		return err
 	}
-	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: sum.Bytes, SHA256: sum.SHA256}
+	s.sources[filepath.ToSlash(name)] = source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages, Bytes: &sum.Bytes, SHA256: &sum.SHA256}
 	return nil
 }
 
@@ -497,25 +506,4 @@ func jsonArray[T any](elements []T, raw func(T) json.RawMessage) []byte {
 		raws[i] = raw(e)
 	}
 	return append(append([]byte("["), bytes.Join(raws, []byte(","))...), ']')
-}
-
-// matchingPRs gives the numbers of the pulls whose head is the run's head
-// branch and repository, sorted. A null head repo, on either side, matches
-// only a run from a fork.
-func matchingPRs(run model.RunRepositories, headBranch string, pulls []github.CommitPull) []int {
-	numbers := []int{}
-	for _, pr := range pulls {
-		if pr.HeadRef == headBranch && sameHeadRepo(run, pr.HeadRepoID) {
-			numbers = append(numbers, pr.Number)
-		}
-	}
-	slices.Sort(numbers)
-	return slices.Compact(numbers)
-}
-
-func sameHeadRepo(run model.RunRepositories, prRepo int64) bool {
-	if !run.FromFork() {
-		return prRepo == run.Repository.ID
-	}
-	return prRepo == 0 || run.HeadRepository == nil || prRepo == run.HeadRepository.ID
 }

@@ -79,3 +79,58 @@ var _ = Describe("a sync whose commit lookup returns 403 with X-Accepted-GitHub-
 		Expect(env.AttemptDirs(prRunID)).To(BeEmpty())
 	}, cycleTimeout)
 })
+
+var _ = Describe("the commit lookup", Label("prs"), func() {
+	var (
+		env *harness.InProcessEnv
+		// rerun and pushed share a head SHA, whose commit lists PR pr from branch.
+		rerun  = scenario.WithCommitPulls(scenario.OnBranch(scenario.CloneAt(22, "after-attempt-2", harness.DefaultNow().Add(-3*scenario.Day)), branch), scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID})
+		pushed = scenario.OnBranch(scenario.CloneAt(23, "after-attempt-1", harness.DefaultNow().Add(-2*scenario.Day)), "main")
+	)
+	const sha = "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
+
+	lookups := func() int {
+		count := 0
+		for _, r := range env.Fake.Requests() {
+			if r.Path == "/repos/rosenhouse/lg/commits/"+sha+"/pulls" {
+				count++
+			}
+		}
+		return count
+	}
+
+	BeforeEach(func() {
+		env = harness.InProcess()
+		Expect(env.Fake.AddRun(rerun)).To(Succeed())
+		Expect(env.Fake.AddRun(pushed)).To(Succeed())
+	})
+
+	It("looks each SHA up once per cycle, and filters the listed PRs for each run", func(ctx SpecContext) {
+		Expect(env.Sync(ctx)).To(Succeed())
+
+		Expect(lookups()).To(Equal(1))
+		Expect(fetchOf(attemptDir(env, 22, 1))).To(HaveKeyWithValue("commit_pr_numbers", ConsistOf(BeEquivalentTo(pr))))
+		Expect(fetchOf(attemptDir(env, 22, 2))).To(HaveKeyWithValue("commit_pr_numbers", ConsistOf(BeEquivalentTo(pr))))
+		Expect(fetchOf(attemptDir(env, 23, 1))).To(HaveKeyWithValue("commit_pr_numbers", BeEmpty()))
+	}, cycleTimeout)
+
+	It("keeps a failed lookup's error for the rest of the cycle, leaving every attempt of the SHA pending", func(ctx SpecContext) {
+		env.Fake.Fail("api", "/pulls", fakegithub.Fault{Status: http.StatusInternalServerError, Times: 1})
+
+		Expect(env.Sync(ctx)).To(MatchError(ContainSubstring("500")))
+
+		Expect(lookups()).To(Equal(1))
+		Expect(env.AttemptDirs(22)).To(BeEmpty())
+		Expect(env.AttemptDirs(23)).To(BeEmpty())
+	}, cycleTimeout)
+
+	It("records commit_pr_numbers' source in fetch.json: the URL, status and pages", func(ctx SpecContext) {
+		Expect(env.Sync(ctx)).To(Succeed())
+
+		Expect(fetchOf(attemptDir(env, 23, 1))).To(HaveKeyWithValue("sources", HaveKeyWithValue("commit_pr_numbers", Equal(map[string]any{
+			"url":    env.Fake.URL() + "/repos/rosenhouse/lg/commits/" + sha + "/pulls?per_page=100",
+			"status": 200.0,
+			"pages":  1.0,
+		}))))
+	}, cycleTimeout)
+})
