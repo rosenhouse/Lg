@@ -1,6 +1,7 @@
 package extract_test
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -167,6 +168,35 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 	})
 
+	It("slugifies a name holding NUL or invalid UTF-8, which a filesystem may refuse", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "dir/bad\xff.log", Body: "utf8\n"},
+			archives.Entry{Name: "nul\x00.log", Body: "nul\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("dir/bad-.log", "utf8\n"), HaveKeyWithValue("nul-.log", "nul\n")))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "dir/bad\ufffd.log", "path", "dir/bad-.log", "reason", "invalid"),
+			record("archive", "artifact.zip", "name", "nul\x00.log", "path", "nul-.log", "reason", "invalid"),
+		))
+	})
+
+	It("counts the depth of a nested archive's members from extracted/", func() {
+		deep := strings.Repeat("d/", 30) + "deep.log"
+		deeper := strings.Repeat("e/", 31) + "deeper.log"
+		f := newFixture(archives.Zip(archives.Entry{Name: "n.zip", Body: string(archives.Zip(
+			archives.Entry{Name: deep, Body: "32 deep\n"},
+			archives.Entry{Name: deeper, Body: "33 deep\n"},
+		))}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveKeyWithValue("n.zip.d/"+deep, "32 deep\n"),
+			HaveKeyWithValue("n.zip.d/"+strings.Repeat("e/", 30)+"e-deeper.log", "33 deep\n"),
+		))
+	})
+
 	It("detects nested archives by magic bytes, whatever their names: zip, gzip+tar and tar; a gzip of no tar stays a file", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "report.bin", Body: string(archives.Zip(archives.Entry{Name: "a.log", Body: "zip\n"}))},
@@ -216,6 +246,119 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.files()).To(HaveKey(deep))
 		Expect(f.files()).NotTo(HaveKey(HavePrefix(deep + ".d")))
 		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", deep, "path", deep, "reason", "too_deep")))
+	})
+
+	DescribeTable("skips, and records why, a member that is not a regular file inside extracted/",
+		func(entry archives.Entry, reason string) {
+			f := newFixture(archives.Zip(
+				archives.Entry{Name: "ok.txt", Body: "kept\n"},
+				archives.Entry{Name: "member.tar", Body: string(archives.Tar(entry))},
+			))
+
+			Expect(f.extract(extract.Defaults())).To(Succeed())
+			Expect(f.files()).To(SatisfyAll(HaveLen(3), HaveKey("ok.txt"), HaveKey("member.tar"), HaveKey(".lg-extract.json")))
+			Expect(f.manifest()["skipped"]).To(ConsistOf(record("archive", "member.tar", "name", entry.Name, "reason", reason)))
+		},
+		Entry("a .. path", archives.Entry{Name: "a/../../escape.txt", Body: "x\n"}, "outside"),
+		Entry("an absolute path", archives.Entry{Name: "/absolute.txt", Body: "x\n"}, "absolute"),
+		Entry("a symlink", archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "/etc/passwd"}, "symlink"),
+		Entry("a hardlink", archives.Entry{Name: "hard", TarType: tar.TypeLink, Link: "ok.txt"}, "hardlink"),
+		Entry("a char device", archives.Entry{Name: "dev", Mode: fs.ModeDevice | fs.ModeCharDevice | 0o600}, "device"),
+		Entry("a block device", archives.Entry{Name: "blk", Mode: fs.ModeDevice | 0o600}, "device"),
+		Entry("a FIFO", archives.Entry{Name: "fifo", Mode: fs.ModeNamedPipe | 0o600}, "fifo"),
+	)
+
+	It("skips, and records, a zip's symlink, device and FIFO members", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "../../../etc/passwd"},
+			archives.Entry{Name: "dev", Mode: fs.ModeDevice | 0o600},
+			archives.Entry{Name: "fifo", Mode: fs.ModeNamedPipe | 0o600},
+			archives.Entry{Name: "socket", Mode: fs.ModeSocket | 0o600},
+			archives.Entry{Name: "../escape.txt", Body: "x\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(ConsistOf(Not(BeEmpty())))
+		Expect(f.manifest()["skipped"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "link", "reason", "symlink"),
+			record("archive", "artifact.zip", "name", "dev", "reason", "device"),
+			record("archive", "artifact.zip", "name", "fifo", "reason", "fifo"),
+			record("archive", "artifact.zip", "name", "socket", "reason", "special"),
+			record("archive", "artifact.zip", "name", "../escape.txt", "reason", "outside"),
+		))
+	})
+
+	It("writes setuid and setgid members without those bits, and records them", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "setuid", Body: "#!/bin/sh\n", Mode: fs.ModeSetuid | 0o755},
+			archives.Entry{Name: "plain", Body: "#!/bin/sh\n", Mode: 0o755},
+			archives.Entry{Name: "member.tar", Body: string(archives.Tar(archives.Entry{Name: "setgid", Body: "x\n", Mode: fs.ModeSetgid | 0o755}))},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		for _, name := range []string{"setuid", "plain", "member.tar.d/setgid"} {
+			info, err := os.Stat(filepath.Join(f.extracted, name))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Mode()&(fs.ModeSetuid|fs.ModeSetgid)).To(BeZero(), name)
+		}
+		Expect(f.manifest()["setuid_dropped"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "setuid", "path", "setuid"),
+			record("archive", "member.tar", "name", "setgid", "path", "member.tar.d/setgid"),
+		))
+	})
+
+	It("keeps every member whose name another took, even in another case, under a ~N suffix that keeps it within 200 bytes and whole runes", func() {
+		long := strings.Repeat("l", 200)
+		accented := strings.Repeat("a", 197) + "\u00e9"
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "dup.txt", Body: "1\n"},
+			archives.Entry{Name: "dup.txt", Body: "2\n"},
+			archives.Entry{Name: "Case.txt", Body: "3\n"},
+			archives.Entry{Name: "case.txt", Body: "4\n"},
+			archives.Entry{Name: "CASE.TXT", Body: "5\n"},
+			archives.Entry{Name: "dir/a.txt", Body: "6\n"},
+			archives.Entry{Name: "dir/b.txt", Body: "7\n"},
+			archives.Entry{Name: "DIR/c.txt", Body: "8\n"},
+			archives.Entry{Name: "x", Body: "9\n"},
+			archives.Entry{Name: "x/y", Body: "10\n"},
+			archives.Entry{Name: ".lg-extract.json", Body: "11\n"},
+			archives.Entry{Name: long, Body: "12\n"},
+			archives.Entry{Name: long, Body: "13\n"},
+			archives.Entry{Name: accented, Body: "14\n"},
+			archives.Entry{Name: accented, Body: "15\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveKeyWithValue("dup.txt", "1\n"), HaveKeyWithValue("dup.txt~1", "2\n"),
+			HaveKeyWithValue("Case.txt", "3\n"), HaveKeyWithValue("case.txt~1", "4\n"), HaveKeyWithValue("CASE.TXT~2", "5\n"),
+			HaveKeyWithValue("dir/a.txt", "6\n"), HaveKeyWithValue("dir/b.txt", "7\n"), HaveKeyWithValue("DIR~1/c.txt", "8\n"),
+			HaveKeyWithValue("x", "9\n"), HaveKeyWithValue("x~1/y", "10\n"),
+			HaveKeyWithValue(".lg-extract.json~1", "11\n"),
+			HaveKeyWithValue(long, "12\n"), HaveKeyWithValue(long[:198]+"~1", "13\n"),
+			HaveKeyWithValue(accented, "14\n"), HaveKeyWithValue(accented[:197]+"~1", "15\n"),
+		))
+		Expect(f.manifest()["renamed"]).To(HaveLen(8))
+		Expect(f.manifest()["renamed"]).To(HaveEach(HaveKeyWithValue("reason", "collision")))
+	})
+
+	It("names a member whose name is only dots and slashes none", func() {
+		f := newFixture(archives.Zip(archives.Entry{Name: "member.tar", Body: string(archives.Tar(archives.Entry{Name: ".", TarType: tar.TypeReg, Body: "dot\n"}))}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(HaveKeyWithValue("member.tar.d/none", "dot\n"))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "member.tar", "name", ".", "path", "member.tar.d/none", "reason", "invalid")))
+	})
+
+	It("copies members larger than one read, byte for byte", func() {
+		big := strings.Repeat("0123456789abcdef", 64*1024)
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "big.log", Body: big},
+			archives.Entry{Name: "big.tar", Body: string(archives.Tar(archives.Entry{Name: "big.log", Body: big}))},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("big.log", big), HaveKeyWithValue("big.tar.d/big.log", big)))
 	})
 
 	It("keeps a nested archive that does not read as a file, and records why", func() {

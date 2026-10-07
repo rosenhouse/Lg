@@ -110,21 +110,19 @@ func (d node) place(name string, k kind) (string, node, bool) {
 // components splits a member's name into names for files and dirs, slugifying
 // one that is too long or that a filesystem may refuse.
 func components(name string) ([]string, string) {
-	var parts []string
-	reason := ""
-	for _, part := range strings.Split(path.Clean(name), "/") {
-		switch {
-		case part == "" || part == ".":
-			continue
-		case len(part) > maxComponent:
-			part, reason = layout.Slug(part), first(reason, "too_long")
-		case strings.ContainsRune(part, 0) || !utf8.ValidString(part):
-			part, reason = layout.Slug(part), first(reason, "invalid")
-		}
-		parts = append(parts, part)
+	clean := path.Clean(name)
+	if clean == "." {
+		return []string{"none"}, "invalid"
 	}
-	if len(parts) == 0 {
-		return []string{"none"}, first(reason, "invalid")
+	parts := strings.Split(clean, "/")
+	reason := ""
+	for i, part := range parts {
+		switch {
+		case len(part) > maxComponent:
+			parts[i], reason = layout.Slug(part), first(reason, "too_long")
+		case strings.ContainsRune(part, 0) || !utf8.ValidString(part):
+			parts[i], reason = layout.Slug(part), first(reason, "invalid")
+		}
 	}
 	return parts, reason
 }
