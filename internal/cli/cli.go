@@ -63,9 +63,9 @@ type commands struct {
 	Version versionCmd `cmd:"" help:"Print lg's version."`
 }
 
-const description = `lg mirrors one GitHub repository's Actions runs, attempts, job logs and artifacts into plain files for rg, grep and jq.
+var description = `lg mirrors one GitHub repository's Actions runs, attempts, job logs and artifacts into plain files for rg, grep and jq.
 
-Start with lg init --repo OWNER/NAME, then lg sync, or lg daemon install to sync every 10 minutes. lg takes its token from gh auth token. LG_HOME moves the store from ~/.local/share/lg, and LG_CONFIG moves the config from ~/.config/lg/config.yaml.
+Start with lg init --repo OWNER/NAME, then lg sync, or lg daemon install to sync every sync_interval, ` + config.Defaults().SyncInterval.String() + ` by default. lg takes its token from gh auth token. LG_HOME moves the store from ~/.local/share/lg, and LG_CONFIG moves the config from ~/.config/lg/config.yaml.
 
 Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout.`
 

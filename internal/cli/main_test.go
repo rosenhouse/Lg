@@ -13,6 +13,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 )
 
@@ -68,11 +69,12 @@ var _ = Describe("Main", Label("cli"), func() {
 		Expect(stdout.String()).To(HavePrefix("Usage: lg <command>"))
 	})
 
-	It("says in --help how to start, where the token comes from, which env vars move lg's files, and what each exit code means", func() {
+	It("says in --help how to start, how often the daemon syncs, where the token comes from, which env vars move lg's files, and what each exit code means", func() {
 		Expect(run(map[string]string{}, "--help")).To(Equal(0))
 		help := strings.Join(strings.Fields(stdout.String()), " ")
 		Expect(help).To(And(
 			ContainSubstring("Start with lg init --repo OWNER/NAME"),
+			ContainSubstring("lg daemon install to sync every sync_interval, "+config.Defaults().SyncInterval.String()+" by default."),
 			ContainSubstring("gh auth token"),
 			ContainSubstring("LG_HOME moves the store"),
 			ContainSubstring("LG_CONFIG moves the config"),
