@@ -489,6 +489,26 @@ var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
 		Expect(run.Files).NotTo(HaveKey("attempt-2/jobs.json"))
 	})
 
+	It("gives the new attempt, and each of its jobs, its own attempt number and URLs", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		attempts := "https://api.github.com/repos/rosenhouse/Lg/actions/runs/7/attempts/"
+		for _, file := range []string{"attempt-2/attempt.json", "run.json"} {
+			Expect(field(rerun, file, "previous_attempt_url")).To(Equal(attempts+"1"), file)
+		}
+		Expect(field(rerun, "attempt-2/attempt.json", "jobs_url")).To(Equal(attempts + "2/jobs"))
+		Expect(field(rerun, "attempt-2/attempt.json", "logs_url")).To(Equal(attempts + "2/logs"))
+		for _, job := range jobs(rerun, "attempt-2") {
+			id := fmt.Sprint(int64(job["id"].(float64)))
+			Expect(job).To(SatisfyAll(
+				HaveKeyWithValue("run_attempt", BeEquivalentTo(2)),
+				HaveKeyWithValue("url", HaveSuffix("/jobs/"+id)),
+				HaveKeyWithValue("html_url", HaveSuffix("/runs/7/job/"+id)),
+				HaveKeyWithValue("check_run_url", HaveSuffix("/check-runs/"+id)),
+			))
+		}
+	})
+
 	It("concludes the re-run jobs and their steps success, keeping the carried ones' conclusions", func() {
 		rerun := scenario.AddRerunAttempt(scenario.SetJobConclusion(run, 1, run.JobIDs(1, "pass")[0], "failure"), "flaky")
 

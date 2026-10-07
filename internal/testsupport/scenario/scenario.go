@@ -524,7 +524,7 @@ func (r Run) editJob(attempt int, jobID int64, edit func(map[string]any)) Run {
 
 // AddRerunAttempt adds an attempt, a minute after the latest ends, that
 // re-runs the jobs named and carries every other job forward. Each job gets
-// a new id and its log; the re-run jobs and all their steps succeed.
+// a new id, its URLs and its log; the re-run jobs and all their steps succeed.
 func AddRerunAttempt(r Run, jobs ...string) Run {
 	out := r.copy()
 	var run struct {
@@ -551,7 +551,10 @@ func AddRerunAttempt(r Run, jobs ...string) Run {
 		job := j.(map[string]any)
 		id++
 		old, renumbered := job["id"].(json.Number).String(), strconv.FormatInt(id, 10)
-		job["id"] = json.Number(renumbered)
+		job["id"], job["run_attempt"] = json.Number(renumbered), next
+		for _, key := range []string{"url", "html_url", "check_run_url"} {
+			job[key] = strings.Replace(job[key].(string), old, renumbered, 1)
+		}
 		if slices.Contains(jobs, job["name"].(string)) {
 			rerunJob(job, started.Add(2*time.Second))
 		}
@@ -565,8 +568,14 @@ func AddRerunAttempt(r Run, jobs ...string) Run {
 	conclude := func(run map[string]any) {
 		run["run_attempt"], run["status"], run["conclusion"] = next, "completed", conclusion
 		run["run_started_at"], run["updated_at"] = started.Format(time.RFC3339), started.Add(2*time.Minute).Format(time.RFC3339)
+		run["previous_attempt_url"] = fmt.Sprintf("%s/attempts/%d", run["url"], latest)
 	}
-	out.edit(attemptFile(next, "attempt.json"), conclude)
+	out.edit(attemptFile(next, "attempt.json"), func(attempt map[string]any) {
+		conclude(attempt)
+		for _, key := range []string{"jobs_url", "logs_url"} {
+			attempt[key] = strings.Replace(attempt[key].(string), fmt.Sprintf("/attempts/%d/", latest), fmt.Sprintf("/attempts/%d/", next), 1)
+		}
+	})
 	out.edit("run.json", conclude)
 	return out
 }
