@@ -24,7 +24,7 @@ var _ = Describe("ShBlocks", Label("skill"), func() {
 })
 
 var _ = Describe("LgCommands", Label("skill"), func() {
-	It("finds each lg invocation in sh blocks and inline code, with its arguments unquoted", func() {
+	It("finds each lg invocation in sh blocks and inline code, with its arguments unquoted, reading an unclosed quote or substitution to the end of the line", func() {
 		md := "Run `lg status` first, and `lg sync --wait`. Not `rg lg` or `lg`.\n" +
 			"```sh\n" +
 			"lg paths --branch main -0 | xargs -0 rg -n 'foo bar'  # lg here is a comment\n" +
@@ -33,6 +33,13 @@ var _ = Describe("LgCommands", Label("skill"), func() {
 			"if ! lg where x; then echo; fi\n" +
 			"lg paths --sha abc \\\n" +
 			"  --unit attempt\n" +
+			"lg paths --job 'a b' --pr 42 | jq .\n" +
+			"lg where 'unclosed\n" +
+			"lg where \"unclosed\n" +
+			"lg paths --pr 42|jq .\n" +
+			"lg paths --job \"a \\\"b\\\"\" --job x\\ y\n" +
+			"n=$(lg flakes --json | jq '(.run_id)')\n" +
+			"echo $(lg root\n" +
 			"```\n" +
 			"```json\n" +
 			"lg version\n" +
@@ -48,6 +55,13 @@ var _ = Describe("LgCommands", Label("skill"), func() {
 			{Line: 5, Args: []string{"status"}},
 			{Line: 6, Args: []string{"where", "x"}},
 			{Line: 7, Args: []string{"paths", "--sha", "abc", "--unit", "attempt"}},
+			{Line: 9, Args: []string{"paths", "--job", "a b", "--pr", "42"}},
+			{Line: 10, Args: []string{"where", "unclosed"}},
+			{Line: 11, Args: []string{"where", "unclosed"}},
+			{Line: 12, Args: []string{"paths", "--pr", "42"}},
+			{Line: 13, Args: []string{"paths", "--job", `a "b"`, "--job", "x y"}},
+			{Line: 14, Args: []string{"flakes", "--json"}},
+			{Line: 15, Args: []string{"root"}},
 		}))
 	})
 })
