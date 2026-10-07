@@ -19,6 +19,8 @@ const (
 	prRunID  = 21
 	prNumber = 61
 	prBranch = "fix-upload"
+	// sha is the head SHA of every run cloned from the fixture run.
+	sha = "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
 )
 
 // prRun is a pull_request run whose commit lists PR prNumber from its branch.
@@ -59,7 +61,7 @@ var _ = Describe("a sync whose commit lookup returns 422", Label("prs"), func() 
 		Expect(fetchOf(env, prRunID, 1)).To(SatisfyAll(
 			HaveKeyWithValue("commit_pr_numbers", BeEmpty()),
 			HaveKeyWithValue("sources", HaveKeyWithValue("commit_pr_numbers", Equal(map[string]any{
-				"url":    env.Fake.URL() + "/repos/rosenhouse/lg/commits/1a51097dadb5b55978ac401b93f1ca9d8d317b02/pulls?per_page=100",
+				"url":    env.Fake.URL() + "/repos/rosenhouse/lg/commits/" + sha + "/pulls?per_page=100",
 				"status": 422.0,
 				"pages":  1.0,
 			}))),
@@ -70,7 +72,7 @@ var _ = Describe("a sync whose commit lookup returns 422", Label("prs"), func() 
 		env := harness.InProcess()
 		Expect(env.Fake.AddRun(scenario.WithCommitPulls(prRun(), scenario.CommitPull{Number: prNumber, HeadRef: prBranch, HeadRepoID: scenario.RepoID}, scenario.CommitPull{Number: prNumber + 1, HeadRef: prBranch, HeadRepoID: scenario.RepoID}))).To(Succeed())
 		env.Fake.SetPageCap(1)
-		env.Fake.Fail("api", "/repositories/1402714635/commits/1a51097dadb5b55978ac401b93f1ca9d8d317b02/pulls", fakegithub.Fault{Status: http.StatusUnprocessableEntity})
+		env.Fake.Fail("api", "/repositories/1402714635/commits/"+sha+"/pulls", fakegithub.Fault{Status: http.StatusUnprocessableEntity})
 
 		err := env.Sync(ctx)
 		Expect(err).To(MatchError(ContainSubstring("422")))
@@ -98,7 +100,6 @@ var _ = Describe("the commit lookup", Label("prs"), func() {
 		rerun  = scenario.WithCommitPulls(scenario.OnBranch(scenario.CloneAt(22, "after-attempt-2", harness.DefaultNow().Add(-2*scenario.Day)), prBranch), scenario.CommitPull{Number: prNumber, HeadRef: prBranch, HeadRepoID: scenario.RepoID})
 		pushed = scenario.OnBranch(scenario.CloneAt(23, "after-attempt-1", harness.DefaultNow().Add(-3*scenario.Day)), "main")
 	)
-	const sha = "1a51097dadb5b55978ac401b93f1ca9d8d317b02"
 
 	lookups := func() int {
 		count := 0
