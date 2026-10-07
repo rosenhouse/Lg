@@ -1,12 +1,14 @@
 package e2e_test
 
 import (
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,6 +18,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
+	"github.com/rosenhouse/lg/internal/testsupport/treesnap"
 	skill "github.com/rosenhouse/lg/skill/lg"
 )
 
@@ -76,7 +79,10 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 	)
 })
 
-// These specs only read the store, so they share one sync and extract.
+// docBlockTimeout bounds one SKILL.md block, which may run several lg commands.
+const docBlockTimeout = 60 * time.Second
+
+// These specs share one synced and extracted store.
 var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() {
 	var env *harness.Env
 
@@ -85,9 +91,14 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 		bin := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(bin, "sqlite3"), []byte("#!/bin/sh\necho 'sqlite3 is unavailable' >&2\nexit 127\n"), 0o755)).To(Succeed())
 		env.PrependPath(bin)
+		// An ignore file above the store must not hide it from rg.
+		parent := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(parent, ".ignore"), []byte("*\n"), 0o644)).To(Succeed())
+		env.Setenv("LG_HOME", filepath.Join(parent, "lg's store"))
+
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
-		for _, r := range scenario.Archaeology().All() {
+		for _, r := range append(scenario.Archaeology().All(), intermittentOnMain()...) {
 			Expect(fake.AddRun(r)).To(Succeed())
 		}
 		env.WriteConfig(fake.URL(), "backfill: 60d")
@@ -102,11 +113,24 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 	It("runs every ```sh block with /bin/bash -euo pipefail against a store synced from the recordings and Archaeology() and then extracted, each exiting 0, on Linux and on macOS (bash 3.2, BSD tools, no sqlite3)", func() {
 		blocks := doctest.ShBlocks(skill.Markdown)
 		Expect(blocks).NotTo(BeEmpty())
+		before := treesnap.Snapshot(env.Data())
+		var printed strings.Builder
 		for _, b := range blocks {
 			session := env.Bash(b.Text)
-			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(), "line %d", b.Line)
+			Eventually(session, docBlockTimeout).Should(gexec.Exit(), "line %d", b.Line)
 			Expect(session.ExitCode()).To(Equal(0), "the block on line %d:\n%s\nprinted:\n%s%s", b.Line, b.Text, session.Out.Contents(), session.Err.Contents())
+			Expect(session.Out.Contents()).NotTo(BeEmpty(), "the block on line %d:\n%s\nprinted nothing", b.Line, b.Text)
+			printed.Write(session.Out.Contents())
 		}
+		Expect(treesnap.Snapshot(env.Data())).To(treesnap.BeAppendOnlyFrom(before))
+
+		Expect(printed.String()).To(And(
+			ContainSubstring("2026-08-20 run 1\n"),
+			ContainSubstring("flaky\tFail on first attempt only\tfailure success success\n"),
+			ContainSubstring("pass-artifact\tinner.tar.gz.d/tgz/nested.log\n"),
+			MatchRegexp(`(?m)^[^\t\n]+\t[^\t\n]+/log\.txt$`),
+			MatchRegexp(`on main: "flaky": [^\n]* run 10 `),
+		), printed.String())
 	})
 
 	It("names every file kind a sync and an extract write (attempt.json, jobs.json, artifacts.json, fetch.json, job.json, log.txt, *.tombstone, artifact.json, artifact.zip, extracted/)", func() {
@@ -133,3 +157,16 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 		}
 	})
 })
+
+// intermittentOnMain gives push runs 9 to 11 on main, between Archaeology's
+// runs 2 and 6. Job flaky fails only in run 10.
+func intermittentOnMain() []scenario.Run {
+	var runs []scenario.Run
+	for i, conclusion := range []string{"success", "failure", "success"} {
+		id := int64(9 + i)
+		r := scenario.CloneAt(id, "after-attempt-1", time.Date(2026, 9, 11+i, 12, 0, 0, 0, time.UTC))
+		r = scenario.WithSHA(scenario.OnBranch(r, "main"), strings.Repeat(fmt.Sprintf("%x", id), 40))
+		runs = append(runs, scenario.SetJobConclusion(r, 1, r.JobIDs(1, "flaky")[0], conclusion))
+	}
+	return runs
+}

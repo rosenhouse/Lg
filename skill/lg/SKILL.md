@@ -73,9 +73,11 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 - JSON files hold GitHub's API bodies, re-indented with two spaces, so `jq` paths match the GitHub REST docs and `rg '"head_sha": "1a51097'` finds a commit.
 - Each `log.txt` starts with a UTF-8 BOM, and every line starts with GitHub's timestamp prefix and a space, as in `2026-10-03T14:22:57.6677717Z ##[error]...`. Anchor patterns after it with `^[^ ]+ `, and drop it with `cut -d' ' -f2-`.
 
+When rg walks the store, pass `-u` so that ignore files above it do not hide files.
+
 ```sh
 cd "$(lg root)"
-rg -l '"head_sha": "1a51097' --glob attempt.json
+rg -u -l '"head_sha": "1a51097' --glob attempt.json
 lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -f2- | sort | uniq -c | sort -rn
 ```
 
@@ -139,9 +141,9 @@ lg flakes --kind intermittent --branch main --since 30d
 ## A commit or a pull request
 
 ```sh
-lg paths --sha 1a51097 --unit attempt | grep '/attempt.json$' | xargs -r jq -r '[.id, .run_attempt, .conclusion, .run_started_at] | @tsv'
-lg paths --pr 42 --unit attempt | grep '/attempt.json$' | xargs -r jq -r '[.id, .run_attempt, .event, .conclusion] | @tsv'
-lg paths --pr 42 --unit job | xargs -r jq -r '[.run_attempt, .name, .conclusion] | @tsv'
+lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .conclusion, .run_started_at] | @tsv'
+lg paths --pr 42 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .event, .conclusion] | @tsv'
+lg paths --pr 42 --unit job -0 | xargs -0 -r jq -r '[.run_attempt, .name, .conclusion] | @tsv'
 ```
 
 ## Reruns and carried-forward jobs
@@ -181,5 +183,5 @@ A unit that failed for a transient reason, such as a GitHub outage, is pending: 
 
 ```sh
 cd "$(lg root)"
-rg -l '"reason": "deleted"' --glob '*.tombstone'
+rg -u -l '"reason": "deleted"' --glob '*.tombstone'
 ```
