@@ -168,6 +168,10 @@ var _ = Describe("Archaeology", Label("paths"), func() {
 		Expect(a.All()).To(HaveLen(8))
 	})
 
+	It("serves BuildArtifactZip(FooBar) as Release3's pass-artifact", func() {
+		Expect(scenario.Archaeology().Release3.Files["artifacts/3011276272069.zip"].Data).To(Equal(scenario.BuildArtifactZip(scenario.FooBar)))
+	})
+
 	It("gives every run its own SHA", func() {
 		shas := map[any]bool{}
 		for _, r := range scenario.Archaeology().All() {
