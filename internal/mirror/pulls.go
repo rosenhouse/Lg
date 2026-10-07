@@ -26,7 +26,7 @@ type lookup struct {
 func (l lookups) commitPRs(ctx context.Context, gh github.Client, attempt github.Run) ([]int, source, error) {
 	found, ok := l[attempt.HeadSHA]
 	if !ok {
-		found = lookUp(ctx, gh, attempt.HeadSHA)
+		found = listCommitPulls(ctx, gh, attempt.HeadSHA)
 		l[attempt.HeadSHA] = found
 	}
 	if found.err != nil {
@@ -39,15 +39,18 @@ func (l lookups) commitPRs(ctx context.Context, gh github.Client, attempt github
 	return matchingPRs(repos, attempt.HeadBranch, found.pulls), found.source, nil
 }
 
-// lookUp lists the commit's pull requests. GitHub answers 422 for a commit
-// it does not know, which lists none.
-func lookUp(ctx context.Context, gh github.Client, sha string) lookup {
+// listCommitPulls lists the commit's pull requests. A commit GitHub does
+// not know lists none.
+func listCommitPulls(ctx context.Context, gh github.Client, sha string) lookup {
 	pulls, from, err := gh.CommitPulls(ctx, sha)
-	var statusErr *github.StatusError
-	if errors.As(err, &statusErr) && statusErr.Status == http.StatusUnprocessableEntity {
-		return lookup{source: source{URL: statusErr.URL, Status: statusErr.Status}}
+	status := http.StatusOK
+	switch {
+	case errors.Is(err, github.ErrUnknownCommit):
+		status = http.StatusUnprocessableEntity
+	case err != nil:
+		return lookup{err: err}
 	}
-	return lookup{pulls: pulls, source: source{URL: from.URL, Status: http.StatusOK, Pages: from.Pages}, err: err}
+	return lookup{pulls: pulls, source: source{URL: from.URL, Status: status, Pages: from.Pages}}
 }
 
 // matchingPRs gives the numbers of the pulls whose head is the run's head

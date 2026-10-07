@@ -64,8 +64,24 @@ var _ = Describe("a sync whose commit lookup returns 422", Label("prs"), func() 
 		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(fetchOf(attemptDir(env, prRunID, 1))).To(SatisfyAll(
 			HaveKeyWithValue("commit_pr_numbers", BeEmpty()),
-			HaveKeyWithValue("sources", HaveKeyWithValue("commit_pr_numbers", HaveKeyWithValue("status", BeEquivalentTo(http.StatusUnprocessableEntity)))),
+			HaveKeyWithValue("sources", HaveKeyWithValue("commit_pr_numbers", Equal(map[string]any{
+				"url":    env.Fake.URL() + "/repos/rosenhouse/lg/commits/1a51097dadb5b55978ac401b93f1ca9d8d317b02/pulls?per_page=100",
+				"status": 422.0,
+				"pages":  1.0,
+			}))),
 		))
+	}, cycleTimeout)
+
+	It("on a later page leaves the attempt pending", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Fake.AddRun(scenario.WithCommitPulls(prRun(), scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID}, scenario.CommitPull{Number: pr + 1, HeadRef: branch, HeadRepoID: scenario.RepoID}))).To(Succeed())
+		env.Fake.SetPageCap(1)
+		env.Fake.Fail("api", "/repositories/1402714635/commits/1a51097dadb5b55978ac401b93f1ca9d8d317b02/pulls", fakegithub.Fault{Status: http.StatusUnprocessableEntity})
+
+		err := env.Sync(ctx)
+		Expect(err).To(MatchError(ContainSubstring("422")))
+		Expect(mirror.RunScoped(err)).To(BeTrue())
+		Expect(env.AttemptDirs(prRunID)).To(BeEmpty())
 	}, cycleTimeout)
 })
 

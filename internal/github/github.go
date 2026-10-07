@@ -171,6 +171,8 @@ var (
 	ErrGone        = errors.New("gone")
 	// ErrUnauthorized marks a Blocked caused by the API's 401.
 	ErrUnauthorized = errors.New("unauthorized")
+	// ErrUnknownCommit is GitHub's 422 to the first page of a commit's pulls.
+	ErrUnknownCommit = errors.New("unknown commit")
 )
 
 type unauthorized struct{ failure.Blocked }
@@ -729,11 +731,14 @@ func (p *CommitPull) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// CommitPulls lists the pull requests that hold the commit sha.
+// CommitPulls lists the pull requests that hold the commit sha. It gives
+// ErrUnknownCommit, with the listing's source, for a commit GitHub does not know.
 func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Source, error) {
 	listURL := h.repoURL + "/commits/" + url.PathEscape(sha) + "/pulls?per_page=100"
 	var pulls []CommitPull
+	read := 0
 	pages, _, err := h.paginate(ctx, listURL, func(resp *http.Response) (bool, error) {
+		read++
 		var page []CommitPull
 		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 			return false, &MalformedError{Err: err}
@@ -741,6 +746,10 @@ func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Sourc
 		pulls = append(pulls, page...)
 		return false, nil
 	})
+	var statusErr *StatusError
+	if read == 0 && errors.As(err, &statusErr) && statusErr.Status == http.StatusUnprocessableEntity {
+		return nil, Source{URL: listURL, Pages: 1}, ErrUnknownCommit
+	}
 	if err != nil {
 		return nil, Source{}, err
 	}
