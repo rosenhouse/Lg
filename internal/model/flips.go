@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// AttemptJob is a job of one attempt of a run, with the path of its log, or "".
+// AttemptJob is a job of one attempt of a run, with the path of its log.
 type AttemptJob struct {
 	RunID   int64
 	Attempt int
@@ -106,9 +106,7 @@ func (f *Flip) observe(j AttemptJob, conclusion string) {
 	if !failing(conclusion) && conclusion != "success" {
 		return
 	}
-	if j.Log != "" {
-		f.Logs = appendNew(f.Logs, j.Log)
-	}
+	f.Logs = appendNew(f.Logs, j.Log)
 	last := len(f.Outcomes) - 1
 	switch {
 	case last < 0 || f.Outcomes[last].Attempt != j.Attempt:

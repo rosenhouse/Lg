@@ -23,7 +23,7 @@ func job(run int64, attempt int, id int64, name, conclusion string, steps ...str
 }
 
 func kind(j model.AttemptJob, k model.JobKind) model.AttemptJob {
-	j.Kind, j.Log = k, ""
+	j.Kind = k
 	return j
 }
 
@@ -166,14 +166,6 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 		})
 
 		Expect(flips).To(HaveExactElements(HaveField("Logs", []string{"attempt-1/11/log.txt", "attempt-3/31/log.txt"})))
-	})
-
-	It("lists the logs of a flip without the jobs that have none", func() {
-		noLog := job(1, 2, 21, "test", "success")
-		noLog.Log = ""
-		flips := model.RerunFlips([]model.AttemptJob{job(1, 1, 11, "test", "failure"), noLog})
-
-		Expect(flips).To(HaveExactElements(HaveField("Logs", []string{"attempt-1/11/log.txt"})))
 	})
 
 	It("reports nothing for a name that only failed, or only passed and was skipped", func() {
