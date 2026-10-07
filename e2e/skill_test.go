@@ -70,7 +70,14 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		Expect(stale).NotTo(BeAnExistingFile())
 	})
 
-	DescribeTable("installs, printing nothing on stderr, whatever state the store is in",
+	It("prints the D24 warning, like every command", func() {
+		env := harness.New(lgPath)
+		session := env.Lg("skill", "install")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(string(session.Err.Contents())).To(Equal("lg: warning: never synced; run `lg sync`\n"))
+	})
+
+	DescribeTable("installs, printing no error, whatever state the store is in",
 		func(storeEnv func(env *harness.Env)) {
 			env := harness.New(lgPath)
 			claude := GinkgoT().TempDir()
@@ -80,10 +87,11 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 			session := env.Lg("skill", "install")
 
 			Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-			Expect(session.Err.Contents()).To(BeEmpty())
+			for _, line := range strings.SplitAfter(string(session.Err.Contents()), "\n") {
+				Expect(line).To(Or(BeEmpty(), HavePrefix("lg: warning: ")))
+			}
 			Expect(os.ReadFile(filepath.Join(claude, "skills", "lg", "SKILL.md"))).To(Equal([]byte(skill.Markdown)))
 		},
-		Entry("a store never synced", func(*harness.Env) {}),
 		Entry("a store dir holding files lg did not write", func(env *harness.Env) {
 			foreign := GinkgoT().TempDir()
 			Expect(os.WriteFile(filepath.Join(foreign, "notes.txt"), []byte("hi\n"), 0o644)).To(Succeed())
