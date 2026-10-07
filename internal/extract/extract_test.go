@@ -323,21 +323,39 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 	})
 
+	It("skips dir entries, recording those that carry data", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "logs/", Mode: fs.ModeDir | 0o755},
+			archives.Entry{Name: "logs/a.log", Body: "a\n"},
+			archives.Entry{Name: "dirmode", Mode: fs.ModeDir | 0o755, Body: "hidden\n"},
+			archives.Entry{Name: "member.tar", Body: string(archives.Tar(
+				archives.Entry{Name: "tlogs/", Mode: fs.ModeDir | 0o755},
+				archives.Entry{Name: "tlogs/b.log", Body: "b\n"},
+			))},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveLen(4), HaveKeyWithValue("logs/a.log", "a\n"), HaveKeyWithValue("member.tar.d/tlogs/b.log", "b\n")))
+		Expect(f.manifest()["skipped"]).To(ConsistOf(record("archive", "artifact.zip", "name", "dirmode", "reason", "dir_with_data")))
+	})
+
 	It("writes setuid and setgid members without those bits, and records them", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "setuid", Body: "#!/bin/sh\n", Mode: fs.ModeSetuid | 0o755},
+			archives.Entry{Name: "setgid", Body: "#!/bin/sh\n", Mode: fs.ModeSetgid | 0o755},
 			archives.Entry{Name: "plain", Body: "#!/bin/sh\n", Mode: 0o755},
 			archives.Entry{Name: "member.tar", Body: string(archives.Tar(archives.Entry{Name: "setgid", Body: "x\n", Mode: fs.ModeSetgid | 0o755}))},
 		))
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
-		for _, name := range []string{"setuid", "plain", "member.tar.d/setgid"} {
+		for _, name := range []string{"setuid", "setgid", "plain", "member.tar.d/setgid"} {
 			info, err := os.Stat(filepath.Join(f.extracted, name))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Mode()&(fs.ModeSetuid|fs.ModeSetgid)).To(BeZero(), name)
 		}
 		Expect(f.manifest()["setuid_dropped"]).To(ConsistOf(
 			record("archive", "artifact.zip", "name", "setuid", "path", "setuid"),
+			record("archive", "artifact.zip", "name", "setgid", "path", "setgid"),
 			record("archive", "member.tar", "name", "setgid", "path", "member.tar.d/setgid"),
 		))
 	})
@@ -379,6 +397,17 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 		Expect(f.manifest()["renamed"]).To(HaveLen(9))
 		Expect(f.manifest()["renamed"]).To(HaveEach(HaveKeyWithValue("reason", "collision")))
+	})
+
+	It("expands a nested archive into <archive>.d~N when a member took <archive>.d", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "a.zip.d/a.log", Body: "member\n"},
+			archives.Entry{Name: "a.zip", Body: string(archives.Zip(archives.Entry{Name: "a.log", Body: "nested\n"}))},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("a.zip.d/a.log", "member\n"), HaveKeyWithValue("a.zip.d~1/a.log", "nested\n")))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", "a.zip.d", "path", "a.zip.d~1", "reason", "collision")))
 	})
 
 	It("names a member whose name is only dots and slashes none", func() {

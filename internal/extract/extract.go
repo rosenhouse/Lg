@@ -103,10 +103,13 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 	}
 	for _, file := range r.File {
 		mode := file.Mode()
-		if mode.IsDir() {
-			continue
-		}
 		m := member{name: file.Name, skip: skipped(mode), setuid: mode&(fs.ModeSetuid|fs.ModeSetgid) != 0, open: file.Open}
+		if mode.IsDir() {
+			if file.UncompressedSize64 == 0 {
+				continue
+			}
+			m.skip = "dir_with_data"
+		}
 		if err := x.write(m, archive, dir, level); err != nil {
 			return err
 		}
@@ -246,9 +249,8 @@ func (r readErrors) Read(p []byte) (int, error) {
 }
 
 var (
-	zipMagic      = []byte("PK\x03\x04")
-	emptyZipMagic = []byte("PK\x05\x06")
-	gzipMagic     = []byte("\x1f\x8b")
+	zipMagic  = []byte("PK\x03\x04")
+	gzipMagic = []byte("\x1f\x8b")
 )
 
 // expandNested expands the file at rel, a member of archive, into rel.d/
@@ -315,7 +317,7 @@ func sniff(f *os.File) (string, error) {
 	head = head[:n]
 	kind := ""
 	switch {
-	case bytes.HasPrefix(head, zipMagic) || bytes.HasPrefix(head, emptyZipMagic):
+	case bytes.HasPrefix(head, zipMagic):
 		kind = "zip"
 	case isTar(head):
 		kind = "tar"
