@@ -234,9 +234,9 @@ func (f *placeFinder) find(hit string) (place, error) {
 // relToData gives path relative to data, whose real path is realData, with
 // the symlinks in path resolved too.
 func relToData(realData, data, path string) (string, error) {
-	real, err := filepath.EvalSymlinks(path)
+	real, err := filepath.Abs(path)
 	if err == nil {
-		real, err = filepath.Abs(real)
+		real, err = filepath.EvalSymlinks(real)
 	}
 	if err != nil {
 		return "", err

@@ -252,6 +252,20 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(filepath.Join(runDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
 	})
+
+	It("takes a PATH relative to a working dir reached through a symlink", func() {
+		env := harness.New(lgPath)
+		link := filepath.Join(GinkgoT().TempDir(), "link")
+		Expect(os.Symlink(GinkgoT().TempDir(), link)).To(Succeed())
+		env.Setenv("LG_HOME", link)
+		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		runDir := filepath.Join(env.Data(), fixtureRunDir)
+
+		session := env.Sh("cd '" + runDir + "' && lg extract artifacts/11276272069_pass-artifact")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(filepath.Join(runDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
+	})
 })
 
 var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
