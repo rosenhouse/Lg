@@ -122,6 +122,8 @@ type artifactPlace struct {
 	Artifact          string            `json:"artifact"`
 	AttributedAttempt *int              `json:"attributed_attempt"`
 	Attribution       model.Attribution `json:"attribution"`
+	// InnerPath is the path below extracted/ of a file lg extract wrote.
+	InnerPath string `json:"inner_path,omitempty"`
 }
 
 type tombstonePlace struct {
@@ -387,6 +389,9 @@ func describeRun(data string, loc layout.Location, facts runFacts) (place, error
 			return place{}, unread("its artifact " + filepath.Base(loc.ArtifactDir))
 		}
 		p.artifactPlace = artifactOf(rows.Artifacts[i])
+		if inner, ok := strings.CutPrefix(filepath.ToSlash(loc.File), "extracted/"); ok {
+			p.InnerPath = inner
+		}
 	}
 	p.Conclusion = conclusionOf(rows, p)
 	if facts.err != nil {

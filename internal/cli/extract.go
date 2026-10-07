@@ -1,0 +1,171 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"time"
+
+	"github.com/alecthomas/kong"
+
+	"github.com/rosenhouse/lg/internal/config"
+	"github.com/rosenhouse/lg/internal/extract"
+	"github.com/rosenhouse/lg/internal/failure"
+	"github.com/rosenhouse/lg/internal/index"
+	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/store"
+)
+
+type extractCmd struct {
+	filters  `embed:""`
+	All      bool          `help:"Extract every artifact."`
+	MaxBytes size          `default:"1GB" help:"Extract no artifact whose files, nested archives expanded, exceed this."`
+	Timeout  time.Duration `default:"${write_lock_wait}" help:"How long to wait for another lg writing the store."`
+	Paths    []string      `arg:"" optional:"" name:"path" help:"An artifact dir, or a file in one."`
+}
+
+func (extractCmd) Help() string {
+	return "Expands each selected artifact.zip, and the zip, tar and tar.gz archives nested in it, into extracted/ beside it. " +
+		"An artifact already extracted, or whose zip is a tombstone, is skipped. extracted/.lg-extract.json records what was renamed or skipped."
+}
+
+// size is a --max-bytes.
+type size config.Bytes
+
+func (s *size) Decode(ctx *kong.DecodeContext) error {
+	var v string
+	if err := ctx.Scan.PopValueInto("size", &v); err != nil {
+		return err
+	}
+	parsed, err := config.ParseBytes(v)
+	*s = size(parsed)
+	return err
+}
+
+func (c extractCmd) Validate() error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	selected := !c.filters.empty() || len(c.Paths) > 0
+	switch {
+	case c.All && selected:
+		return errors.New("--all takes no filters or PATHs")
+	case !c.All && !selected:
+		return errors.New("give filters, PATHs or --all")
+	}
+	return validateTimeout(c.Timeout)
+}
+
+// Run prints the extracted/ dir of each artifact it extracts.
+func (c extractCmd) Run(deps *Deps) error {
+	roots, err := config.Locations(deps.Env)
+	if err != nil {
+		return err
+	}
+	format := filepath.Join(roots.Store, "FORMAT")
+	if !exists(format) && !exists(filepath.Join(roots.State, "write.lock")) {
+		return noStore(roots)
+	}
+	s, release, err := openForWriting(roots, deps, c.Timeout, func() error {
+		if !exists(format) {
+			return noStore(roots)
+		}
+		return nil
+	})
+	if err != nil {
+		return failure.FromErrno(err)
+	}
+	defer release()
+	dirs, selectErr := c.selected(deps, roots)
+	limits := extract.Defaults()
+	limits.MaxBytes = int64(c.MaxBytes)
+	errs := []error{selectErr}
+	for _, dir := range dirs {
+		extracted, err := c.extract(deps, s, dir, limits)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if extracted {
+			if _, err := fmt.Fprintln(deps.Stdout, filepath.Join(dir, "extracted")); err != nil {
+				return err
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// extract extracts the artifact in dir, unless it has been, or its zip is a
+// tombstone, and reports whether it did.
+func (c extractCmd) extract(deps *Deps, s *store.Store, dir string, limits extract.Limits) (bool, error) {
+	switch {
+	case exists(filepath.Join(dir, "extracted")):
+		return false, nil
+	case exists(filepath.Join(dir, "artifact.zip.tombstone")):
+		_, _ = fmt.Fprintf(deps.Stderr, "lg: skipped %s, whose artifact.zip is a tombstone\n", dir)
+		return false, nil
+	}
+	err := extract.Extract(s, dir, limits, deps.Clock.Now())
+	if errors.Is(err, store.ErrTooLarge) {
+		return false, fmt.Errorf("%s: extracted nothing, since its files exceed --max-bytes %d", dir, limits.MaxBytes)
+	}
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", dir, err)
+	}
+	return true, nil
+}
+
+// selected gives the artifact dirs that the PATHs name, or else those of the
+// artifacts that the filters, or --all, select.
+func (c extractCmd) selected(deps *Deps, roots config.Roots) ([]string, error) {
+	if len(c.Paths) > 0 {
+		return artifactDirs(roots.Data, c.Paths)
+	}
+	var dirs []string
+	err := query(deps, func(ctx context.Context, ix *index.Index, _ config.Roots) error {
+		zips, err := ix.Paths(ctx, c.filter(deps.Clock.Now()), index.UnitArtifact)
+		for _, zip := range zips {
+			dirs = append(dirs, filepath.Dir(zip))
+		}
+		return err
+	})
+	return dirs, err
+}
+
+// artifactDirs gives the artifact dir under data holding each path, once.
+func artifactDirs(data string, paths []string) ([]string, error) {
+	var dirs []string
+	var errs []error
+	for _, path := range paths {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		rel, err := filepath.Rel(data, abs)
+		if err != nil || !filepath.IsLocal(rel) {
+			errs = append(errs, fmt.Errorf("%s is outside %s", path, data))
+			continue
+		}
+		loc, err := layout.Parse(rel)
+		if err == nil && loc.ArtifactDir == "" {
+			err = fmt.Errorf("%s is not in an artifact dir", path)
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		dir := filepath.Join(data, loc.ArtifactDir)
+		if _, err := os.Stat(dir); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !slices.Contains(dirs, dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs, errors.Join(errs...)
+}

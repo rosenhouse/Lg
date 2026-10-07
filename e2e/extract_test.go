@@ -209,7 +209,7 @@ var _ = Describe("lg extract", Label("extract"), func() {
 
 		none := extract(env)
 		Expect(none).To(gexec.Exit(2))
-		Expect(none.Err).To(gbytes.Say(regexp.QuoteMeta("lg: give filters, PATHs or --all")))
+		Expect(none.Err).To(gbytes.Say(regexp.QuoteMeta("lg: extract: give filters, PATHs or --all")))
 		Expect(extractedDirs(env)).To(BeEmpty())
 
 		Expect(extract(env, "--branch", "main")).To(gexec.Exit(0))
@@ -323,7 +323,7 @@ var _ = Describe("lg extract --max-bytes", Label("extract"), func() {
 
 		help := extract(env, "--help")
 		Expect(help).To(gexec.Exit(0))
-		Expect(help.Out).To(gbytes.Say(`--max-bytes=.*\(default: 1GB\)`))
+		Expect(help.Out).To(gbytes.Say(`--max-bytes=1GB `))
 
 		Expect(extract(env, "--max-bytes", "1000", dir)).To(gexec.Exit(0))
 		Expect(filepath.Join(dir, "extracted", "big.log")).To(BeARegularFile())

@@ -40,6 +40,11 @@ func (p filters) validate() error {
 	return nil
 }
 
+// empty reports whether no filter is given.
+func (p filters) empty() bool {
+	return len(p.Branch)+len(p.SHA)+len(p.PR)+len(p.Workflow)+len(p.Job)+len(p.Event)+len(p.Conclusion) == 0 && !p.Since.set && !p.Until.set
+}
+
 // moment is a --since or --until: a duration before now, or a time.
 type moment struct {
 	set bool

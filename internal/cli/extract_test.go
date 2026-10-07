@@ -56,7 +56,7 @@ var _ = DescribeTable("lg extract exits 2", Label("extract"),
 	},
 	Entry("given --all and a filter", []string{"--all", "--branch", "main"}, "--all takes no filters or PATHs"),
 	Entry("given --all and a PATH", []string{"--all", "x"}, "--all takes no filters or PATHs"),
-	Entry("given a negative --timeout", []string{"--all", "--timeout", "-1s"}, "--timeout must not be negative"),
+	Entry("given a negative --timeout", []string{"--all", "--timeout=-1s"}, "--timeout must not be negative"),
 	Entry("given a --max-bytes that is not a size", []string{"--all", "--max-bytes", "1 GB"}, `want a size such as 500MB, not "1 GB"`),
 	Entry("when LG_HOME holds no store", []string{"--all"}, "holds no lg store; check LG_HOME"),
 )

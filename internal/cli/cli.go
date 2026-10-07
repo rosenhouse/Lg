@@ -56,6 +56,7 @@ type commands struct {
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
 	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another, or failed alone on the default branch."`
+	Extract extractCmd `cmd:"" help:"Expand artifacts' zips, and the archives in them, into extracted/ beside each zip, for grep or rg."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
