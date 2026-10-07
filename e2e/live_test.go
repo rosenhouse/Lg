@@ -269,6 +269,7 @@ var _ = Describe("live", Label("live"), Ordered, func() {
 			fixtureRun:     expiring(fixtureRun, "after-attempt-1"),
 			logsDeletedRun: expiring(logsDeletedRun, "logs-deleted"),
 		}
+		// A failed download leaves each one pending until the live sync.
 		for _, artifacts := range listed {
 			Expect(artifacts).To(HaveLen(1))
 			fake.Fail("blob", fmt.Sprintf("/artifacts/%d.zip", artifacts[0].ID), fakegithub.Fault{Status: http.StatusServiceUnavailable})
