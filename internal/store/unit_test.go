@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -37,6 +38,21 @@ var _ = Describe("Unit", Label("sync"), func() {
 
 		Expect(os.ReadFile(filepath.Join(target, "a.json"))).To(Equal([]byte(
 			"{\n  \"z\": 1.50,\n  \"a\": [\n    1e3,\n    {}\n  ],\n  \"s\": \"\\u00e9\\/<\"\n}\n")))
+	})
+
+	It("opens a closed member for reading, and refuses one still open", func() {
+		w, err := unit.Create("a/b.zip", store.Unlimited)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = unit.Open("a/b.zip")
+		Expect(err).To(MatchError(ContainSubstring(`member "a/b.zip" is not closed`)))
+		_, err = w.Write([]byte("zip"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w.Close()).To(Succeed())
+
+		f, err := unit.Open("a/b.zip")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(f.Close)
+		Expect(io.ReadAll(f)).To(Equal([]byte("zip")))
 	})
 
 	It("publishes members created in subdirs by renaming the staged unit into place", func() {

@@ -467,6 +467,11 @@ func (u *Unit) Sum(name string) (Sum, error) {
 	return sum, nil
 }
 
+// Open opens a closed member for reading.
+func (u *Unit) Open(name string) (*os.File, error) {
+	return nil, nil
+}
+
 // Remove deletes a closed member.
 func (u *Unit) Remove(name string) error {
 	if _, closed := u.sums[name]; !closed {
