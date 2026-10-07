@@ -3,9 +3,74 @@ package index
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/rosenhouse/lg/internal/model"
 )
+
+// Intermittent is a series with the runs that failed alone in it.
+type Intermittent struct {
+	model.Series
+	Failures []model.RunOutcome
+}
+
+// firstAttemptRuns selects runs by the start of their first attempt and by
+// the conclusion of their latest.
+var firstAttemptRuns = source{
+	from: "runs r JOIN attempts x ON x.path = r.path || '/attempt-1'",
+	when: "x.run_started_at", conclusion: latestConclusion,
+}
+
+// IntermittentFailures gives each series, of a job name or a step name of it,
+// that failed alone in the first attempt of a run f selects. A series holds
+// every run of f's branches, workflows and events, among the jobs whose names
+// match f.Jobs; the rest of f selects only the failures. It leaves out
+// pull_request and pull_request_target runs, and runs whose first attempt was
+// cancelled. With the series it returns the error of each log of their
+// failures it could not read.
+func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermittent, error) {
+	seriesRuns := Filter{Branches: f.Branches, Workflows: f.Workflows, Events: f.Events, Jobs: f.Jobs}
+	jobs, restarted, err := ix.flakeJobs(ctx, seriesRuns, "x.attempt = 1",
+		"r.event NOT IN ('pull_request', 'pull_request_target')", "a.conclusion IS NOT 'cancelled'")
+	if err != nil {
+		return nil, errors.Join(restarted, err)
+	}
+	failureRuns := Filter{SHAs: f.SHAs, PRs: f.PRs, Conclusions: f.Conclusions, Since: f.Since, Until: f.Until}
+	selected, err := ix.runIDs(ctx, firstAttemptRuns, failureRuns)
+	if err != nil {
+		return nil, errors.Join(restarted, err)
+	}
+	var found []Intermittent
+	logs := newLogsOnDisk()
+	for _, s := range model.FirstAttemptSeries(jobs) {
+		failures := slices.DeleteFunc(s.IsolatedFailures(), func(r model.RunOutcome) bool { return !selected[r.RunID] })
+		for i := range failures {
+			failures[i].Logs = logs.keep(slices.Clone(failures[i].Logs))
+		}
+		if len(failures) > 0 {
+			found = append(found, Intermittent{Series: s, Failures: failures})
+		}
+	}
+	return found, errors.Join(restarted, logs.err())
+}
+
+// runIDs gives the ids of the runs s selects with f.
+func (ix *Index) runIDs(ctx context.Context, s source, f Filter) (map[int64]bool, error) {
+	w := s.where(f)
+	rows, err := ix.db.QueryContext(ctx, "SELECT r.run_id FROM "+s.from+w.clause(), w.args...)
+	if err != nil {
+		return nil, ix.dbError(err)
+	}
+	ids := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Join(ix.dbError(err), rows.Close())
+		}
+		ids[id] = true
+	}
+	return ids, ix.dbError(errors.Join(rows.Err(), rows.Close()))
+}
 
 // FirstAttemptOutcomes gives the series of each job name, and each step name
 // of it, over the first attempts of the runs f selects, among the jobs whose
@@ -19,21 +84,11 @@ func (ix *Index) FirstAttemptOutcomes(ctx context.Context, f Filter) ([]model.Se
 		return nil, errors.Join(restarted, err)
 	}
 	series := model.FirstAttemptSeries(jobs)
-	logs := logsOnDisk{unread: []error{restarted}}
+	logs := newLogsOnDisk()
 	for _, s := range series {
 		for i := range s.Runs {
 			s.Runs[i].Logs = logs.keep(s.Runs[i].Logs)
 		}
 	}
-	return series, errors.Join(logs.unread...)
-}
-
-// Intermittent is a series with the runs that failed alone in it.
-type Intermittent struct {
-	model.Series
-	Failures []model.RunOutcome
-}
-
-func (ix *Index) IntermittentFailures(ctx context.Context, f Filter) ([]Intermittent, error) {
-	return nil, nil
+	return series, errors.Join(restarted, logs.err())
 }

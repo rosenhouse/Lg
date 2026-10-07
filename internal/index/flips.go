@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"time"
@@ -17,9 +18,9 @@ type Flip struct {
 	HeadSHA string
 }
 
-// flipRuns selects runs by the start of any of their attempts and by the
+// flakeRuns selects runs by the start of any of their attempts and by the
 // conclusion of the latest.
-var flipRuns = source{
+var flakeRuns = source{
 	from: "runs r JOIN attempts x ON " + within,
 	when: "x.run_started_at", conclusion: latestConclusion,
 }
@@ -40,12 +41,12 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 		headSHAs[j.RunID] = j.HeadSHA
 	}
 	var flips []Flip
-	logs := logsOnDisk{unread: []error{restarted}}
+	logs := newLogsOnDisk()
 	for _, flip := range model.RerunFlips(attemptJobs) {
 		flip.Logs = logs.keep(flip.Logs)
 		flips = append(flips, Flip{Flip: flip, HeadSHA: headSHAs[flip.RunID]})
 	}
-	return flips, errors.Join(logs.unread...)
+	return flips, errors.Join(restarted, logs.err())
 }
 
 // logsOnDisk keeps the logs that are regular files, and the error of each it
@@ -55,19 +56,20 @@ type logsOnDisk struct {
 	unread  []error
 }
 
+func newLogsOnDisk() *logsOnDisk { return &logsOnDisk{regular: map[string]bool{}} }
+
 func (d *logsOnDisk) keep(logs []string) []string {
 	return slices.DeleteFunc(logs, func(log string) bool {
 		if _, seen := d.regular[log]; !seen {
 			files, err := regular(filepath.Dir(log), filepath.Base(log))
-			if d.regular == nil {
-				d.regular = map[string]bool{}
-			}
 			d.regular[log] = len(files) > 0
 			d.unread = append(d.unread, err)
 		}
 		return !d.regular[log]
 	})
 }
+
+func (d *logsOnDisk) err() error { return errors.Join(d.unread...) }
 
 // flakeJobs reads, with their steps, the jobs of the runs f selects whose
 // names match f.Jobs and that meet the conditions. If SQLite cannot read
@@ -76,8 +78,8 @@ func (ix *Index) flakeJobs(ctx context.Context, f Filter, conditions ...string) 
 	w := jobSource.where(Filter{Jobs: f.Jobs})
 	runFilter := f
 	runFilter.Jobs = nil
-	runs := flipRuns.where(runFilter)
-	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
+	runs := flakeRuns.where(runFilter)
+	w.add("r.run_id IN (SELECT r.run_id FROM "+flakeRuns.from+runs.clause()+")", runs.args...)
 	for _, c := range conditions {
 		w.add(c)
 	}
@@ -110,7 +112,12 @@ func (ix *Index) readJobs(ctx context.Context, query string, args []any) ([]mode
 		}
 		if path != lastPath {
 			j.WorkflowID, j.Workflow, j.Branch = workflowID.Int64, workflow.String, branch.String
-			j.StartedAt, _ = time.Parse(time.RFC3339, started.String)
+			// An attempt with no run_started_at starts at the zero time.
+			if started.Valid {
+				if j.StartedAt, err = time.Parse(time.RFC3339, started.String); err != nil {
+					return nil, errors.Join(fmt.Errorf("%s: run_started_at: %w", path, err), rows.Close())
+				}
+			}
 			j.Log = filepath.Join(path, "log.txt")
 			jobs = append(jobs, j)
 			lastPath = path

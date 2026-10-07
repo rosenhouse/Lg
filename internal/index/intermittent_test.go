@@ -126,6 +126,13 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 		Expect(err).To(MatchError(ContainSubstring(`"yesterday"`)))
 	})
 
+	It("orders an attempt with no run_started_at first", func(ctx SpecContext) {
+		_, err := openDB(dbPath(env)).ExecContext(ctx, "UPDATE attempts SET run_started_at = NULL WHERE path = ?", filepath.Join(runDir(env.Data(), 4), "attempt-1"))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(failures(ctx, main)).To(ConsistOf(SatisfyAll(integration, runIDs(4, 1, 2, 3, 5, 6))))
+	})
+
 	It("leaves out pull_request and pull_request_target runs from the repository, and runs whose first attempt was cancelled", func(ctx SpecContext) {
 		Expect(failures(ctx, index.Filter{})).To(ConsistOf(integration, unit))
 	})
