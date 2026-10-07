@@ -196,17 +196,24 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", tooLong, "path", tooLong, "reason", "too_long")))
 	})
 
-	It("slugifies a name holding NUL or invalid UTF-8, which a filesystem may refuse", func() {
+	It("slugifies a name holding a control byte or invalid UTF-8, which a filesystem or lg paths may refuse", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "dir/bad\xff.log", Body: "utf8\n"},
 			archives.Entry{Name: "nul\x00.log", Body: "nul\n"},
+			archives.Entry{Name: "new\nline.log", Body: "newline\n"},
+			archives.Entry{Name: "del\x7f.log", Body: "del\n"},
 		))
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
-		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("dir/bad-.log", "utf8\n"), HaveKeyWithValue("nul-.log", "nul\n")))
+		Expect(f.files()).To(SatisfyAll(
+			HaveKeyWithValue("dir/bad-.log", "utf8\n"), HaveKeyWithValue("nul-.log", "nul\n"),
+			HaveKeyWithValue("new-line.log", "newline\n"), HaveKeyWithValue("del-.log", "del\n"),
+		))
 		Expect(f.manifest()["renamed"]).To(ConsistOf(
 			record("archive", "artifact.zip", "name", "dir/bad\ufffd.log", "path", "dir/bad-.log", "reason", "invalid"),
 			record("archive", "artifact.zip", "name", "nul\x00.log", "path", "nul-.log", "reason", "invalid"),
+			record("archive", "artifact.zip", "name", "new\nline.log", "path", "new-line.log", "reason", "invalid"),
+			record("archive", "artifact.zip", "name", "del\x7f.log", "path", "del-.log", "reason", "invalid"),
 		))
 	})
 

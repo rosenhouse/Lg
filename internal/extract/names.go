@@ -138,7 +138,8 @@ func (d node) place(name string, k kind) (string, node, bool) {
 }
 
 // components splits a member's name into names for files and dirs, slugifying
-// one that is too long or that a filesystem may refuse.
+// one that is too long, that a filesystem may refuse, or whose newline lg
+// paths would refuse.
 func components(name string) ([]string, string) {
 	clean := path.Clean(name)
 	if clean == "." {
@@ -150,12 +151,14 @@ func components(name string) ([]string, string) {
 		switch {
 		case len(part) > maxComponent:
 			parts[i], reason = layout.Slug(part), first(reason, "too_long")
-		case strings.ContainsRune(part, 0) || !utf8.ValidString(part):
+		case strings.ContainsFunc(part, isControl) || !utf8.ValidString(part):
 			parts[i], reason = layout.Slug(part), first(reason, "invalid")
 		}
 	}
 	return parts, reason
 }
+
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f }
 
 // truncate cuts s, which is valid UTF-8, to at most n bytes, at a rune boundary.
 func truncate(s string, n int) string {
