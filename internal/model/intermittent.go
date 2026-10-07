@@ -1,0 +1,140 @@
+package model
+
+import (
+	"cmp"
+	"slices"
+	"time"
+)
+
+// IsolatedFailures gives the index of each failing conclusion whose
+// neighbours both succeeded.
+func IsolatedFailures(conclusions []string) []int {
+	var isolated []int
+	for i := 1; i < len(conclusions)-1; i++ {
+		if failing(conclusions[i]) && conclusions[i-1] == "success" && conclusions[i+1] == "success" {
+			isolated = append(isolated, i)
+		}
+	}
+	return isolated
+}
+
+// RunJob is a job of an attempt, with what places the run in a series.
+type RunJob struct {
+	AttemptJob
+	HeadSHA    string
+	WorkflowID int64
+	Workflow   string
+	Branch     string
+	// StartedAt is the attempt's run_started_at.
+	StartedAt time.Time
+}
+
+// Series is how a workflow's job name on a branch, or a step of it when Step
+// is not "", concluded in the first attempt of each run, oldest first.
+// Workflow is the name the latest run gives the workflow.
+type Series struct {
+	WorkflowID                  int64
+	Workflow, Branch, Job, Step string
+	Runs                        []RunOutcome
+}
+
+// RunOutcome is how a series concluded in a run, with the logs of its jobs that failed.
+type RunOutcome struct {
+	RunID      int64
+	HeadSHA    string
+	Conclusion string
+	Logs       []string
+}
+
+// Gap is a run of a workflow on a branch whose first attempt is not on disk.
+type Gap struct {
+	RunID, WorkflowID int64
+	HeadSHA, Branch   string
+	// At places the gap among the run_started_at of first attempts.
+	At time.Time
+}
+
+// FirstAttemptSeries gives the series of each job name, and of each step
+// name of it, over jobs of the first attempts of runs. Only jobs that ran count. A
+// name fails in a run if any of its jobs, or the step in any of them, failed;
+// it succeeds if none failed and one succeeded. A gap concludes "" in each
+// series of its workflow and branch. Series come by branch, workflow id and
+// job name, each job before its steps, which come in the order they first ran.
+func FirstAttemptSeries(jobs []RunJob, gaps []Gap) []Series {
+	ran := slices.DeleteFunc(slices.Clone(jobs), func(j RunJob) bool { return j.Kind != Ran })
+	slices.SortFunc(ran, func(a, b RunJob) int {
+		return cmp.Or(a.StartedAt.Compare(b.StartedAt), cmp.Compare(a.RunID, b.RunID), cmp.Compare(a.Job.ID, b.Job.ID))
+	})
+	type seriesKey struct {
+		workflow          int64
+		branch, job, step string
+	}
+	series := map[seriesKey]*Series{}
+	var keys []seriesKey
+	for _, j := range ran {
+		concluded(j.AttemptJob, func(k flipKey, conclusion string) {
+			if !failing(conclusion) && conclusion != "success" {
+				return
+			}
+			key := seriesKey{j.WorkflowID, j.Branch, k.job, k.step}
+			if series[key] == nil {
+				series[key] = &Series{WorkflowID: j.WorkflowID, Branch: j.Branch, Job: k.job, Step: k.step}
+				keys = append(keys, key)
+			}
+			series[key].observe(j, conclusion)
+		})
+	}
+	starts := map[int64]time.Time{}
+	for _, j := range ran {
+		starts[j.RunID] = j.StartedAt
+	}
+	for _, g := range gaps {
+		starts[g.RunID] = g.At
+	}
+	out := make([]Series, len(keys))
+	for i, k := range keys {
+		s := series[k]
+		for _, g := range gaps {
+			if g.WorkflowID == s.WorkflowID && g.Branch == s.Branch {
+				s.Runs = append(s.Runs, RunOutcome{RunID: g.RunID, HeadSHA: g.HeadSHA})
+			}
+		}
+		slices.SortFunc(s.Runs, func(a, b RunOutcome) int {
+			return cmp.Or(starts[a.RunID].Compare(starts[b.RunID]), cmp.Compare(a.RunID, b.RunID))
+		})
+		out[i] = *s
+	}
+	slices.SortStableFunc(out, func(a, b Series) int {
+		return cmp.Or(cmp.Compare(a.Branch, b.Branch), cmp.Compare(a.WorkflowID, b.WorkflowID), cmp.Compare(a.Job, b.Job))
+	})
+	return out
+}
+
+// observe records how a job of a run, or the step of it, concluded.
+func (s *Series) observe(j RunJob, conclusion string) {
+	s.Workflow = j.Workflow
+	last := len(s.Runs) - 1
+	switch {
+	case last < 0 || s.Runs[last].RunID != j.RunID:
+		s.Runs = append(s.Runs, RunOutcome{RunID: j.RunID, HeadSHA: j.HeadSHA, Conclusion: conclusion})
+		last++
+	case s.Runs[last].Conclusion == "success":
+		s.Runs[last].Conclusion = conclusion
+	}
+	if failing(conclusion) {
+		s.Runs[last].Logs = appendNew(s.Runs[last].Logs, j.Log)
+	}
+}
+
+// IsolatedFailures gives the runs whose failure fell between two successes.
+func (s Series) IsolatedFailures() []RunOutcome {
+	conclusions := make([]string, len(s.Runs))
+	for i, r := range s.Runs {
+		conclusions[i] = r.Conclusion
+	}
+	var failures []RunOutcome
+	for _, i := range IsolatedFailures(conclusions) {
+		failures = append(failures, s.Runs[i])
+	}
+	return failures
+}

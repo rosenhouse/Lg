@@ -120,6 +120,7 @@ var _ = Describe("mutations", Label("attempts"), func() {
 		scenario.RenameWorkflow(run, 2, "renamed")
 		scenario.InProgress(run, 2)
 		scenario.StartupFailure(run, 2)
+		scenario.Cancel(run, 2)
 		scenario.QueueJob(run, 2, "flaky")
 		scenario.RenameJob(run, 2, "flaky", "steady")
 		scenario.RenumberJob(run, 2, "flaky", 8)
@@ -194,6 +195,18 @@ var _ = Describe("mutations", Label("attempts"), func() {
 
 			Expect(field(running, "attempt-1/attempt.json", "status")).To(Equal("in_progress"))
 			Expect(field(running, "run.json", "status")).To(Equal("completed"))
+		})
+	})
+
+	Describe("Cancel", func() {
+		It("concludes the attempt, and the run when it is the latest, cancelled", func() {
+			cancelled := scenario.Cancel(run, 2)
+
+			for _, file := range []string{"run.json", "attempt-2/attempt.json"} {
+				Expect(field(cancelled, file, "status")).To(Equal("completed"), file)
+				Expect(field(cancelled, file, "conclusion")).To(Equal("cancelled"), file)
+			}
+			Expect(field(scenario.Cancel(run, 1), "run.json", "conclusion")).To(Equal("success"))
 		})
 	})
 
@@ -587,5 +600,18 @@ var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
 
 	It("panics when the latest attempt has no job of a name given", func() {
 		Expect(func() { scenario.AddRerunAttempt(run, "none") }).To(PanicWith(ContainSubstring(`"none"`)))
+	})
+})
+
+var _ = Describe("EndingAt", Label("flakes"), func() {
+	It("moves every time of the runs by the same amount, so that the newest was created at the time", func() {
+		older := scenario.CloneAt(1, "after-attempt-2", time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+		newer := scenario.CloneAt(2, "after-attempt-1", time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
+
+		moved := scenario.EndingAt([]scenario.Run{newer, older}, time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC))
+
+		Expect(field(moved[0], "run.json", "created_at")).To(Equal("2026-12-01T00:00:00Z"))
+		Expect(field(moved[1], "run.json", "created_at")).To(Equal("2026-11-29T00:00:00Z"))
+		Expect(field(moved[1], "attempt-2/attempt.json", "run_started_at")).To(Equal("2026-11-29T00:02:14Z"))
 	})
 })

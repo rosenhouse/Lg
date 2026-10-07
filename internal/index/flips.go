@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/rosenhouse/lg/internal/model"
 )
@@ -16,9 +18,9 @@ type Flip struct {
 	HeadSHA string
 }
 
-// flipRuns selects runs by the start of any of their attempts and by the
-// conclusion of the latest.
-var flipRuns = source{
+// flakeRuns selects runs by the start of any of their attempts and by the
+// conclusion of the latest. It takes no Filter.Jobs, which selects jobs, not runs.
+var flakeRuns = source{
 	from: "runs r JOIN attempts x ON " + within,
 	when: "x.run_started_at", conclusion: latestConclusion,
 }
@@ -27,70 +29,104 @@ var flipRuns = source{
 // whose names match f.Jobs, comparing every attempt of each run. With them it
 // returns the error of each of their logs it could not read.
 func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
-	w := jobSource.where(Filter{Jobs: f.Jobs})
-	runFilter := f
-	runFilter.Jobs = nil
-	runs := flipRuns.where(runFilter)
-	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
 	// A run with one attempt on disk cannot flip.
-	w.add("r.latest_attempt > 1")
-	// Ordering by run first lets SQLite find each run's jobs by path range.
-	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
-		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY r.path, x.path, s.number"
-	jobs, restarted, err := readOrStartOver(ctx, ix, func() (attemptJobs, error) { return ix.readAttemptJobs(ctx, query, w.args) })
+	jobs, restarted, err := ix.flakeJobs(ctx, f, "r.latest_attempt > 1")
 	if err != nil {
 		return nil, errors.Join(restarted, err)
 	}
-	var flips []Flip
-	unread := []error{restarted}
-	onDisk := map[string]bool{}
-	for _, flip := range model.RerunFlips(jobs.jobs) {
-		flip.Logs = slices.DeleteFunc(flip.Logs, func(log string) bool {
-			if _, read := onDisk[log]; !read {
-				files, err := regular(filepath.Dir(log), filepath.Base(log))
-				onDisk[log] = len(files) > 0
-				unread = append(unread, err)
-			}
-			return !onDisk[log]
-		})
-		flips = append(flips, Flip{Flip: flip, HeadSHA: jobs.headSHAs[flip.RunID]})
+	headSHAs := map[int64]string{}
+	attemptJobs := make([]model.AttemptJob, len(jobs))
+	for i, j := range jobs {
+		attemptJobs[i] = j.AttemptJob
+		headSHAs[j.RunID] = j.HeadSHA
 	}
-	return flips, errors.Join(unread...)
+	var flips []Flip
+	logs := newLogsOnDisk()
+	for _, flip := range model.RerunFlips(attemptJobs) {
+		flip.Logs = logs.keep(flip.Logs)
+		flips = append(flips, Flip{Flip: flip, HeadSHA: headSHAs[flip.RunID]})
+	}
+	return flips, errors.Join(restarted, logs.err())
 }
 
-// attemptJobs holds jobs read from the index, and the head SHA of each run.
-type attemptJobs struct {
-	jobs     []model.AttemptJob
-	headSHAs map[int64]string
+// logsOnDisk keeps the logs that are regular files, and the error of each it
+// could not stat. It looks at each log once.
+type logsOnDisk struct {
+	regular map[string]bool
+	unread  []error
 }
 
-// readAttemptJobs reads the jobs, with their steps, that the query selects, one row per step.
-func (ix *Index) readAttemptJobs(ctx context.Context, query string, args []any) (attemptJobs, error) {
+func newLogsOnDisk() *logsOnDisk { return &logsOnDisk{regular: map[string]bool{}} }
+
+// keep gives a new slice of the logs that are regular files.
+func (d *logsOnDisk) keep(logs []string) []string {
+	return slices.DeleteFunc(slices.Clone(logs), func(log string) bool {
+		if _, seen := d.regular[log]; !seen {
+			files, err := regular(filepath.Dir(log), filepath.Base(log))
+			d.regular[log] = len(files) > 0
+			d.unread = append(d.unread, err)
+		}
+		return !d.regular[log]
+	})
+}
+
+func (d *logsOnDisk) err() error { return errors.Join(d.unread...) }
+
+// flakeJobs reads, with their steps, the jobs of the runs f selects whose
+// names match f.Jobs and that meet the conditions. If SQLite cannot read
+// lg.db, it starts over and gives that error as restarted.
+func (ix *Index) flakeJobs(ctx context.Context, f Filter, conditions ...string) (jobs []model.RunJob, restarted, err error) {
+	w := jobSource.where(Filter{Jobs: f.Jobs})
+	runFilter := f
+	runFilter.Jobs = nil
+	runs := flakeRuns.where(runFilter)
+	w.add("r.run_id IN (SELECT r.run_id FROM "+flakeRuns.from+runs.clause()+")", runs.args...)
+	for _, c := range conditions {
+		w.add(c)
+	}
+	// Ordering by run first lets SQLite find each run's jobs by path range.
+	query := "SELECT r.run_id, r.head_sha, r.workflow_id, r.workflow_name, r.head_branch, a.run_started_at, " +
+		"x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
+		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY r.path, x.path, s.number"
+	return readOrStartOver(ctx, ix, func() ([]model.RunJob, error) { return ix.readJobs(ctx, query, w.args) })
+}
+
+// readJobs reads the jobs, with their steps, that the query selects, one row per step.
+func (ix *Index) readJobs(ctx context.Context, query string, args []any) ([]model.RunJob, error) {
 	rows, err := ix.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return attemptJobs{}, ix.dbError(err)
+		return nil, ix.dbError(err)
 	}
-	read := attemptJobs{headSHAs: map[int64]string{}}
+	var jobs []model.RunJob
 	var lastPath string
 	for rows.Next() {
 		var (
-			j                        model.AttemptJob
-			sha, path                string
-			stepName, stepConclusion sql.NullString
+			j                         model.RunJob
+			workflowID                sql.NullInt64
+			workflow, branch, started sql.NullString
+			path                      string
+			stepName, stepConclusion  sql.NullString
 		)
-		if err := rows.Scan(&j.RunID, &sha, &j.Attempt, &j.Job.ID, &j.Job.Name, &j.Kind, &j.Job.Conclusion, &path, &stepName, &stepConclusion); err != nil {
-			return attemptJobs{}, errors.Join(ix.dbError(err), rows.Close())
+		if err := rows.Scan(&j.RunID, &j.HeadSHA, &workflowID, &workflow, &branch, &started,
+			&j.Attempt, &j.Job.ID, &j.Job.Name, &j.Kind, &j.Job.Conclusion, &path, &stepName, &stepConclusion); err != nil {
+			return nil, errors.Join(ix.dbError(err), rows.Close())
 		}
 		if path != lastPath {
+			j.WorkflowID, j.Workflow, j.Branch = workflowID.Int64, workflow.String, branch.String
+			// An attempt with no run_started_at starts at the zero time.
+			if started.Valid {
+				if j.StartedAt, err = time.Parse(time.RFC3339, started.String); err != nil {
+					return nil, errors.Join(fmt.Errorf("%s: run_started_at: %w", path, err), rows.Close())
+				}
+			}
 			j.Log = filepath.Join(path, "log.txt")
-			read.jobs = append(read.jobs, j)
-			read.headSHAs[j.RunID] = sha
+			jobs = append(jobs, j)
 			lastPath = path
 		}
 		if stepName.Valid {
-			last := &read.jobs[len(read.jobs)-1].Job
+			last := &jobs[len(jobs)-1].Job
 			last.Steps = append(last.Steps, model.Step{Name: stepName.String, Conclusion: stepConclusion.String})
 		}
 	}
-	return read, ix.dbError(errors.Join(rows.Err(), rows.Close()))
+	return jobs, ix.dbError(errors.Join(rows.Err(), rows.Close()))
 }

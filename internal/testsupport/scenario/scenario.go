@@ -141,6 +141,11 @@ func InProgress(r Run, attempt int) Run {
 	return r.conclude(attempt, "in_progress", nil)
 }
 
+// Cancel concludes attempt, and the run when attempt is its latest, cancelled.
+func Cancel(r Run, attempt int) Run {
+	return r.conclude(attempt, "completed", "cancelled")
+}
+
 // StartupFailure concludes attempt startup_failure, with no jobs and no logs.
 func StartupFailure(r Run, attempt int) Run {
 	out := r.conclude(attempt, "completed", "startup_failure")
@@ -424,11 +429,15 @@ func CloneAt(id int64, stage string, at time.Time) Run {
 // CreatedAt moves every time in r's JSON files by the same amount, so that
 // the run was created at the given time.
 func CreatedAt(r Run, at time.Time) Run {
-	var created struct {
+	return r.shiftTimes(func(time.Time) bool { return true }, at.Sub(r.createdAt()))
+}
+
+func (r Run) createdAt() time.Time {
+	var run struct {
 		CreatedAt time.Time `json:"created_at"`
 	}
-	mustUnmarshal(r.Files["run.json"].Data, &created)
-	return r.shiftTimes(func(time.Time) bool { return true }, at.Sub(created.CreatedAt))
+	mustUnmarshal(r.Files["run.json"].Data, &run)
+	return run.CreatedAt
 }
 
 // shiftTimes moves every time in r's JSON files that moved accepts by delta.
@@ -490,11 +499,20 @@ func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run {
 
 // SetStepConclusion concludes the step of that name in attempt's job of that id so.
 func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run {
+	return r.editStep(attempt, jobID, step, func(s map[string]any) { s["conclusion"] = conclusion })
+}
+
+// RenameStep renames the step of that name in attempt's job of that id.
+func RenameStep(r Run, attempt int, jobID int64, step, newName string) Run {
+	return r.editStep(attempt, jobID, step, func(s map[string]any) { s["name"] = newName })
+}
+
+func (r Run) editStep(attempt int, jobID int64, step string, edit func(map[string]any)) Run {
 	return r.editJob(attempt, jobID, func(job map[string]any) {
 		found := false
 		for _, s := range job["steps"].([]any) {
 			if s := s.(map[string]any); s["name"] == step {
-				s["conclusion"] = conclusion
+				edit(s)
 				found = true
 			}
 		}
@@ -643,4 +661,20 @@ func (r Run) maxJobID() int64 {
 		}
 	}
 	return highest
+}
+
+// EndingAt moves every time of the runs by the same amount, so that the
+// newest was created at the given time.
+func EndingAt(runs []Run, at time.Time) []Run {
+	var newest time.Time
+	for _, r := range runs {
+		if created := r.createdAt(); created.After(newest) {
+			newest = created
+		}
+	}
+	moved := make([]Run, len(runs))
+	for i, r := range runs {
+		moved[i] = r.shiftTimes(func(time.Time) bool { return true }, at.Sub(newest))
+	}
+	return moved
 }

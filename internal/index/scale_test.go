@@ -63,7 +63,7 @@ func writeScaleStore(data string, runs int, shape storeShape) (files int) {
 				return "success"
 			}
 			attempt := layout.AttemptDir(runDir, n)
-			write(filepath.Join(attempt, "attempt.json"), fmt.Sprintf(`{"id":%d,"name":"ci","head_branch":"main","head_sha":"%040d","event":"push","status":"completed","conclusion":%q,"workflow_id":7,"pull_requests":[],"display_title":"commit %d","created_at":%q,"updated_at":%q,"run_started_at":%q,"run_attempt":%d,"repository":{"full_name":"o/r"}}`, id, id, conclusion(0, 0), i, createdAt, at, at, n))
+			write(filepath.Join(attempt, "attempt.json"), fmt.Sprintf(`{"id":%d,"name":"ci","head_branch":"main","head_sha":"%040d","event":"push","status":"completed","conclusion":%q,"workflow_id":7,"pull_requests":[],"display_title":"commit %d","created_at":%q,"updated_at":%q,"run_started_at":%q,"run_attempt":%d,"repository":{"id":9,"full_name":"o/r"},"head_repository":{"id":9,"full_name":"o/r"}}`, id, id, conclusion(0, 0), i, createdAt, at, at, n))
 			var jobsJSON []string
 			for j := range shape.jobs(i) {
 				jobID := (id*10+int64(n))*100 + int64(j)
@@ -146,5 +146,25 @@ var _ = Describe("rerun flips over a store of 9,000 runs of ten jobs of ten step
 		Expect(err).NotTo(HaveOccurred())
 		Expect(flips).To(HaveLen(9_000 * 2 / 50 * 2))
 		Expect(took).To(BeNumerically("<", 2*time.Second))
+	}, NodeTimeout(5*time.Minute))
+})
+
+var _ = Describe("intermittent failures over a store of 9,000 runs of ten jobs of ten steps", Label("scale"), func() {
+	It("gives them in under 10s", func(ctx SpecContext) {
+		data := filepath.Join(GinkgoT().TempDir(), "data")
+		writeScaleStore(data, 9_000, storeShape{attempts: func(int) int { return 1 }, jobs: func(int) int { return 10 }, steps: 10})
+		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), data, nil)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(ix.Close)
+		Expect(ix.Reconcile(ctx)).To(Succeed())
+
+		start := clock.Real{}.Now()
+		found, err := ix.IntermittentFailures(ctx, index.Filter{Branches: []string{"main"}})
+		took := clock.Real{}.Now().Sub(start)
+		AddReportEntry("timings", fmt.Sprintf("intermittent failures %s", took))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeEmpty())
+		Expect(took).To(BeNumerically("<", 10*time.Second))
 	}, NodeTimeout(5*time.Minute))
 })
