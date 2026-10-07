@@ -135,7 +135,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 				return err
 			}
 			info, err := d.Info()
-			Expect(info.Mode().Perm() & 0o700).To(Equal(fs.FileMode(0o700)), path)
+			Expect(info.Mode().Perm()&0o700).To(Equal(fs.FileMode(0o700)), path)
 			return err
 		})).To(Succeed())
 	})
