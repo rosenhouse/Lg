@@ -27,49 +27,42 @@ func (flakesCmd) Help() string {
 		"An attempt that carries forward a failed job or step gives its name no success. " +
 		"An intermittent failure is a name whose first attempt failed on one run of the default branch and succeeded on the runs before and after it. " +
 		"The default branch is the one status.json records; --branch replaces it. Intermittent failures leave out pull_request and pull_request_target runs and runs whose first attempt was cancelled. " +
-		"--job selects job names. The other filters select runs, and every attempt of a run counts: " +
-		"--since and --until match the start of any attempt, and --conclusion the latest attempt."
+		"--job selects job names. The other filters select runs: --since and --until match the start of any attempt, and --conclusion the latest attempt. " +
+		"Intermittent failures are judged among every run of their branch, workflow and event, so --sha, --pr, --conclusion, --since and --until select failures, not neighbours; " +
+		"--since and --until then match the start of the first attempt."
 }
 
 func (f flakesCmd) Validate() error { return f.validate() }
 
 func (f flakesCmd) Run(deps *Deps) error {
-	roots, err := config.Locations(deps.Env)
-	if err != nil {
-		return err
-	}
-	branches, unknown := f.Branch, error(nil)
-	if f.Kind != "rerun" && len(branches) == 0 {
-		branches, unknown = defaultBranches(roots.State)
-	}
-	printFlip, printIntermittent := printFlip, printIntermittent
+	writeFlip, writeIntermittent := printFlip, printIntermittent
 	if f.JSON {
-		printFlip, printIntermittent = printFlipJSON, printIntermittentJSON
+		writeFlip, writeIntermittent = printFlipJSON, printIntermittentJSON
 	}
-	return query(deps, func(ctx context.Context, ix *index.Index) error {
-		if unknown != nil {
-			return unknown
-		}
+	return query(deps, func(ctx context.Context, ix *index.Index, roots config.Roots) error {
 		filter := f.filter(deps.Clock.Now())
 		var unread []error
 		if f.Kind != "intermittent" {
 			flips, err := ix.RerunFlips(ctx, filter)
 			unread = append(unread, err)
 			for _, flip := range flips {
-				if err := printFlip(deps.Stdout, flip); err != nil {
+				if err := writeFlip(deps.Stdout, flip); err != nil {
 					return err
 				}
 			}
 		}
 		if f.Kind != "rerun" {
-			filter.Branches = branches
-			series, err := ix.FirstAttemptOutcomes(ctx, filter)
+			if len(filter.Branches) == 0 {
+				var err error
+				if filter.Branches, err = defaultBranches(roots.State); err != nil {
+					return errors.Join(append(unread, err)...)
+				}
+			}
+			found, err := ix.IntermittentFailures(ctx, filter)
 			unread = append(unread, err)
-			for _, s := range series {
-				if failures := s.IsolatedFailures(); len(failures) > 0 {
-					if err := printIntermittent(deps.Stdout, index.Intermittent{Series: s, Failures: failures}); err != nil {
-						return err
-					}
+			for _, i := range found {
+				if err := writeIntermittent(deps.Stdout, i); err != nil {
+					return err
 				}
 			}
 		}

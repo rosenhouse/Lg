@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/index"
 )
 
@@ -35,7 +36,7 @@ func (p pathsCmd) Run(deps *Deps) error {
 	if len(p.Unit) > 0 {
 		unit = index.Unit(p.Unit[0])
 	}
-	return query(deps, func(ctx context.Context, ix *index.Index) error {
+	return query(deps, func(ctx context.Context, ix *index.Index, _ config.Roots) error {
 		paths, unread := ix.Paths(ctx, p.filter(deps.Clock.Now()), unit)
 		unprintable, err := p.print(deps.Stdout, paths)
 		if err != nil {

@@ -32,7 +32,7 @@ func (indexRebuildCmd) Run(deps *Deps) error {
 
 // query runs read on the index of data/, reconciled. Before the first sync
 // creates data/, it reads nothing.
-func query(deps *Deps, read func(context.Context, *index.Index) error) error {
+func query(deps *Deps, read func(context.Context, *index.Index, config.Roots) error) error {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {
 		return err
@@ -46,7 +46,7 @@ func query(deps *Deps, read func(context.Context, *index.Index) error) error {
 		return reconciled
 	}
 	defer func() { _ = ix.Close() }()
-	return errors.Join(reconciled, read(ctx, ix))
+	return errors.Join(reconciled, read(ctx, ix, roots))
 }
 
 // answerable gives lg.db, reconciled, or else an index of data/ in memory
