@@ -480,11 +480,11 @@ func (u *Unit) Remove(name string) error {
 func (u *Unit) Abort() error { return removeTree(u.fs, u.dir) }
 
 // removeTree removes dir, which is under tmp/, also when a dir in it lacks
-// owner write permission, as one from an extracted archive may.
+// owner write permission, as one from an extracted archive may. RemoveAll
+// does not always report that as ErrPermission, so any error gets a retry.
 func removeTree(fsys FS, dir string) error {
-	err := fsys.RemoveAll(dir)
-	if !errors.Is(err, fs.ErrPermission) {
-		return err
+	if fsys.RemoveAll(dir) == nil {
+		return nil
 	}
 	if err := makeWritable(fsys, dir); err != nil {
 		return err

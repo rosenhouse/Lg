@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,6 +52,15 @@ var _ = Describe("store.Evict", Label("retention"), func() {
 		writeReadOnlyDir(filepath.Join(runDir, "artifacts", "5_report", "extracted"))
 		fsys := faultfs.New()
 		fsys.ActAsNonRoot()
+
+		Expect(openFS(fsys, root).Evict(runDir)).To(Succeed())
+		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
+	})
+
+	It("removes a tree holding a read-only dir when the first remove fails with an error other than EACCES", func() {
+		writeReadOnlyDir(filepath.Join(runDir, "artifacts", "5_report", "extracted"))
+		fsys := faultfs.New()
+		fsys.FailRemoveOfReadOnly(errors.New("symlink in a read-only dir"))
 
 		Expect(openFS(fsys, root).Evict(runDir)).To(Succeed())
 		Expect(filepath.Join(root, "tmp")).To(matchers.BeSwept())
