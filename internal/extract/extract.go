@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -111,6 +112,7 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 		return corrupt{err}
 	}
 	var members []member
+	var declared uint64
 	for _, zf := range r.File {
 		mode := zf.Mode()
 		m := member{name: zf.Name, skip: skipped(mode), setuid: mode&(fs.ModeSetuid|fs.ModeSetgid) != 0, open: zf.Open}
@@ -120,11 +122,19 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 			}
 			m.skip = "dir_with_data"
 		}
+		if m.skip == "" && escapes(m.name) == "" {
+			declared = min(declared+min(zf.UncompressedSize64, math.MaxInt64), math.MaxInt64)
+		}
 		members = append(members, m)
 	}
 	if level == 0 {
 		if len(members) > x.limits.MaxFiles {
 			return fmt.Errorf("%w: more than %d", ErrTooManyFiles, x.limits.MaxFiles)
+		}
+		// Nested archives only add bytes, so what artifact.zip declares is
+		// a floor on what Extract would write.
+		if declared > uint64(x.limits.MaxBytes) {
+			return store.ErrTooLarge
 		}
 		x.members = len(members)
 	}
