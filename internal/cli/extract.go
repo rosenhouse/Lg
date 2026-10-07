@@ -23,7 +23,7 @@ import (
 type extractCmd struct {
 	filters  `embed:""`
 	All      bool          `help:"Extract every artifact."`
-	MaxBytes size          `default:"1GB" help:"Extract no artifact whose files, nested archives expanded, exceed this."`
+	MaxBytes size          `default:"${extract_max_bytes}" help:"Extract no artifact whose files, nested archives expanded, exceed this."`
 	Timeout  time.Duration `default:"${write_lock_wait}" help:"How long to wait for another lg writing the store."`
 	Paths    []string      `arg:"" optional:"" name:"path" help:"An artifact dir, or a file in one."`
 }

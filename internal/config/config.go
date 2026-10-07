@@ -243,4 +243,12 @@ func baseURL(s string) (u *url.URL, shown string, ok bool) {
 	return u, s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
 }
 
-func (b Bytes) String() string { return "" }
+// String gives b in the largest decimal unit that divides it.
+func (b Bytes) String() string {
+	for _, unit := range []string{"TB", "GB", "MB", "KB"} {
+		if n := int64(b); n != 0 && n%sizeUnits[unit] == 0 {
+			return fmt.Sprintf("%d%s", n/sizeUnits[unit], unit)
+		}
+	}
+	return fmt.Sprintf("%dB", int64(b))
+}
