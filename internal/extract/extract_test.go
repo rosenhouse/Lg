@@ -393,6 +393,21 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["bytes"]).To(BeEquivalentTo(limits.MaxBytes))
 	})
 
+	It("counts toward MaxBytes the bytes of members that fail to read", func() {
+		bad := archives.Entry{Name: "bad.log", Body: strings.Repeat("x", 1000), BadCRC: true}
+		var nested []archives.Entry
+		for i := range 3 {
+			nested = append(nested, archives.Entry{Name: fmt.Sprintf("n%d.zip", i), Body: string(archives.Zip(bad))})
+		}
+		f := newFixture(archives.Zip(nested...))
+		limits := extract.Defaults()
+		limits.MaxBytes = 3 * int64(len(nested[0].Body)+999)
+
+		Expect(f.extract(limits)).To(MatchError(store.ErrTooLarge))
+		Expect(f.extracted).NotTo(BeADirectory())
+		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
+	})
+
 	It("fails on an artifact.zip that does not read as a zip, publishing nothing", func() {
 		f := newFixture([]byte("not a zip"))
 

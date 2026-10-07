@@ -211,16 +211,12 @@ func (x *extraction) copy(m member, rel string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(w, readErrors{r})
-	if err != nil {
-		_ = w.Close()
-		return err
+	// A member writes none of a chunk past its cap, so n is what it holds.
+	n, err := io.Copy(w, readErrors{r})
+	x.written += n
+	if closeErr := w.Close(); err == nil {
+		return closeErr
 	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-	sum, err := x.unit.Sum(rel)
-	x.written += sum.Bytes
 	return err
 }
 
