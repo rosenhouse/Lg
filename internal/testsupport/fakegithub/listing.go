@@ -80,7 +80,8 @@ func (s *Server) listedRuns() ([]listedRun, error) {
 }
 
 // servePage serves the page of elements that per_page, page and the page
-// cap select, with a Link to the next page.
+// cap select, with a Link to the next page. It wraps them in an object with
+// total_count, or sends a bare array when field is "".
 func (s *Server) servePage(w http.ResponseWriter, r *http.Request, field string, total int, elements []json.RawMessage) {
 	size := min(intParam(r, "per_page", 30), 100)
 	s.mu.Lock()
@@ -96,16 +97,20 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request, field string,
 	if link := linkHeader(repositoryURL(r), page, last); link != "" {
 		w.Header().Set("Link", link)
 	}
-	var body bytes.Buffer
-	fmt.Fprintf(&body, `{"total_count":%d,%q:[`, total, field)
+	var array bytes.Buffer
+	array.WriteByte('[')
 	for i, e := range elements[from:to] {
 		if i > 0 {
-			body.WriteByte(',')
+			array.WriteByte(',')
 		}
-		body.Write(e)
+		array.Write(e)
 	}
-	body.WriteString("]}")
-	writeJSON(w, body.Bytes())
+	array.WriteByte(']')
+	if field == "" {
+		writeJSON(w, array.Bytes())
+		return
+	}
+	writeJSON(w, fmt.Appendf(nil, `{"total_count":%d,%q:%s}`, total, field, array.Bytes()))
 }
 
 func intParam(r *http.Request, name string, fallback int) int {
@@ -123,11 +128,15 @@ func repositoryURL(r *http.Request) *url.URL {
 	if strings.HasPrefix(r.URL.Path, "/api/v3/") {
 		mount = "/api/v3"
 	}
-	_, route, _ := strings.Cut(r.URL.Path, "/actions/")
+	repo := "/repos/" + r.PathValue("owner") + "/" + r.PathValue("repo")
+	if r.PathValue("repoid") != "" {
+		repo = "/repositories/" + r.PathValue("repoid")
+	}
+	route := strings.TrimPrefix(r.URL.Path, mount+repo)
 	return &url.URL{
 		Scheme:   "http",
 		Host:     r.Host,
-		Path:     mount + "/repositories/" + repoID + "/actions/" + route,
+		Path:     mount + "/repositories/" + repoID + route,
 		RawQuery: r.URL.RawQuery,
 	}
 }

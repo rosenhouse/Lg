@@ -1,12 +1,16 @@
 package fakegithub
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
+
+	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
 const (
@@ -48,6 +52,7 @@ func (s *Server) routes() http.Handler {
 		s.serveListing(w, r, run, path.Join("attempt-"+r.PathValue("n"), "jobs.json"), "jobs")
 	}))
 	handle("/actions/artifacts/{id}", s.serveArtifact)
+	handle("/commits/{sha}/pulls", s.serveCommitPulls)
 	handle("/actions/runs/{id}/attempts/{n}/logs", s.serveDownload)
 	handle("/actions/jobs/{id}/logs", s.serveDownload)
 	handle("/actions/artifacts/{id}/zip", s.serveDownload)
@@ -129,6 +134,52 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeError(w, http.StatusNotFound)
+}
+
+// serveCommitPulls lists the pull requests in scenario.CommitPullsFile of
+// every loaded run with the commit as its head_sha, or answers 422 when no
+// loaded run has it, as GitHub does for a commit it does not know.
+func (s *Server) serveCommitPulls(w http.ResponseWriter, r *http.Request) {
+	known := false
+	var pulls []json.RawMessage
+	for _, run := range s.loaded() {
+		var head struct {
+			HeadSHA string `json:"head_sha"`
+		}
+		body, err := served(run.files, "run.json")
+		if err == nil {
+			err = json.Unmarshal(body, &head)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if head.HeadSHA != r.PathValue("sha") {
+			continue
+		}
+		known = true
+		var listed []json.RawMessage
+		body, err = served(run.files, scenario.CommitPullsFile)
+		if err == nil {
+			err = json.Unmarshal(body, &listed)
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, pull := range listed {
+			if !slices.ContainsFunc(pulls, func(p json.RawMessage) bool { return bytes.Equal(p, pull) }) {
+				pulls = append(pulls, pull)
+			}
+		}
+	}
+	if !known {
+		writeError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	// Pages agree only when every request lists the pulls in one order.
+	slices.SortFunc(pulls, func(a, b json.RawMessage) int { return bytes.Compare(a, b) })
+	s.servePage(w, r, "", len(pulls), pulls)
 }
 
 // serveDownload answers as status.txt recorded: a redirect to the blob
