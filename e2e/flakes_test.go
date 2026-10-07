@@ -2,6 +2,8 @@ package e2e_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -31,14 +33,20 @@ func syncThroughAttempt3(env *harness.Env, others ...scenario.Run) {
 	}
 }
 
-// syncRuns syncs the runs alone.
-func syncRuns(env *harness.Env, runs ...scenario.Run) {
+// serve starts a fake GitHub that serves the runs alone.
+func serve(runs ...scenario.Run) *fakegithub.Server {
 	GinkgoHelper()
 	fake := fakegithub.New()
 	DeferCleanup(fake.Close)
 	for _, r := range runs {
 		Expect(fake.AddRun(r)).To(Succeed())
 	}
+	return fake
+}
+
+// syncFrom syncs what fake serves.
+func syncFrom(env *harness.Env, fake *fakegithub.Server) {
+	GinkgoHelper()
 	env.WriteConfig(fake.URL())
 	Expect(env.Sync()).To(gexec.Exit(0))
 }
@@ -148,7 +156,7 @@ var _ = Describe("lg flakes after syncing run 37129390741 through after-attempt-
 var _ = Describe("a run where step A fails and step B is skipped in attempt 1, and A passes and B fails in attempt 2", Label("flakes"), func() {
 	It("reports step A as 1:failure 2:success although its job went failure→failure, and does not report the job", func() {
 		env := harness.New(lgPath)
-		syncRuns(env, stepFlip(1))
+		syncFrom(env, serve(stepFlip(1)))
 
 		Expect(flakes(env)).To(HaveExactElements(finding("pass", stepA, []int{1, 2}, "failure", "success")))
 	})
@@ -157,14 +165,16 @@ var _ = Describe("a run where step A fails and step B is skipped in attempt 1, a
 var _ = Describe("a run where re-running one job carries another job's failure forward", Label("flakes"), func() {
 	It("reports that job as 1:failure 3:success, listing only log paths that exist", func() {
 		env := harness.New(lgPath)
-		syncRuns(env, carriedFlip(1))
+		r := carriedFlip(1)
+		fake := serve(r)
+		// GitHub has deleted the log of attempt 1's "pass".
+		fake.Fail("api", fmt.Sprintf("jobs/%d/logs", r.JobIDs(1, "pass")[0]), fakegithub.Fault{Status: http.StatusNotFound})
+		syncFrom(env, fake)
 
 		pass := jobFindings(flakes(env), "pass")
 		Expect(pass).To(HaveExactElements(finding("pass", "", []int{1, 3}, "failure", "success")))
-		run := runDirOf(env, 1)
 		Expect(pass[0]["logs"]).To(HaveExactElements(
-			SatisfyAll(under(filepath.Join(run, "attempt-1", "jobs")), HaveSuffix("_pass/log.txt"), BeARegularFile()),
-			SatisfyAll(under(filepath.Join(run, "attempt-3", "jobs")), HaveSuffix("_pass/log.txt"), BeARegularFile()),
+			SatisfyAll(under(filepath.Join(runDirOf(env, 1), "attempt-3", "jobs")), HaveSuffix("_pass/log.txt"), BeARegularFile()),
 		))
 	})
 })
@@ -172,7 +182,7 @@ var _ = Describe("a run where re-running one job carries another job's failure f
 var _ = Describe("a run where one of two jobs named 'same name' fails in attempt 1 and both pass in attempt 2", Label("flakes"), func() {
 	It("reports 'same name' as 1:failure 2:success", func() {
 		env := harness.New(lgPath)
-		syncRuns(env, sameNameFlip(1))
+		syncFrom(env, serve(sameNameFlip(1)))
 
 		Expect(jobFindings(flakes(env), "same name")).To(HaveExactElements(finding("same name", "", []int{1, 2}, "failure", "success")))
 	})
