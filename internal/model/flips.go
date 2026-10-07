@@ -103,11 +103,11 @@ func concluded(j AttemptJob, f func(k flipKey, conclusion string)) {
 
 // observe records how a job of the run's attempt, or the step of it, concluded.
 func (f *Flip) observe(j AttemptJob, conclusion string) {
-	if j.Log != "" {
-		f.Logs = appendNew(f.Logs, j.Log)
-	}
 	if !failing(conclusion) && conclusion != "success" {
 		return
+	}
+	if j.Log != "" {
+		f.Logs = appendNew(f.Logs, j.Log)
 	}
 	last := len(f.Outcomes) - 1
 	switch {
