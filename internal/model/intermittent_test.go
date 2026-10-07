@@ -108,3 +108,13 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 		))
 	})
 })
+
+var _ = Describe("Series.IsolatedFailures", Label("flakes"), func() {
+	It("gives the runs whose failure fell between two successes", func() {
+		s := model.Series{Runs: []model.RunOutcome{
+			ran(1, "success"), ran(2, "cancelled", "2.txt"), ran(3, "success"), ran(4, "failure", "4.txt"), ran(5, "failure", "5.txt"),
+		}}
+
+		Expect(s.IsolatedFailures()).To(HaveExactElements(ran(2, "cancelled", "2.txt")))
+	})
+})

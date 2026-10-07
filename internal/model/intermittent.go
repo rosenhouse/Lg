@@ -102,3 +102,8 @@ func (s *Series) observe(j FirstAttemptJob, conclusion string) {
 		s.Runs[last].Logs = appendNew(s.Runs[last].Logs, j.Log)
 	}
 }
+
+// IsolatedFailures gives the runs whose failure fell between two successes.
+func (s Series) IsolatedFailures() []RunOutcome {
+	return nil
+}
