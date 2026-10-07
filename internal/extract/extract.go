@@ -253,9 +253,15 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 	if kind == "" || err != nil {
 		return err
 	}
-	if level > x.limits.MaxNesting {
-		x.manifest.NotExpanded = append(x.manifest.NotExpanded, record{Archive: archive, Name: name, Path: rel, Reason: "nesting"})
+	notExpanded := func(reason string) error {
+		x.manifest.NotExpanded = append(x.manifest.NotExpanded, record{Archive: archive, Name: name, Path: rel, Reason: reason})
 		return nil
+	}
+	switch {
+	case level > x.limits.MaxNesting:
+		return notExpanded("nesting")
+	case strings.Count(rel, "/")+1 >= maxDepth:
+		return notExpanded("too_deep")
 	}
 	dir, reason := x.names.dir(rel)
 	if reason != "" {
@@ -274,8 +280,7 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 	}
 	var bad corrupt
 	if errors.As(err, &bad) {
-		x.manifest.NotExpanded = append(x.manifest.NotExpanded, record{Archive: archive, Name: name, Path: rel, Reason: kind + ": " + bad.Error()})
-		return nil
+		return notExpanded(kind + ": " + bad.Error())
 	}
 	return err
 }

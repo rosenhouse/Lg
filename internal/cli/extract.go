@@ -49,11 +49,13 @@ func (c extractCmd) Validate() error {
 	if err := c.validate(); err != nil {
 		return err
 	}
-	selected := !c.filters.empty() || len(c.Paths) > 0
+	filtered, named := !c.filters.empty(), len(c.Paths) > 0
 	switch {
-	case c.All && selected:
+	case c.All && (filtered || named):
 		return errors.New("--all takes no filters or PATHs")
-	case !c.All && !selected:
+	case filtered && named:
+		return errors.New("give filters or PATHs, not both")
+	case !c.All && !filtered && !named:
 		return errors.New("give filters, PATHs or --all")
 	}
 	return validateTimeout(c.Timeout)
