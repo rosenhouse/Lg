@@ -44,19 +44,29 @@ var _ = DescribeTable("lg extract", Label("extract"),
 
 var _ = DescribeTable("lg extract exits 2", Label("extract"),
 	func(args []string, message string) {
+		home := GinkgoT().TempDir()
 		var stderr bytes.Buffer
 		code := cli.Main(append([]string{"extract"}, args...), cli.Deps{
-			Env:    map[string]string{"LG_HOME": GinkgoT().TempDir()},
+			Env:    map[string]string{"LG_HOME": home},
 			Stdout: &bytes.Buffer{},
 			Stderr: &stderr,
 			Clock:  clock.Real{},
 		})
 		Expect(code).To(Equal(2))
 		Expect(stderr.String()).To(ContainSubstring(message))
+		Expect(filepath.Join(home, "state")).NotTo(BeADirectory())
 	},
 	Entry("given --all and a filter", []string{"--all", "--branch", "main"}, "--all takes no filters or PATHs"),
 	Entry("given --all and a PATH", []string{"--all", "x"}, "--all takes no filters or PATHs"),
-	Entry("given a filter and a PATH", []string{"--branch", "main", "x"}, "give filters or PATHs, not both"),
+	Entry("given --branch and a PATH", []string{"--branch", "main", "x"}, "give filters or PATHs, not both"),
+	Entry("given --sha and a PATH", []string{"--sha", "abc", "x"}, "give filters or PATHs, not both"),
+	Entry("given --pr and a PATH", []string{"--pr", "1", "x"}, "give filters or PATHs, not both"),
+	Entry("given --workflow and a PATH", []string{"--workflow", "ci", "x"}, "give filters or PATHs, not both"),
+	Entry("given --job and a PATH", []string{"--job", "build", "x"}, "give filters or PATHs, not both"),
+	Entry("given --event and a PATH", []string{"--event", "push", "x"}, "give filters or PATHs, not both"),
+	Entry("given --conclusion and a PATH", []string{"--conclusion", "failure", "x"}, "give filters or PATHs, not both"),
+	Entry("given --since and a PATH", []string{"--since", "30d", "x"}, "give filters or PATHs, not both"),
+	Entry("given --until and a PATH", []string{"--until", "2026-09-01", "x"}, "give filters or PATHs, not both"),
 	Entry("given a negative --timeout", []string{"--all", "--timeout=-1s"}, "--timeout must not be negative"),
 	Entry("given a --max-bytes that is not a size", []string{"--all", "--max-bytes", "1 GB"}, `want a size such as 500MB, not "1 GB"`),
 	Entry("when LG_HOME holds no store", []string{"--all"}, "holds no lg store; check LG_HOME"),
