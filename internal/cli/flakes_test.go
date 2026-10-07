@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,15 +34,23 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		return runDirs[0]
 	}
 
-	It("prints with --kind rerun what it prints without --kind", func() {
+	It("prints rerun flips and intermittent failures without --kind, and each kind alone with --kind", func() {
 		c := harness.NewCLI()
-		synced(c)
-		Expect(c.Main("flakes")).To(Equal(0), c.Stderr.String())
-		all := c.Stdout.String()
-		Expect(all).To(ContainSubstring(`"flaky"`))
+		for _, r := range scenario.Intermittent().All() {
+			Expect(c.Fake.AddRun(r)).To(Succeed())
+		}
+		Expect(c.Main("sync")).To(Equal(0), c.Stderr.String())
+		rerun := `run 3 (sha 3333333): "integration": 1:failure 2:success`
+		intermittent := `workflow "lg-fixture" on main: "integration": 1 of 6 runs failed alone: run 3 (sha 3333333) failure`
+		printed := func(args ...string) []string {
+			GinkgoHelper()
+			Expect(c.Main(append([]string{"flakes"}, args...)...)).To(Equal(0), c.Stderr.String())
+			return strings.Split(strings.TrimSuffix(c.Stdout.String(), "\n"), "\n")
+		}
 
-		Expect(c.Main("flakes", "--kind", "rerun")).To(Equal(0), c.Stderr.String())
-		Expect(c.Stdout.String()).To(Equal(all))
+		Expect(printed()).To(ContainElements(rerun, intermittent))
+		Expect(printed("--kind", "rerun")).To(SatisfyAll(ContainElement(rerun), HaveEach(HavePrefix("run "))))
+		Expect(printed("--kind", "intermittent")).To(SatisfyAll(ContainElement(intermittent), HaveEach(HavePrefix("workflow "))))
 	})
 
 	It("prints the findings, then exits 1 naming each log it cannot read", func() {
@@ -105,6 +114,6 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 			Expect(c.Stderr.String()).To(ContainSubstring(message))
 		},
 		Entry("for an empty --sha, which would match every run", []string{"--sha", ""}, "--sha must not be empty"),
-		Entry("for an unknown --kind", []string{"--kind", "bogus"}, `--kind must be one of "rerun","all" but got "bogus"`),
+		Entry("for an unknown --kind", []string{"--kind", "bogus"}, `--kind must be one of "rerun","intermittent","all" but got "bogus"`),
 	)
 })
