@@ -2,8 +2,6 @@ package e2e_test
 
 import (
 	"archive/tar"
-	"archive/zip"
-	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -19,6 +17,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/lock"
+	"github.com/rosenhouse/lg/internal/testsupport/archives"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
@@ -67,66 +66,6 @@ func syncWithZip(env *harness.Env, zip []byte) string {
 	env.WriteConfig(fake.URL())
 	Expect(env.Sync()).To(gexec.Exit(0))
 	return artifactDir(env, passArtifact)
-}
-
-type entry struct {
-	name     string
-	body     string
-	mode     fs.FileMode
-	typeflag byte
-	link     string
-}
-
-func zipOf(entries ...entry) []byte {
-	GinkgoHelper()
-	var buf bytes.Buffer
-	w := zip.NewWriter(&buf)
-	for _, e := range entries {
-		header := &zip.FileHeader{Name: e.name, Method: zip.Deflate, Modified: time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)}
-		mode := e.mode
-		if mode == 0 {
-			mode = 0o644
-		}
-		header.SetMode(mode)
-		f, err := w.CreateHeader(header)
-		Expect(err).NotTo(HaveOccurred())
-		body := e.body
-		if mode&fs.ModeSymlink != 0 {
-			body = e.link
-		}
-		_, err = f.Write([]byte(body))
-		Expect(err).NotTo(HaveOccurred())
-	}
-	Expect(w.Close()).To(Succeed())
-	return buf.Bytes()
-}
-
-func tarOf(entries ...entry) []byte {
-	GinkgoHelper()
-	var buf bytes.Buffer
-	w := tar.NewWriter(&buf)
-	for _, e := range entries {
-		typeflag := e.typeflag
-		if typeflag == 0 {
-			typeflag = tar.TypeReg
-		}
-		mode := int64(e.mode.Perm())
-		if e.mode&fs.ModeSetuid != 0 {
-			mode |= 0o4000
-		}
-		if mode == 0 {
-			mode = 0o644
-		}
-		header := &tar.Header{Name: e.name, Typeflag: typeflag, Mode: mode, Linkname: e.link, ModTime: time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)}
-		if typeflag == tar.TypeReg {
-			header.Size = int64(len(e.body))
-		}
-		Expect(w.WriteHeader(header)).To(Succeed())
-		_, err := w.Write([]byte(e.body))
-		Expect(err).NotTo(HaveOccurred())
-	}
-	Expect(w.Close()).To(Succeed())
-	return buf.Bytes()
 }
 
 // filesBelow lists the paths below dir, relative to it, of every entry that is not a dir.
@@ -292,23 +231,23 @@ var _ = Describe("lg extract", Label("extract"), func() {
 
 var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
 	It("never writes outside extracted/ for .., absolute, symlink or hardlink entries, skips devices and FIFOs, drops setuid bits, and records each in .lg-extract.json", func() {
-		inner := tarOf(
-			entry{name: "ok-in-tar.txt", body: "kept\n"},
-			entry{name: "../tar-escape.txt", body: "escaped\n"},
-			entry{name: "/tar-absolute.txt", body: "absolute\n"},
-			entry{name: "tar-link", typeflag: tar.TypeSymlink, link: "../../../../../../../../etc"},
-			entry{name: "hard", typeflag: tar.TypeLink, link: "ok-in-tar.txt"},
-			entry{name: "dev", typeflag: tar.TypeChar},
-			entry{name: "fifo", typeflag: tar.TypeFifo},
-			entry{name: "tar-setuid", body: "#!/bin/sh\n", mode: 0o755 | fs.ModeSetuid},
+		inner := archives.Tar(
+			archives.Entry{Name: "ok-in-tar.txt", Body: "kept\n"},
+			archives.Entry{Name: "../tar-escape.txt", Body: "escaped\n"},
+			archives.Entry{Name: "/tar-absolute.txt", Body: "absolute\n"},
+			archives.Entry{Name: "tar-link", TarType: tar.TypeSymlink, Link: "../../../../../../../../etc"},
+			archives.Entry{Name: "hard", TarType: tar.TypeLink, Link: "ok-in-tar.txt"},
+			archives.Entry{Name: "dev", TarType: tar.TypeChar},
+			archives.Entry{Name: "fifo", TarType: tar.TypeFifo},
+			archives.Entry{Name: "tar-setuid", Body: "#!/bin/sh\n", Mode: 0o755 | fs.ModeSetuid},
 		)
-		crafted := zipOf(
-			entry{name: "ok.txt", body: "kept\n"},
-			entry{name: "../escape.txt", body: "escaped\n"},
-			entry{name: "/absolute.txt", body: "absolute\n"},
-			entry{name: "link", mode: fs.ModeSymlink | 0o777, link: "../../../../../../../../etc/passwd"},
-			entry{name: "setuid.sh", body: "#!/bin/sh\n", mode: 0o755 | fs.ModeSetuid},
-			entry{name: "special.tar", body: string(inner)},
+		crafted := archives.Zip(
+			archives.Entry{Name: "ok.txt", Body: "kept\n"},
+			archives.Entry{Name: "../escape.txt", Body: "escaped\n"},
+			archives.Entry{Name: "/absolute.txt", Body: "absolute\n"},
+			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "../../../../../../../../etc/passwd"},
+			archives.Entry{Name: "setuid.sh", Body: "#!/bin/sh\n", Mode: 0o755 | fs.ModeSetuid},
+			archives.Entry{Name: "special.tar", Body: string(inner)},
 		)
 		env := harness.New(lgPath)
 		dir := syncWithZip(env, crafted)
@@ -345,14 +284,14 @@ var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
 var _ = Describe("lg extract on an archive with duplicate and case-colliding names", Label("extract"), func() {
 	It("keeps every entry under a ~N suffix and records the originals", func() {
 		env := harness.New(lgPath)
-		dir := syncWithZip(env, zipOf(
-			entry{name: "dup.txt", body: "first\n"},
-			entry{name: "dup.txt", body: "second\n"},
-			entry{name: "Case.txt", body: "upper first\n"},
-			entry{name: "case.txt", body: "lower\n"},
-			entry{name: "CASE.TXT", body: "all upper\n"},
-			entry{name: "dir/a.txt", body: "a\n"},
-			entry{name: "DIR/b.txt", body: "b\n"},
+		dir := syncWithZip(env, archives.Zip(
+			archives.Entry{Name: "dup.txt", Body: "first\n"},
+			archives.Entry{Name: "dup.txt", Body: "second\n"},
+			archives.Entry{Name: "Case.txt", Body: "upper first\n"},
+			archives.Entry{Name: "case.txt", Body: "lower\n"},
+			archives.Entry{Name: "CASE.TXT", Body: "all upper\n"},
+			archives.Entry{Name: "dir/a.txt", Body: "a\n"},
+			archives.Entry{Name: "DIR/b.txt", Body: "b\n"},
 		))
 
 		Expect(extract(env, dir)).To(gexec.Exit(0))
@@ -373,7 +312,7 @@ var _ = Describe("lg extract on an archive with duplicate and case-colliding nam
 var _ = Describe("lg extract --max-bytes", Label("extract"), func() {
 	It("stops at the cap (default 1GB) and leaves no extracted/ dir", func() {
 		env := harness.New(lgPath)
-		dir := syncWithZip(env, zipOf(entry{name: "big.log", body: strings.Repeat("x", 1000)}))
+		dir := syncWithZip(env, archives.Zip(archives.Entry{Name: "big.log", Body: strings.Repeat("x", 1000)}))
 
 		capped := extract(env, "--max-bytes", "999", dir)
 		Expect(capped).To(gexec.Exit(1))
