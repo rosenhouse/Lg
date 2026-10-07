@@ -3,7 +3,8 @@ package version
 
 import "runtime/debug"
 
-// Version is set with -ldflags -X, else from the build info.
+// Version is set with -ldflags -X, else is the module version that go build
+// stamps, else dev.
 var Version string
 
 func init() {
@@ -12,26 +13,10 @@ func init() {
 	}
 }
 
-// FromBuildInfo gives the module version, else the VCS revision with -dirty
-// for a modified tree, else dev.
+// FromBuildInfo gives the module version, else dev.
 func FromBuildInfo(info *debug.BuildInfo, ok bool) string {
-	if !ok {
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
 		return "dev"
 	}
-	if v := info.Main.Version; v != "" && v != "(devel)" {
-		return v
-	}
-	settings := map[string]string{}
-	for _, s := range info.Settings {
-		settings[s.Key] = s.Value
-	}
-	revision := settings["vcs.revision"]
-	if revision == "" {
-		return "dev"
-	}
-	revision = revision[:min(12, len(revision))]
-	if settings["vcs.modified"] == "true" {
-		revision += "-dirty"
-	}
-	return revision
+	return info.Main.Version
 }
