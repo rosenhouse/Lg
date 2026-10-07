@@ -225,7 +225,7 @@ var _ = DescribeTable("cli.Main before lg init", Label("status"),
 		Expect(s.Stderr.String()).To(HavePrefix(warning))
 	},
 	Entry("tells to run lg init", []string{"version"}, "lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"),
-	Entry("does not tell lg init to run itself", []string{"init", "--repo", "o/r"}, "lg: warning: never synced\n"),
+	Entry("tells lg init to run lg sync next", []string{"init", "--repo", "o/r"}, "lg: warning: never synced; run `lg sync`\n"),
 )
 
 var _ = Describe("lg sync with a pending unit", Label("status"), func() {

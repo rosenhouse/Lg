@@ -172,7 +172,7 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning, hint := status.Warning(deps.Clock.Now(), st)
-	if file, err := config.File(deps.Env); hint == "sync" && err == nil && !exists(file) {
+	if file, err := config.File(deps.Env); hint == "sync" && command != "init" && err == nil && !exists(file) {
 		hint = "init"
 	}
 	runsHint := command == hint || hint == "sync" && command == "daemon run"
