@@ -426,7 +426,7 @@ var _ = Describe("lg extract of two artifacts", Label("extract"), func() {
 		session.Signal(syscall.SIGSTOP)
 		sync, wait := env.StartSync()
 		Eventually(sync.Err, harness.ExitTimeout).Should(gbytes.Say("lg: waiting for "))
-		time.Sleep(time.Second)
+		Consistently(session, time.Second).ShouldNot(gexec.Exit())
 		session.Signal(syscall.SIGCONT)
 		Expect(wait()).To(gexec.Exit(0))
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
