@@ -51,6 +51,9 @@ func FromStatus(status int, header http.Header, message, detail string, now time
 	case rateLimited:
 		return Blocked{Kind: RateLimit, Detail: detail, RetryAt: ceilSecond(retryAt(header, now))}, true
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		if needs := header.Get("X-Accepted-GitHub-Permissions"); needs != "" {
+			detail += "; the token needs " + needs
+		}
 		return Blocked{Kind: Auth, Detail: detail}, true
 	}
 	return Blocked{}, false
