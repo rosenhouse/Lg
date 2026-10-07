@@ -30,7 +30,8 @@ type extractCmd struct {
 
 func (extractCmd) Help() string {
 	return "Expands each selected artifact.zip, and the zip, tar and tar.gz archives nested in it, into extracted/ beside it. " +
-		"An artifact already extracted, or whose zip is a tombstone, is skipped. extracted/.lg-extract.json records what was renamed or skipped."
+		"An artifact already extracted, or whose zip is a tombstone, is skipped. extracted/.lg-extract.json records what was renamed or skipped. " +
+		fmt.Sprintf("An artifact.zip of more than %d members is not extracted, and nested archives past that many stay unexpanded.", extract.Defaults().MaxFiles)
 }
 
 // size is a --max-bytes.

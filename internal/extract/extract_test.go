@@ -549,22 +549,48 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
 	})
 
-	It("stops past MaxFiles members, skipped ones and those of nested archives too, and leaves no extracted/", func() {
+	It("fails before writing anything on an artifact.zip of more than MaxFiles members, skipped ones included", func() {
 		f := newFixture(archives.Zip(
-			archives.Entry{Name: "a.log"},
+			archives.Entry{Name: "dir/", Mode: fs.ModeDir | 0o755},
+			archives.Entry{Name: "dir/a.log"},
 			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: "a.log"},
-			archives.Entry{Name: "b.tar", Body: string(archives.Tar(archives.Entry{Name: "b.log"}))},
+			archives.Entry{Name: "b.log"},
 		))
 		limits := extract.Defaults()
 		Expect(limits.MaxFiles).To(Equal(100_000))
-		limits.MaxFiles = 3
+		limits.MaxFiles = 2
 
 		Expect(f.extract(limits)).To(MatchError(extract.ErrTooManyFiles))
+		Expect(f.fsys.Journal()).NotTo(ContainElement(HaveField("Name", "create")))
 		Expect(f.extracted).NotTo(BeADirectory())
 		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
 
 		limits.MaxFiles++
 		Expect(f.extract(limits)).To(Succeed())
+	})
+
+	It("expands nested archives only while the members met, skipped ones included, stay within MaxFiles, and records the rest as not expanded", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "a.log", Body: "a\n"},
+			archives.Entry{Name: "b.tar", Body: string(archives.Tar(
+				archives.Entry{Name: "b1.log", Body: "b1\n"},
+				archives.Entry{Name: "link", TarType: tar.TypeSymlink, Link: "b1.log"},
+				archives.Entry{Name: "b2.log", Body: "b2\n"},
+			))},
+			archives.Entry{Name: "c.zip", Body: string(archives.Zip(archives.Entry{Name: "c.log", Body: "c\n"}))},
+			archives.Entry{Name: "d.log", Body: "d\n"},
+		))
+		limits := extract.Defaults()
+		limits.MaxFiles = 6
+
+		Expect(f.extract(limits)).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveLen(6), HaveKey("a.log"), HaveKey("b.tar"), HaveKeyWithValue("b.tar.d/b1.log", "b1\n"), HaveKey("c.zip"), HaveKey("d.log"),
+		))
+		Expect(f.manifest()["not_expanded"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "b.tar", "path", "b.tar", "reason", "partial: too_many_files"),
+			record("archive", "artifact.zip", "name", "c.zip", "path", "c.zip", "reason", "too_many_files"),
+		))
 	})
 
 	It("fails on an artifact.zip that does not read as a zip, publishing nothing", func() {

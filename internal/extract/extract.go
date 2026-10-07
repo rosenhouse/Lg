@@ -28,6 +28,7 @@ type Limits struct {
 	// MaxBytes bounds the total bytes of the files written.
 	MaxBytes int64
 	// MaxFiles bounds the members of every archive, skipped ones included.
+	// Past it, artifact.zip fails whole, and a nested archive stays unexpanded.
 	MaxFiles int
 	// MaxNesting is how many levels of archives within artifact.zip are expanded.
 	MaxNesting int
@@ -35,15 +36,18 @@ type Limits struct {
 
 func Defaults() Limits { return Limits{MaxBytes: 1_000_000_000, MaxFiles: 100_000, MaxNesting: 8} }
 
-// ErrTooManyFiles is an artifact of more than Limits.MaxFiles members.
+// ErrTooManyFiles is an artifact.zip of more than Limits.MaxFiles members.
 var ErrTooManyFiles = errors.New("too many files")
+
+// errFull is a member of a nested archive past Limits.MaxFiles.
+var errFull = errors.New("too_many_files")
 
 const source = "artifact.zip"
 
 // Extract expands artifactDir/artifact.zip into artifactDir/extracted,
 // staged in tmp/ and published whole. Past limits.MaxBytes, it publishes
-// nothing and returns store.ErrTooLarge, and past limits.MaxFiles,
-// ErrTooManyFiles.
+// nothing and returns store.ErrTooLarge, and when artifact.zip alone has
+// more than limits.MaxFiles members, ErrTooManyFiles.
 func Extract(s *store.Store, artifactDir string, limits Limits, now time.Time) error {
 	zipFile, err := os.Open(filepath.Join(artifactDir, source))
 	if err != nil {
@@ -105,6 +109,7 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
 		return corrupt{err}
 	}
+	var members []member
 	for _, file := range r.File {
 		mode := file.Mode()
 		m := member{name: file.Name, skip: skipped(mode), setuid: mode&(fs.ModeSetuid|fs.ModeSetgid) != 0, open: file.Open}
@@ -114,6 +119,15 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 			}
 			m.skip = "dir_with_data"
 		}
+		members = append(members, m)
+	}
+	if level == 0 {
+		if len(members) > x.limits.MaxFiles {
+			return fmt.Errorf("%w: more than %d", ErrTooManyFiles, x.limits.MaxFiles)
+		}
+		x.members = len(members)
+	}
+	for _, m := range members {
 		if err := x.write(m, archive, dir, level); err != nil {
 			return err
 		}
@@ -174,10 +188,14 @@ func tarSkipped(typeflag byte) string {
 }
 
 // write writes m below dir, the components of the dir its archive expands
-// into, and expands it when it is an archive.
+// into, and expands it when it is an archive. A member of artifact.zip, at
+// level 0, was counted already.
 func (x *extraction) write(m member, archive string, dir []string, level int) error {
-	if x.members++; x.members > x.limits.MaxFiles {
-		return fmt.Errorf("%w: more than %d", ErrTooManyFiles, x.limits.MaxFiles)
+	if level > 0 {
+		if x.members >= x.limits.MaxFiles {
+			return errFull
+		}
+		x.members++
 	}
 	rec := record{Archive: archive, Name: m.name}
 	if m.skip == "" {
@@ -283,6 +301,8 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		return notExpanded("too_deep")
 	case len(rel)+len(".d/")+layout.MaxSlug > maxPath:
 		return notExpanded("too_long")
+	case x.members >= x.limits.MaxFiles:
+		return notExpanded(errFull.Error())
 	}
 	dir, reason := x.names.dir(rel)
 	if reason != "" {
@@ -301,12 +321,17 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		err = x.expandTar(f, rel, dir, level)
 	}
 	var bad corrupt
-	if !errors.As(err, &bad) {
+	var why string
+	switch {
+	case errors.Is(err, errFull):
+		why = err.Error()
+	case errors.As(err, &bad):
+		why = bad.Error()
+		if !strings.HasPrefix(why, kind+": ") {
+			why = kind + ": " + why
+		}
+	default:
 		return err
-	}
-	why := bad.Error()
-	if !strings.HasPrefix(why, kind+": ") {
-		why = kind + ": " + why
 	}
 	if x.files > files {
 		why = "partial: " + why

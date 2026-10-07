@@ -330,6 +330,7 @@ var _ = Describe("lg extract --max-bytes", Label("extract"), func() {
 
 		help := extract(env, "--help")
 		Expect(help).To(gexec.Exit(0))
+		Expect(help.Out).To(gbytes.Say(`more than 100000 members`))
 		Expect(help.Out).To(gbytes.Say(`--max-bytes=1GB `))
 
 		Expect(extract(env, "--max-bytes", "1000", dir)).To(gexec.Exit(0))
