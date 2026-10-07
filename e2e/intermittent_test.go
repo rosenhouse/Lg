@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 	"github.com/onsi/gomega/types"
 
+	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
@@ -167,5 +169,22 @@ var _ = Describe("lg flakes --kind intermittent with a pull_request run from the
 		syncFrom(env, serve(append(scenario.Intermittent().All(), pr)...))
 
 		Expect(flakes(env, "--kind", "intermittent")).To(ConsistOf(isolated("integration", "", 3), isolated("suite", "unit", 4)))
+	})
+})
+
+var _ = Describe("lg flakes --kind intermittent with a run whose first attempt is not on disk", Label("flakes"), func() {
+	It("does not report a failure next to that run as alone", func() {
+		runs := scenario.Intermittent()
+		second := runs.Main[1]
+		runs.Main[1] = scenario.SetJobConclusion(second, 1, second.JobIDs(1, "integration")[0], "failure")
+		fake := serve(runs.All()...)
+		fake.Fail("api", fmt.Sprintf("jobs/%d/logs", runs.Main[2].JobIDs(1, "integration")[0]), fakegithub.Fault{Status: http.StatusInternalServerError})
+		env := harness.New(lgPath)
+		env.WriteConfig(fake.URL())
+		Expect(env.Sync()).To(gexec.Exit(1))
+		Expect(filepath.Join(runDirOf(env, 3), "attempt-1")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(runDirOf(env, 3), "attempt-2")).To(BeADirectory())
+
+		Expect(flakes(env, "--kind", "intermittent", "--job", "integration")).To(BeEmpty())
 	})
 })
