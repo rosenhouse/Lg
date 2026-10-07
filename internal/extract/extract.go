@@ -38,11 +38,7 @@ func Defaults() Limits { return Limits{MaxBytes: 1_000_000_000, MaxFiles: 100_00
 // ErrTooManyFiles is an artifact of more than Limits.MaxFiles members.
 var ErrTooManyFiles = errors.New("too many files")
 
-const (
-	// Manifest is the file in extracted/ that records how it was made.
-	Manifest = ".lg-extract.json"
-	source   = "artifact.zip"
-)
+const source = "artifact.zip"
 
 // Extract expands artifactDir/artifact.zip into artifactDir/extracted,
 // staged in tmp/ and published whole. Past limits.MaxBytes, it publishes
@@ -65,7 +61,7 @@ func Extract(s *store.Store, artifactDir string, limits Limits, now time.Time) e
 	}
 	if err == nil {
 		x.manifest.Bytes = x.written
-		err = unit.WriteValue(Manifest, x.manifest)
+		err = unit.WriteValue(layout.ExtractManifest, x.manifest)
 	}
 	if err == nil {
 		err = s.Publish(unit, filepath.Join(artifactDir, "extracted"))

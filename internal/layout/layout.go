@@ -14,6 +14,9 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 )
 
+// ExtractManifest is the file in an artifact's extracted/ that records how lg extract made it.
+const ExtractManifest = ".lg-extract.json"
+
 // MaxSlug is the length of the longest slug.
 const MaxSlug = 60
 

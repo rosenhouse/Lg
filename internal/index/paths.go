@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rosenhouse/lg/internal/layout"
 )
 
 // Filter selects units. Each field left empty selects every unit; values
@@ -274,7 +276,7 @@ func runJSON(dir string) ([]string, error) {
 // extractedFiles gives the files of the artifact's extracted/ tree but its .lg-extract.json.
 func extractedFiles(dir string) ([]string, error) {
 	extracted := filepath.Join(dir, "extracted")
-	manifest := filepath.Join(extracted, ".lg-extract.json")
+	manifest := filepath.Join(extracted, layout.ExtractManifest)
 	return walk(extracted, func(path string, d fs.DirEntry) (bool, error) { return path != manifest, nil })
 }
 

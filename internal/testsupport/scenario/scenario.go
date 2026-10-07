@@ -50,6 +50,9 @@ const maxCloneID = 1_000_000
 // idSpace exceeds every recorded job and artifact id.
 const idSpace = 1_000_000_000_000
 
+// ClonedID is the id that Clone of run id gives a job or artifact x.
+func ClonedID(id, x int64) int64 { return id*idSpace + x }
+
 // Clone gives the run id, and each job and artifact x the id id*10^12+x,
 // so clones of one run at different stages agree. Logs and zips keep their bytes.
 func Clone(src Run, id int64) Run {
@@ -58,7 +61,7 @@ func Clone(src Run, id int64) Run {
 	}
 	newIDs := map[int64]int64{src.ID: id}
 	for _, old := range src.ids() {
-		newIDs[old] = id*idSpace + old
+		newIDs[old] = ClonedID(id, old)
 	}
 	// Longest first, so that no id is replaced by a prefix of it.
 	var pairs []string

@@ -182,11 +182,11 @@ var _ = Describe("lg extract --branch release-3", Label("extract"), func() {
 		Eventually(grep, harness.ExitTimeout).Should(gexec.Exit(0))
 		hits := outputLines(grep)
 		Expect(hits).To(HaveLen(1))
-		artifact := artifactDir(env, a.Release3.ID*1_000_000_000_000+passArtifact)
+		artifact := artifactDir(env, scenario.ClonedID(a.Release3.ID, passArtifact))
 		Expect(hits[0]).To(HavePrefix(filepath.Join(artifact, "extracted", "inner.tar.gz.d") + string(filepath.Separator)))
 
 		Expect(where(env, hits[0])).To(HaveExactElements(SatisfyAll(
-			HaveKeyWithValue("artifact_id", BeEquivalentTo(a.Release3.ID*1_000_000_000_000+passArtifact)),
+			HaveKeyWithValue("artifact_id", BeEquivalentTo(scenario.ClonedID(a.Release3.ID, passArtifact))),
 			HaveKeyWithValue("artifact", "pass-artifact"),
 			HaveKeyWithValue("inner_path", "inner.tar.gz.d/tgz/nested.log"),
 			HaveKeyWithValue("line", BeEquivalentTo(1)),
@@ -197,7 +197,7 @@ var _ = Describe("lg extract --branch release-3", Label("extract"), func() {
 var _ = Describe("lg extract", Label("extract"), func() {
 	It("selects artifacts by lg paths filters or PATH arguments, skips tombstoned artifacts, and exits 2 asking for a filter, PATH or --all when given none", func() {
 		const expired = 11276401837
-		main := scenario.Expire(scenario.OnBranch(scenario.CloneAt(9, "after-attempt-1", harness.DefaultNow().Add(-scenario.Day)), "main"), 9_000_000_000_000+expired)
+		main := scenario.Expire(scenario.OnBranch(scenario.CloneAt(9, "after-attempt-1", harness.DefaultNow().Add(-scenario.Day)), "main"), scenario.ClonedID(9, expired))
 		other := scenario.OnBranch(scenario.CloneAt(10, "after-attempt-1", harness.DefaultNow().Add(-scenario.Day)), "other")
 		env := harness.New(lgPath)
 		fake := fakegithub.New()
@@ -206,7 +206,7 @@ var _ = Describe("lg extract", Label("extract"), func() {
 		Expect(fake.AddRun(other)).To(Succeed())
 		env.WriteConfig(fake.URL())
 		Expect(env.Sync()).To(gexec.Exit(0))
-		tombstoned := artifactDir(env, 9_000_000_000_000+expired)
+		tombstoned := artifactDir(env, scenario.ClonedID(9, expired))
 		Expect(filepath.Join(tombstoned, "artifact.zip.tombstone")).To(BeARegularFile())
 
 		none := extract(env)
@@ -223,7 +223,7 @@ var _ = Describe("lg extract", Label("extract"), func() {
 		}
 		Expect(extractedDirs(env)).To(ConsistOf(mainExtracted))
 
-		otherPass := artifactDir(env, 10_000_000_000_000+passArtifact)
+		otherPass := artifactDir(env, scenario.ClonedID(10, passArtifact))
 		byPath := extract(env, otherPass, filepath.Join(tombstoned, "artifact.zip.tombstone"))
 		Expect(byPath).To(gexec.Exit(0))
 		Expect(byPath.Err).To(gbytes.Say(regexp.QuoteMeta(tombstoned)))

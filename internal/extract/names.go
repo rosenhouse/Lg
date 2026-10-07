@@ -42,7 +42,7 @@ const (
 )
 
 func newNamer() *namer {
-	return &namer{root: node{fold(Manifest): {name: Manifest, kind: file}}}
+	return &namer{root: node{fold(layout.ExtractManifest): {name: layout.ExtractManifest, kind: file}}}
 }
 
 // fold maps names that a case- and normalization-insensitive filesystem,

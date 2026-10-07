@@ -30,11 +30,11 @@ func (c gcCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	if err := checkHasStore(roots); err != nil {
-		return err
-	}
 	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
+		if err := checkHasStore(roots); err != nil {
+			return err
+		}
 		h, err := retention.PeekHorizons(roots.State)
 		if err != nil {
 			return err

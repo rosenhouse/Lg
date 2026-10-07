@@ -46,7 +46,7 @@ func Archaeology() ArchaeologyRuns {
 	return ArchaeologyRuns{
 		MainAugust:    logged(run(1, "after-attempt-1", "2026-08-20", "main")),
 		MainSeptember: logged(run(2, "after-attempt-1", "2026-09-10", "main")),
-		Release3:      WithArtifactZip(logged(run(3, "after-attempt-1", "2026-09-20", "release-3")), 3*idSpace+passArtifact, BuildArtifactZip(FooBar)),
+		Release3:      WithArtifactZip(logged(run(3, "after-attempt-1", "2026-09-20", "release-3")), ClonedID(3, passArtifact), BuildArtifactZip(FooBar)),
 		Feature:       logged(run(4, "after-attempt-1", "2026-09-25", "feat/retry-upload")),
 		Fork:          logged(FromFork(WithEvent(run(5, "after-attempt-1", "2026-10-02", "main"), "pull_request"), "someone/Lg")),
 		TitleOnly:     WithDisplayTitle(run(6, "after-attempt-1", "2026-10-01", "main"), "Fix "+FooBar),
