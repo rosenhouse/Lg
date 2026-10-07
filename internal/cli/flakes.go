@@ -175,7 +175,7 @@ type failureJSON struct {
 func printIntermittentJSON(w io.Writer, s model.Series, failures []model.RunOutcome) error {
 	out := intermittentJSON{
 		Kind: "intermittent", WorkflowID: s.WorkflowID, Workflow: s.Workflow, Branch: s.Branch, Job: s.Job,
-		Runs: len(s.Runs), Failures: []failureJSON{}, Logs: []string{},
+		Runs: len(s.Runs), Logs: []string{},
 	}
 	if s.Step != "" {
 		out.Step = &s.Step

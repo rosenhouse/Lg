@@ -71,6 +71,14 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(out.String()).To(SatisfyAll(ContainSubstring(`"failing_steps":[]`), ContainSubstring(`"logs":[]`)))
 	})
 
+	It("prints an intermittent failure with no logs with an empty list in --json", func() {
+		var out bytes.Buffer
+		failures := []model.RunOutcome{{RunID: 2, Conclusion: "failure"}}
+		Expect(cli.PrintIntermittentJSON(&out, model.Series{Job: "test"}, failures)).To(Succeed())
+
+		Expect(out.String()).To(ContainSubstring(`"logs":[]`))
+	})
+
 	It("prints <, > and & in --json unescaped", func() {
 		c := harness.NewCLI()
 		r := scenario.Clone(scenario.Recorded(fixtureRun, "after-attempt-1"), 1)

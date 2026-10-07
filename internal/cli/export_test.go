@@ -52,3 +52,5 @@ func FindPlaces(data string, readDir func(dir string) ([]fs.DirEntry, error), hi
 }
 
 var PrintFlipJSON = printFlipJSON
+
+var PrintIntermittentJSON = printIntermittentJSON
