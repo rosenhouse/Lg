@@ -78,6 +78,12 @@ var _ = Describe("FromStatus", Label("prs"), func() {
 		Expect(ok).To(BeTrue())
 		Expect(blocked).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "GET /x: 403; the token needs pull_requests=read"}))
 	})
+
+	It("leaves the detail of a 401 as it is, since GitHub sends X-Accepted-GitHub-Permissions on every response", func() {
+		blocked, ok := failure.FromStatus(401, headers("X-Accepted-GitHub-Permissions", "actions=read"), "Bad credentials", "GET /x: 401", now)
+		Expect(ok).To(BeTrue())
+		Expect(blocked).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "GET /x: 401"}))
+	})
 })
 
 var _ = DescribeTable("FromStatus of a status that refuses neither credentials nor rate", Label("blocked"),
