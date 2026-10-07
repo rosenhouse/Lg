@@ -87,6 +87,22 @@ func LgCommands(md string) []Command {
 	return p.found
 }
 
+// FlagSpans gives the words of each inline code span that starts with "--".
+func FlagSpans(md string) []Command {
+	var spans []Command
+	lines(md, func(n int, line string, f fence) {
+		if f.line != 0 {
+			return
+		}
+		for _, m := range inlineCode.FindAllStringSubmatch(line, -1) {
+			if strings.HasPrefix(m[1], "--") {
+				spans = append(spans, Command{Line: n, Args: strings.Fields(m[1])})
+			}
+		}
+	})
+	return spans
+}
+
 // shell finds lg invocations in lines of shell, as far as SKILL.md needs.
 type shell struct {
 	found []Command

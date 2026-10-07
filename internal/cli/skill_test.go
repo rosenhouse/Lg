@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -43,6 +44,26 @@ var _ = Describe("SKILL.md", Label("skill"), func() {
 		}
 	})
 })
+
+var _ = Describe("SKILL.md", Label("skill"), func() {
+	It("names a flag outside an `lg …` line only as some `lg …` line passes it", func() {
+		commands := doctest.LgCommands(skill.Markdown)
+		for _, span := range doctest.FlagSpans(skill.Markdown) {
+			Expect(slices.ContainsFunc(commands, func(c doctest.Command) bool { return containsRun(c.Args, span.Args) })).
+				To(BeTrue(), "line %d: %s", span.Line, strings.Join(span.Args, " "))
+		}
+	})
+})
+
+// containsRun reports whether words appear in args, in order and side by side.
+func containsRun(args, words []string) bool {
+	for i := range args {
+		if slices.Equal(args[i:min(i+len(words), len(args))], words) {
+			return true
+		}
+	}
+	return false
+}
 
 var _ = Describe("Parse", Label("skill"), func() {
 	DescribeTable("accepts every documented command line, without running it",

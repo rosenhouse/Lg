@@ -65,3 +65,18 @@ var _ = Describe("LgCommands", Label("skill"), func() {
 		}))
 	})
 })
+
+var _ = Describe("FlagSpans", Label("skill"), func() {
+	It("finds each inline code span that starts with --, split into words", func() {
+		md := "Pass `--sha` (a prefix) or `--unit run`, not `lg paths --pr 1` or `-0`.\n" +
+			"```sh\n" +
+			"echo `--in-block`\n" +
+			"```\n" +
+			"Then `--all`.\n"
+		Expect(doctest.FlagSpans(md)).To(Equal([]doctest.Command{
+			{Line: 1, Args: []string{"--sha"}},
+			{Line: 1, Args: []string{"--unit", "run"}},
+			{Line: 5, Args: []string{"--all"}},
+		}))
+	})
+})
