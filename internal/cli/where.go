@@ -23,7 +23,7 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a hit. A relative path resolves against the working directory, data/ or a repo dir. With none, lg where reads hits from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a hit. A relative path resolves against the working directory, data/ or a repo dir. With none, lg where reads paths or hits from stdin, one per line."`
 }
 
 func (whereCmd) Help() string {

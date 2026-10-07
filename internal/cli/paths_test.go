@@ -310,4 +310,14 @@ var _ = Describe("lg paths --help", Label("prs"), func() {
 		Expect(strings.Join(strings.Fields(c.Stdout.String()), " ")).To(ContainSubstring(
 			"Only runs of this pull request, open or merged. It may miss fork runs and runs of pull requests closed without merging."))
 	})
+
+	It("says how to select one run, that artifact names repeat, and that --branch takes no slug", Label("paths"), func() {
+		c := harness.NewCLI()
+
+		Expect(c.Main("paths", "--help")).To(Equal(0))
+		help := strings.Join(strings.Fields(c.Stdout.String()), " ")
+		Expect(help).To(ContainSubstring("--sha narrows to one commit's runs; lg paths | grep /<run_id>_ selects one run."))
+		Expect(help).To(ContainSubstring("Artifacts of one name repeat across runs and attempts."))
+		Expect(help).To(ContainSubstring("Only runs on this branch, as GitHub names it, not its slug in a path."))
+	})
 })

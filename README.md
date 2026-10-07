@@ -27,8 +27,11 @@ lg daemon install
 lg status
 ```
 
-`lg sync` fetches the runs of the last 7 days. The first `lg sync` can take several minutes and prints nothing until it finishes.
+`lg sync` fetches the runs of the last 7 days; set `backfill` in config.yaml to fetch more. The first `lg sync` can take several minutes and prints nothing until it finishes.
 `lg daemon install` runs a systemd user unit or launchd agent that syncs every 10 minutes.
+`lg status` shows its last sync and any warning.
+The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
+On a headless Linux machine, run `loginctl enable-linger` so the unit outlives your login.
 To try GitHub Enterprise Server, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
 
 Search the logs of main from the last 30 days, and decode each hit:
@@ -70,7 +73,7 @@ lg skill install
 Runs are under `<host>/<owner>/<repo>/runs/<date>/<run_id>_<workflow>_<branch>/`.
 `<owner>/<repo>` is spelled as GitHub spells the repository's full name.
 Each `attempt-N/`, artifact dir and `extracted/` dir is complete once it appears, and its files never change.
-A run dir gains attempts and artifacts as they finish, and an artifact dir gains `extracted/` when `lg extract --all` expands it.
+A run dir gains attempts and artifacts as they finish, and an artifact dir gains `extracted/` when lg extract expands it.
 Runs older than 90 days are removed. While `data/` exceeds 50GB, lg removes `extracted/` trees first, then the oldest runs.
 
 ## Design

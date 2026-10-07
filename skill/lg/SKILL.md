@@ -143,7 +143,7 @@ lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg w
 An attempt that carries forward a failed job or step gives its name no success.
 `lg flakes --kind intermittent` finds an attempt 1 on the default branch that failed while attempt 1 of the runs before and after it succeeded.
 It leaves out `pull_request` and `pull_request_target` runs, and runs whose first or latest attempt was cancelled, so use `--kind rerun` for pull requests.
-A run whose attempt 1 is not on disk yet leaves no failure next to it alone.
+A failure next to a run whose attempt 1 is not on disk yet is not reported.
 `lg flakes --branch release-3` replaces the default branch, and lg exits 1 asking for `--branch` when it does not know the default.
 `--job` selects job names. The other filters select runs: `--since` and `--until` match the start of any attempt, and `--conclusion` the latest attempt.
 For `--kind intermittent`, `--branch`, `--workflow` and `--event` pick the runs that intermittent failures compare, while `--sha`, `--pr`, `--conclusion`, `--since` and `--until` pick only which failures are reported.

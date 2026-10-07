@@ -31,7 +31,7 @@ type syncCmd struct {
 func (syncCmd) Help() string {
 	return "Without a daemon, lg sync runs one cycle and exits as it did. " +
 		"With a daemon running, it asks the daemon for a cycle and exits at once, or, with --wait, when that cycle ends. " +
-		"The first sync fetches runs created in the last backfill (7d). " +
+		fmt.Sprintf("The first sync fetches the runs created within backfill, %s unless config.yaml sets it. ", config.Defaults().Backfill) +
 		"It exits 1 while units stay pending; lg status lists them."
 }
 
@@ -161,7 +161,7 @@ func pending(units []mirror.UnitError) []status.Pending {
 // state/status.json. Callers hold state/write.lock.
 func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
 	path := filepath.Join(roots.State, "status.json")
-	// Next starts over from an unparsable status.json.
+	// Next starts over when status.json is unparsable.
 	prev, _ := status.Read(path)
 	c.Repo = repoKey(cfg)
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)
