@@ -567,6 +567,24 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["bytes"]).To(BeEquivalentTo(limits.MaxBytes))
 	})
 
+	It("fails before writing anything when the files artifact.zip declares exceed MaxBytes, counting none it skips", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "a.log", Body: strings.Repeat("a", 600)},
+			archives.Entry{Name: "../escape.log", Body: strings.Repeat("e", 600)},
+			archives.Entry{Name: "link", Mode: fs.ModeSymlink | 0o777, Link: strings.Repeat("l", 600)},
+			archives.Entry{Name: "b.log", Body: strings.Repeat("b", 400)},
+		))
+		limits := extract.Defaults()
+		limits.MaxBytes = 999
+
+		Expect(f.extract(limits)).To(MatchError(store.ErrTooLarge))
+		Expect(f.fsys.Journal()).NotTo(ContainElement(HaveField("Name", "create")))
+		Expect(filepath.Join(f.root, "tmp")).To(matchers.BeSwept())
+
+		limits.MaxBytes++
+		Expect(f.extract(limits)).To(Succeed())
+	})
+
 	It("counts toward MaxBytes the bytes of members that fail to read", func() {
 		bad := archives.Entry{Name: "bad.log", Body: strings.Repeat("x", 1000), BadCRC: true}
 		var nested []archives.Entry
