@@ -112,6 +112,7 @@ var _ = Describe("lg extract --all after syncing after-attempt-1", Label("extrac
 	It("creates artifacts/11276272069_pass-artifact/extracted/ with top.log, inner.zip.d/zip/nested.log and inner.tar.gz.d/tgz/nested.log", func() {
 		session := extract(env, "--all")
 		Expect(session).To(gexec.Exit(0))
+		Expect(session.Err.Contents()).To(BeEmpty())
 		extracted := filepath.Join(pass, "extracted")
 		Expect(outputLines(session)).To(ContainElement(extracted))
 		Expect(os.ReadFile(filepath.Join(extracted, "top.log"))).To(Equal([]byte("LG_MARKER artifact top-level attempt=1\n")))
@@ -348,6 +349,21 @@ var _ = Describe("lg extract while a cycle holds the write lock", Label("extract
 		Eventually(sync, harness.ExitTimeout).Should(gexec.Exit(0))
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(filepath.Join(env.Data(), fixtureRunDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
+		Expect(extractedDirs(env)).To(HaveLen(4))
+	})
+})
+
+var _ = Describe("lg extract past disk_cap", Label("extract"), func() {
+	It("warns that the next cycle evicts extracted/ trees", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		env.WriteConfig(fake.URL(), fmt.Sprintf("disk_cap: %d", apparentBytes(env.Data())+1))
+
+		session := extract(env, "--all")
+		Expect(session).To(gexec.Exit(0))
+		Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta("lg: data/ now exceeds disk_cap; the next cycle evicts extracted/ trees, oldest run first\n")))
 		Expect(extractedDirs(env)).To(HaveLen(4))
 	})
 })

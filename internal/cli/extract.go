@@ -14,6 +14,7 @@ import (
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/index"
 	"github.com/rosenhouse/lg/internal/layout"
+	"github.com/rosenhouse/lg/internal/retention"
 	"github.com/rosenhouse/lg/internal/store"
 )
 
@@ -74,6 +75,7 @@ func (c extractCmd) Run(deps *Deps) error {
 	limits := extract.Defaults()
 	limits.MaxBytes = int64(c.MaxBytes)
 	errs := []error{selectErr}
+	anyExtracted := false
 	for _, dir := range dirs {
 		extracted, err := c.extract(deps, s, dir, limits)
 		if err != nil {
@@ -81,12 +83,36 @@ func (c extractCmd) Run(deps *Deps) error {
 			continue
 		}
 		if extracted {
+			anyExtracted = true
 			if _, err := fmt.Fprintln(deps.Stdout, filepath.Join(dir, "extracted")); err != nil {
 				return err
 			}
 		}
 	}
+	if anyExtracted {
+		warnPastDiskCap(deps)
+	}
 	return errors.Join(errs...)
+}
+
+// warnPastDiskCap says when data/ exceeds disk_cap, since retention then
+// evicts what extract wrote. It says nothing when it cannot tell.
+func warnPastDiskCap(deps *Deps) {
+	roots, cfg, err := loadConfig(deps.Env)
+	if err != nil {
+		return
+	}
+	runs, err := retention.Scan(roots.Data)
+	if err != nil {
+		return
+	}
+	var total int64
+	for _, run := range runs {
+		total += run.Bytes
+	}
+	if total > int64(cfg.DiskCap) {
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: data/ now exceeds disk_cap; the next cycle evicts extracted/ trees, oldest run first")
+	}
 }
 
 // extract extracts the artifact in dir, unless it has been, or its zip is a
