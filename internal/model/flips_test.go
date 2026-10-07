@@ -96,6 +96,20 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 		})).To(BeEmpty())
 	})
 
+	It("reports a name whose failed job alone is re-run while a passing job of that name is carried forward", func() {
+		flips := model.RerunFlips([]model.AttemptJob{
+			job(1, 1, 11, "same name", "failure", "check", "failure"),
+			job(1, 1, 12, "same name", "success", "check", "success"),
+			job(1, 2, 21, "same name", "success", "check", "success"),
+			kind(job(1, 2, 22, "same name", "success", "check", "success"), model.CarriedForward),
+		})
+
+		Expect(flips).To(HaveExactElements(
+			SatisfyAll(HaveField("Step", ""), HaveField("Outcomes", outcomes(1, "failure", 2, "success"))),
+			SatisfyAll(HaveField("Step", "check"), HaveField("Outcomes", outcomes(1, "failure", 2, "success"))),
+		))
+	})
+
 	It("takes a step's outcome from the step, not from its job", func() {
 		flips := model.RerunFlips([]model.AttemptJob{
 			job(1, 1, 11, "test", "success", "check", "failure"),
