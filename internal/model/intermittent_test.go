@@ -64,17 +64,19 @@ func ran(run int64, conclusion string, logs ...string) model.RunOutcome {
 }
 
 var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
-	It("groups outcomes by workflow_id, branch and job name, and by step name within them, ordered by run_started_at", func() {
+	It("groups outcomes by workflow_id, branch, job name and step name, ordered by run_started_at, and orders the series by branch, workflow_id and job name", func() {
 		series := model.FirstAttemptSeries([]model.RunJob{
 			firstAttempt(3, 1, 31, "test", "success", "go test", "success"),
 			// Workflow 100 is renamed by run 1, the latest.
 			inWorkflow(firstAttempt(1, 3, 11, "test", "failure", "go test", "failure"), 100, "CI"),
+			inWorkflow(firstAttempt(1, 3, 12, "build", "success"), 100, "CI"),
 			firstAttempt(2, 2, 21, "test", "success", "go test", "success"),
-			inWorkflow(firstAttempt(4, 4, 41, "test", "failure"), 200, "release"),
-			onBranch(firstAttempt(5, 5, 51, "test", "failure"), "release-3"),
+			inWorkflow(firstAttempt(4, 0, 41, "test", "failure"), 200, "release"),
+			onBranch(firstAttempt(5, 0, 51, "test", "failure"), "release-3"),
 		})
 
 		Expect(series).To(HaveExactElements(
+			model.Series{WorkflowID: 100, Workflow: "CI", Branch: "main", Job: "build", Runs: []model.RunOutcome{ran(1, "success")}},
 			model.Series{WorkflowID: 100, Workflow: "CI", Branch: "main", Job: "test", Runs: []model.RunOutcome{
 				ran(3, "success"), ran(2, "success"), ran(1, "failure", "attempt-1/11/log.txt"),
 			}},
