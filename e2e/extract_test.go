@@ -372,6 +372,20 @@ var _ = Describe("lg extract past disk_cap", Label("extract"), func() {
 		Expect(session.Err).To(gbytes.Say(regexp.QuoteMeta("lg: data/ now exceeds disk_cap; the next cycle evicts extracted/ trees, oldest run first\n")))
 		Expect(extractedDirs(env)).To(HaveLen(4))
 	})
+
+	It("says nothing when removing expired runs brings data/ under disk_cap", func() {
+		env := harness.New(lgPath)
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		Expect(fake.AddRun(scenario.CloneAt(1, "after-attempt-1", harness.DefaultNow().Add(-3*scenario.Day)))).To(Succeed())
+		env.WriteConfig(fake.URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		env.WriteConfig(fake.URL(), "backfill: 2d", "retention: 2d", fmt.Sprintf("disk_cap: %d", apparentBytes(env.Data())))
+
+		session := extract(env, artifactDir(env, passArtifact))
+		Expect(session).To(gexec.Exit(0))
+		Expect(session.Err.Contents()).To(BeEmpty())
+		Expect(outputLines(gc(env, "--dry-run"))).To(ConsistOf(runDir(env, 1)))
+	})
 })
 
 var _ = Describe("lg gc over disk_cap", Label("extract"), func() {

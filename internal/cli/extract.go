@@ -101,22 +101,19 @@ func (c extractCmd) Run(deps *Deps) error {
 	return errors.Join(append(errs, printErr)...)
 }
 
-// warnPastDiskCap says when data/ exceeds disk_cap, since retention then
-// evicts what extract wrote. It says nothing when it cannot tell.
+// warnPastDiskCap says when retention would now evict extracted/ trees. It
+// says nothing when it cannot tell.
 func warnPastDiskCap(deps *Deps) {
 	roots, cfg, err := loadConfig(deps.Env)
 	if err != nil {
 		return
 	}
-	runs, err := retention.Scan(roots.Data)
+	h, err := retention.PeekHorizons(roots.State)
 	if err != nil {
 		return
 	}
-	var total int64
-	for _, run := range runs {
-		total += run.Bytes
-	}
-	if total > int64(cfg.DiskCap) {
+	v, err := retention.Find(roots.Data, h, deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap))
+	if err == nil && len(v.Extracted) > 0 {
 		_, _ = fmt.Fprintln(deps.Stderr, "lg: data/ now exceeds disk_cap; the next cycle evicts extracted/ trees, oldest run first")
 	}
 }
