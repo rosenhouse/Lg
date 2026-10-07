@@ -490,11 +490,20 @@ func SetJobConclusion(r Run, attempt int, jobID int64, conclusion string) Run {
 
 // SetStepConclusion concludes the step of that name in attempt's job of that id so.
 func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string) Run {
+	return r.editStep(attempt, jobID, step, func(s map[string]any) { s["conclusion"] = conclusion })
+}
+
+// RenameStep renames the step of that name in attempt's job of that id.
+func RenameStep(r Run, attempt int, jobID int64, step, newName string) Run {
+	return r.editStep(attempt, jobID, step, func(s map[string]any) { s["name"] = newName })
+}
+
+func (r Run) editStep(attempt int, jobID int64, step string, edit func(map[string]any)) Run {
 	return r.editJob(attempt, jobID, func(job map[string]any) {
 		found := false
 		for _, s := range job["steps"].([]any) {
 			if s := s.(map[string]any); s["name"] == step {
-				s["conclusion"] = conclusion
+				edit(s)
 				found = true
 			}
 		}
@@ -645,7 +654,3 @@ func (r Run) maxJobID() int64 {
 	return highest
 }
 
-// RenameStep renames the step of that name in attempt's job of that id.
-func RenameStep(r Run, attempt int, jobID int64, step, newName string) Run {
-	return r.copy()
-}
