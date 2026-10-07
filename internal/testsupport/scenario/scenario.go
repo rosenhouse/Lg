@@ -504,6 +504,16 @@ func SetStepConclusion(r Run, attempt int, jobID int64, step, conclusion string)
 	})
 }
 
+// ClearSteps leaves attempt's job of that id no steps.
+func ClearSteps(r Run, attempt int, jobID int64) Run {
+	return r.editJob(attempt, jobID, func(job map[string]any) { job["steps"] = []any{} })
+}
+
+// ReverseSteps lists the steps of attempt's job of that id in reverse.
+func ReverseSteps(r Run, attempt int, jobID int64) Run {
+	return r.editJob(attempt, jobID, func(job map[string]any) { slices.Reverse(job["steps"].([]any)) })
+}
+
 func (r Run) editJob(attempt int, jobID int64, edit func(map[string]any)) Run {
 	out := r.copy()
 	found := false

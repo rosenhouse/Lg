@@ -364,7 +364,7 @@ var _ = Describe("QueuedRun", Label("discovery"), func() {
 	})
 })
 
-var _ = Describe("job conclusions", Label("flakes"), func() {
+var _ = Describe("job edits", Label("flakes"), func() {
 	var run scenario.Run
 
 	BeforeEach(func() {
@@ -431,6 +431,39 @@ var _ = Describe("job conclusions", Label("flakes"), func() {
 		It("panics when the job has no step of that name", func() {
 			pass := run.JobIDs(1, "pass")[0]
 			Expect(func() { scenario.SetStepConclusion(run, 1, pass, "No such step", "failure") }).To(PanicWith(ContainSubstring(`"No such step"`)))
+		})
+	})
+
+	stepNames := func(job map[string]any) []any {
+		var names []any
+		for _, step := range job["steps"].([]any) {
+			names = append(names, step.(map[string]any)["name"])
+		}
+		return names
+	}
+
+	Describe("ClearSteps", func() {
+		It("leaves the attempt's job of that id no steps, leaving the run given unchanged", func() {
+			pass, flaky := run.JobIDs(1, "pass")[0], run.JobIDs(1, "flaky")[0]
+			cleared := scenario.ClearSteps(run, 1, pass)
+
+			Expect(jobOf(cleared, "attempt-1", pass)).To(HaveKeyWithValue("steps", BeEmpty()))
+			Expect(jobOf(cleared, "attempt-1", flaky)["steps"]).NotTo(BeEmpty())
+			Expect(jobOf(run, "attempt-1", pass)["steps"]).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("ReverseSteps", func() {
+		It("lists the steps of the attempt's job of that id in reverse, leaving the run given unchanged", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			reversed := scenario.ReverseSteps(run, 1, pass)
+
+			names := stepNames(jobOf(run, "attempt-1", pass))
+			Expect(len(names)).To(BeNumerically(">", 1))
+			backward := slices.Clone(names)
+			slices.Reverse(backward)
+			Expect(stepNames(jobOf(reversed, "attempt-1", pass))).To(Equal(backward))
+			Expect(stepNames(jobOf(run, "attempt-1", pass))).To(Equal(names))
 		})
 	})
 })
