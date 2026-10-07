@@ -57,9 +57,9 @@ type Gap struct {
 // FirstAttemptSeries gives the series of each job name, and of each step
 // name of it, over jobs of the first attempts of runs. Only jobs that ran count. A
 // name fails in a run if any of its jobs, or the step in any of them, failed;
-// it succeeds if none failed and one succeeded. Series come by branch,
-// workflow id and job name, each job before its steps, which come in the
-// order they first ran.
+// it succeeds if none failed and one succeeded. A gap concludes "" in each
+// series of its workflow and branch. Series come by branch, workflow id and
+// job name, each job before its steps, which come in the order they first ran.
 func FirstAttemptSeries(jobs []RunJob, gaps []Gap) []Series {
 	ran := slices.DeleteFunc(slices.Clone(jobs), func(j RunJob) bool { return j.Kind != Ran })
 	slices.SortFunc(ran, func(a, b RunJob) int {
@@ -84,9 +84,25 @@ func FirstAttemptSeries(jobs []RunJob, gaps []Gap) []Series {
 			series[key].observe(j, conclusion)
 		})
 	}
+	starts := map[int64]time.Time{}
+	for _, j := range ran {
+		starts[j.RunID] = j.StartedAt
+	}
+	for _, g := range gaps {
+		starts[g.RunID] = g.At
+	}
 	out := make([]Series, len(keys))
 	for i, k := range keys {
-		out[i] = *series[k]
+		s := series[k]
+		for _, g := range gaps {
+			if g.WorkflowID == s.WorkflowID && g.Branch == s.Branch {
+				s.Runs = append(s.Runs, RunOutcome{RunID: g.RunID, HeadSHA: g.HeadSHA})
+			}
+		}
+		slices.SortFunc(s.Runs, func(a, b RunOutcome) int {
+			return cmp.Or(starts[a.RunID].Compare(starts[b.RunID]), cmp.Compare(a.RunID, b.RunID))
+		})
+		out[i] = *s
 	}
 	slices.SortStableFunc(out, func(a, b Series) int {
 		return cmp.Or(cmp.Compare(a.Branch, b.Branch), cmp.Compare(a.WorkflowID, b.WorkflowID), cmp.Compare(a.Job, b.Job))
