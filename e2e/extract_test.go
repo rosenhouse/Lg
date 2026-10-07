@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -421,7 +422,13 @@ var _ = Describe("lg extract of two artifacts", Label("extract"), func() {
 
 		session := env.Lg("extract", pass, expiring)
 		staged(env)
-		Eventually(env.Sync(), harness.ExitTimeout).Should(gexec.Exit(0))
+		// Stopping extract past its turn on the lock makes the spec hold however fast the disk is.
+		session.Signal(syscall.SIGSTOP)
+		sync, wait := env.StartSync()
+		Eventually(sync.Err, harness.ExitTimeout).Should(gbytes.Say("lg: waiting for "))
+		time.Sleep(time.Second)
+		session.Signal(syscall.SIGCONT)
+		Expect(wait()).To(gexec.Exit(0))
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(modTime(filepath.Join(env.State(), "status.json"))).To(BeTemporally("<", modTime(filepath.Join(expiring, "extracted"))))
 	})
