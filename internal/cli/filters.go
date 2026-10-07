@@ -39,7 +39,7 @@ func (p filters) validate() error {
 	}
 	for _, job := range p.Job {
 		if err := index.CheckGlob(job); err != nil {
-			return fmt.Errorf("--job %q: %w", job, err)
+			return fmt.Errorf("--job '%s': %w; write [[] for a literal [", job, err)
 		}
 	}
 	return nil

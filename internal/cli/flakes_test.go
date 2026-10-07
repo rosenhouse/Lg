@@ -186,7 +186,7 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 			Expect(c.Stderr.String()).To(ContainSubstring(message))
 		},
 		Entry("for an empty --sha, which would match every run", []string{"--sha", ""}, "--sha must not be empty"),
-		Entry("for a --job with an unclosed [, which would match no job", []string{"--job", "[flaky"}, `--job "[flaky": unclosed [`),
+		Entry("for a --job with an unclosed [, which would match no job", []string{"--job", "[flaky"}, `--job '[flaky': unclosed [`),
 		Entry("for an unknown --kind", []string{"--kind", "bogus"}, `--kind must be one of "rerun","intermittent","all" but got "bogus"`),
 	)
 })
