@@ -32,6 +32,8 @@ func (ix *Index) RerunFlips(ctx context.Context, f Filter) ([]Flip, error) {
 	runFilter.Jobs = nil
 	runs := flipRuns.where(runFilter)
 	w.add("r.run_id IN (SELECT r.run_id FROM "+flipRuns.from+runs.clause()+")", runs.args...)
+	// A run with one attempt on disk cannot flip.
+	w.add("r.latest_attempt > 1")
 	// Ordering by run first lets SQLite find each run's jobs by path range.
 	query := "SELECT r.run_id, r.head_sha, x.attempt, x.job_id, x.name, x.kind, x.conclusion, x.path, s.name, s.conclusion FROM " +
 		jobSource.from + " LEFT JOIN steps s ON s.path = x.path" + w.clause() + " ORDER BY r.path, x.path, s.number"
