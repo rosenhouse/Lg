@@ -12,6 +12,9 @@ import (
 const (
 	maxComponent = 200
 	maxDepth     = 32
+	// maxPath bounds a path below extracted/, before ~N suffixes, so it fits
+	// macOS's PATH_MAX of 1024 below a typical store.
+	maxPath = 512
 )
 
 // namer gives each member a path below extracted/ that no other member has,
@@ -47,8 +50,11 @@ func fold(name string) string { return strings.ToLower(name) }
 func (n *namer) file(base []string, name string) (string, string) {
 	parts, reason := components(name)
 	if keep := maxDepth - len(base) - 1; len(parts) > keep+1 {
-		parts = append(parts[:keep:keep], layout.Slug(strings.Join(parts[keep:], "/")))
+		parts = collapse(parts, keep)
 		reason = first(reason, "too_deep")
+	}
+	if pathLen(base, parts) > maxPath {
+		parts, reason = shorten(base, parts), first(reason, "too_long")
 	}
 	parent := n.at(base)
 	placed := append([]string(nil), base...)
@@ -66,15 +72,39 @@ func (n *namer) file(base []string, name string) (string, string) {
 	return strings.Join(placed, "/"), reason
 }
 
+// collapse joins parts from keep on into one slug.
+func collapse(parts []string, keep int) []string {
+	return append(parts[:keep:keep], layout.Slug(strings.Join(parts[keep:], "/")))
+}
+
+// shorten collapses as few of parts below base as fit their path in maxPath.
+func shorten(base, parts []string) []string {
+	for keep := len(parts) - 1; keep > 0; keep-- {
+		shorter := collapse(parts, keep)
+		if pathLen(base, shorter) <= maxPath {
+			return shorter
+		}
+	}
+	return collapse(parts, 0)
+}
+
+func pathLen(base, parts []string) int {
+	return len(strings.Join(append(base[:len(base):len(base)], parts...), "/"))
+}
+
 // dir gives the components of the dir that the archive at rel expands
 // into, and why its name is not rel.d, if it is not.
 func (n *namer) dir(rel string) ([]string, string) {
 	parts := strings.Split(rel, "/")
 	parent := n.at(parts[:len(parts)-1])
-	actual, _, renamed := parent.place(parts[len(parts)-1]+".d", expansion)
+	name := parts[len(parts)-1]
 	reason := ""
+	if len(name)+len(".d") > maxComponent {
+		name, reason = truncate(name, maxComponent-len(".d")), "too_long"
+	}
+	actual, _, renamed := parent.place(name+".d", expansion)
 	if renamed {
-		reason = "collision"
+		reason = first(reason, "collision")
 	}
 	return append(parts[:len(parts)-1:len(parts)-1], actual), reason
 }

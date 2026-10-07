@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rosenhouse/lg/internal/layout"
 	"github.com/rosenhouse/lg/internal/store"
 	"github.com/rosenhouse/lg/internal/version"
 )
@@ -271,6 +272,8 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		return notExpanded("nesting")
 	case strings.Count(rel, "/")+1 >= maxDepth:
 		return notExpanded("too_deep")
+	case len(rel)+len(".d/")+layout.MaxSlug > maxPath:
+		return notExpanded("too_long")
 	}
 	dir, reason := x.names.dir(rel)
 	if reason != "" {

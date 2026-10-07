@@ -168,6 +168,34 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 	})
 
+	It("caps a member's path below extracted/ at 512 bytes, collapsing the rest of it into one slug", func() {
+		var dirs []string
+		for i := range 20 {
+			dirs = append(dirs, fmt.Sprintf("d%02d", i)+strings.Repeat("x", 197))
+		}
+		long := strings.Join(dirs, "/") + "/deep.log"
+		f := newFixture(archives.Zip(archives.Entry{Name: "ok.log", Body: "ok\n"}, archives.Entry{Name: long, Body: "deep\n"}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		collapsed := dirs[0] + "/" + dirs[1] + "/d02" + strings.Repeat("x", 57)
+		Expect(f.files()).To(SatisfyAll(HaveLen(3), HaveKeyWithValue("ok.log", "ok\n"), HaveKeyWithValue(collapsed, "deep\n")))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", long, "path", collapsed, "reason", "too_long")))
+	})
+
+	It("caps the dir a nested archive expands into at 200 bytes, and expands no archive whose files could not fit in 512", func() {
+		nested := string(archives.Zip(archives.Entry{Name: "a.log", Body: "a\n"}))
+		named200 := strings.Repeat("n", 196) + ".zip"
+		wide := strings.Repeat("w", 200)
+		tooLong := wide + "/" + wide + "/" + strings.Repeat("z", 45) + ".zip"
+		f := newFixture(archives.Zip(archives.Entry{Name: named200, Body: nested}, archives.Entry{Name: tooLong, Body: nested}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		dir := named200[:198] + ".d"
+		Expect(f.files()).To(SatisfyAll(HaveLen(4), HaveKeyWithValue(dir+"/a.log", "a\n"), HaveKey(tooLong)))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", named200+".d", "path", dir, "reason", "too_long")))
+		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", tooLong, "path", tooLong, "reason", "too_long")))
+	})
+
 	It("slugifies a name holding NUL or invalid UTF-8, which a filesystem may refuse", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "dir/bad\xff.log", Body: "utf8\n"},

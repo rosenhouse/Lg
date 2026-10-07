@@ -14,7 +14,8 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 )
 
-const maxSlug = 60
+// MaxSlug is the length of the longest slug.
+const MaxSlug = 60
 
 // Slug maps each byte outside [A-Za-z0-9.-] to -, collapses runs of -, trims
 // - and . from both ends, truncates to 60 bytes, and gives none when nothing is left.
@@ -31,8 +32,8 @@ func Slug(name string) string {
 		b.WriteByte(c)
 	}
 	slug := strings.Trim(b.String(), "-.")
-	if len(slug) > maxSlug {
-		slug = strings.TrimRight(slug[:maxSlug], "-.")
+	if len(slug) > MaxSlug {
+		slug = strings.TrimRight(slug[:MaxSlug], "-.")
 	}
 	if slug == "" {
 		return "none"
