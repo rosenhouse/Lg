@@ -3,7 +3,7 @@
 lg mirrors one GitHub repository's Actions runs, attempts, job logs and artifacts into plain files.
 You and your coding agents then answer CI questions from disk with `rg`, `grep` and `jq`, such as when an error first appeared or which jobs are flaky.
 A daemon keeps the mirror up to date.
-lg runs on Linux and macOS against github.com. GitHub Enterprise Server support is untested; see [#3 §13](https://github.com/rosenhouse/lg/issues/3).
+lg runs on Linux and macOS against github.com. GitHub Enterprise Server is tested only against a fake; see [#3 §13](https://github.com/rosenhouse/lg/issues/3).
 
 ## Install
 
@@ -28,21 +28,25 @@ lg daemon install
 lg status
 ```
 
-`lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to config.yaml; it must not exceed `retention`.
+`lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to `~/.config/lg/config.yaml`; it must not exceed `retention`.
 The first `lg sync` can take several minutes and prints nothing until it finishes.
 `lg daemon install` runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
-With the daemon running, `lg sync --wait` syncs now and waits for the result.
+With the daemon running, `lg sync` only asks for a sync; `lg sync --wait` also waits for it.
 `lg status` shows the last sync, the lag, pending units and why syncs are blocked.
+If it shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
+`lg daemon uninstall` removes the service.
 The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
 On a headless Linux machine, run `loginctl enable-linger` so the unit outlives your login.
 To try GitHub Enterprise Server, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
 
-Search the logs of main from the last 7 days, and decode each hit:
+Search the logs and extracted artifacts of main from the last 7 days, and decode each hit:
 
 ```sh
 lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
 lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'
 ```
+
+`rg --no-config` keeps your ripgrep config from changing the hit format that `lg where` reads.
 
 Find flaky jobs and steps:
 
@@ -74,6 +78,8 @@ lg skill install
 
 `lg root` prints the store's `data/` dir, which holds each run at `<host>/<owner>/<repo>/runs/<date>/<run_id>_<workflow>_<branch>/`.
 `<owner>/<repo>` is spelled as GitHub spells the repository's full name.
+`<date>` is the run's UTC creation date.
+`<workflow>` and `<branch>` are slugs, so branch `feat/x` becomes `feat-x`.
 Each `attempt-N/`, artifact dir and `extracted/` dir is complete once it appears, and its files never change.
 A run dir gains attempts and artifacts as they finish, and an artifact dir gains `extracted/` when lg extract expands it.
 lg removes runs older than `retention`, 90d by default.
