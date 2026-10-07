@@ -67,7 +67,7 @@ func fold(name string) string { return strings.ToLower(norm.NFC.String(name)) }
 func (n *namer) file(base []string, name string) (string, string) {
 	parts, reason := components(name)
 	if keep := maxDepth - len(base) - 1; len(parts) > keep+1 {
-		parts = collapse(parts, keep)
+		parts = collapse(parts, keep, maxComponent)
 		reason = first(reason, "too_deep")
 	}
 	if pathLen(base, parts) > maxPath {
@@ -89,20 +89,28 @@ func (n *namer) file(base []string, name string) (string, string) {
 	return strings.Join(placed, "/"), reason
 }
 
-// collapse joins parts from keep on into one slug.
-func collapse(parts []string, keep int) []string {
-	return append(parts[:keep:keep], layout.Slug(strings.Join(parts[keep:], "/")))
+// collapse joins parts from keep on into one name of at most size bytes.
+func collapse(parts []string, keep, size int) []string {
+	return append(parts[:keep:keep], shrink(strings.Join(parts[keep:], "-"), size))
 }
 
-// shorten collapses as few of parts below base as fit their path in maxPath.
+// shorten collapses as few of parts below base as fit their path in maxPath,
+// leaving the collapsed name at least layout.MaxSlug bytes.
 func shorten(base, parts []string) []string {
-	for keep := len(parts) - 1; keep > 0; keep-- {
-		shorter := collapse(parts, keep)
-		if pathLen(base, shorter) <= maxPath {
-			return shorter
-		}
+	keep := len(parts) - 1
+	for keep > 0 && maxPath-pathLen(base, parts[:keep])-1 < layout.MaxSlug {
+		keep--
 	}
-	return collapse(parts, 0)
+	return collapse(parts, keep, min(maxPath-pathLen(base, parts[:keep])-1, maxComponent))
+}
+
+// shrink cuts name to at most size bytes, keeping its extension.
+func shrink(name string, size int) string {
+	ext := path.Ext(name)
+	if len(ext) >= size {
+		ext = ""
+	}
+	return truncate(strings.TrimSuffix(name, ext), size-len(ext)) + ext
 }
 
 func pathLen(base, parts []string) int {
@@ -170,9 +178,9 @@ func (d *node) place(name string, k kind) (string, *node, bool) {
 	return actual, e.node, actual != name
 }
 
-// components splits a member's name into names for files and dirs, slugifying
-// one that is too long, that a filesystem may refuse, or whose newline lg
-// paths would refuse.
+// components splits a member's name into names for files and dirs, cutting
+// one that is too long, and slugifying one that a filesystem may refuse, or
+// whose newline lg paths would refuse.
 func components(name string) ([]string, string) {
 	clean := path.Clean(name)
 	if clean == "." {
@@ -182,10 +190,10 @@ func components(name string) ([]string, string) {
 	reason := ""
 	for i, part := range parts {
 		switch {
-		case len(part) > maxComponent:
-			parts[i], reason = layout.Slug(part), first(reason, "too_long")
 		case strings.ContainsFunc(part, isControl) || !utf8.ValidString(part):
 			parts[i], reason = layout.Slug(part), first(reason, "invalid")
+		case len(part) > maxComponent:
+			parts[i], reason = shrink(part, maxComponent), first(reason, "too_long")
 		}
 	}
 	return parts, reason
