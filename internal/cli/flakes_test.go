@@ -71,6 +71,23 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(out.String()).To(SatisfyAll(ContainSubstring(`"failing_steps":[]`), ContainSubstring(`"logs":[]`)))
 	})
 
+	It("needs status.json only for intermittent failures without --branch, and names --branch when it cannot read it", func() {
+		c := harness.NewCLI()
+		for _, r := range scenario.Intermittent().All() {
+			Expect(c.Fake.AddRun(r)).To(Succeed())
+		}
+		Expect(c.Main("sync")).To(Equal(0), c.Stderr.String())
+		statusJSON := filepath.Join(c.Home, "state", "status.json")
+		Expect(os.WriteFile(statusJSON, []byte("{"), 0o644)).To(Succeed())
+
+		Expect(c.Main("flakes", "--kind", "rerun")).To(Equal(0), c.Stderr.String())
+		Expect(c.Main("flakes", "--kind", "intermittent", "--branch", "main")).To(Equal(0), c.Stderr.String())
+		Expect(c.Stdout.String()).To(ContainSubstring(`"integration"`))
+		Expect(c.Main("flakes")).To(Equal(1))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(SatisfyAll(ContainSubstring(statusJSON), ContainSubstring("pass --branch")))
+	})
+
 	It("prints an intermittent failure with no logs with an empty list in --json", func() {
 		var out bytes.Buffer
 		failures := []model.RunOutcome{{RunID: 2, Conclusion: "failure"}}
