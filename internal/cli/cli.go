@@ -149,6 +149,9 @@ func newParser(stdout, stderr io.Writer) *kong.Kong {
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 }
 
+// hintArgs completes a hint that needs arguments.
+var hintArgs = map[string]string{"init": " --repo OWNER/NAME"}
+
 // warn prints the line status.Warning gives for the store's status.json, if
 // any, with its hint unless command already runs it.
 func warn(deps *Deps, command string) {
@@ -162,16 +165,18 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning, hint := status.Warning(deps.Clock.Now(), st)
+	if file, err := config.File(deps.Env); hint == "sync" && err == nil && !exists(file) {
+		hint = "init"
+	}
 	runsHint := command == hint || hint == "sync" && command == "daemon run"
 	if hint != "" && !runsHint {
-		warning += "; run `lg " + hint + "`"
+		warning += "; run `lg " + hint + hintArgs[hint] + "`"
 	}
 	if warning != "" {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)
 	}
 }
 
-// printError prints each line of err after "lg: ".
 func printError(stderr io.Writer, err error) {
 	_, _ = fmt.Fprintf(stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
 }

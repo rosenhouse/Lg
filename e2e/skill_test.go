@@ -74,7 +74,7 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		env := harness.New(lgPath)
 		session := env.Lg("skill", "install")
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(session.Err.Contents())).To(Equal("lg: warning: never synced; run `lg sync`\n"))
+		Expect(string(session.Err.Contents())).To(Equal("lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"))
 	})
 
 	DescribeTable("installs, printing no error, whatever state the store is in",

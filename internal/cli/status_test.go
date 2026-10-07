@@ -216,6 +216,18 @@ var _ = DescribeTable("cli.Main on a store that never synced", Label("status"),
 	Entry("does not tell lg sync to run itself", "sync", "lg: warning: never synced\n"),
 )
 
+var _ = DescribeTable("cli.Main before lg init", Label("status"),
+	func(args []string, warning string) {
+		s := harness.NewCLI()
+		Expect(os.Remove(s.Config)).To(Succeed())
+
+		s.Main(args...)
+		Expect(s.Stderr.String()).To(HavePrefix(warning))
+	},
+	Entry("tells to run lg init", []string{"version"}, "lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"),
+	Entry("does not tell lg init to run itself", []string{"init", "--repo", "o/r"}, "lg: warning: never synced\n"),
+)
+
 var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 	It("records the unit with its error in status.json, and the sync as ok", func() {
 		s := harness.NewCLI()
