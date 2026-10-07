@@ -27,13 +27,14 @@ import (
 type Limits struct {
 	// MaxBytes bounds the total bytes of the files written.
 	MaxBytes int64
-	// MaxFiles bounds the members of every archive, skipped ones included.
+	// MaxFiles bounds the members of all archives together, skipped ones included.
 	// Past it, artifact.zip fails whole, and a nested archive stays unexpanded.
 	MaxFiles int
 	// MaxNesting is how many levels of archives within artifact.zip are expanded.
 	MaxNesting int
 }
 
+// Defaults gives the limits lg extract uses.
 func Defaults() Limits { return Limits{MaxBytes: 1_000_000_000, MaxFiles: 100_000, MaxNesting: 8} }
 
 // ErrTooManyFiles is an artifact.zip of more than Limits.MaxFiles members.
@@ -300,7 +301,7 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		return notExpanded("nesting")
 	case strings.Count(rel, "/")+1 >= maxDepth:
 		return notExpanded("too_deep")
-	case len(rel)+len(".d/")+layout.MaxSlug > maxPath:
+	case len(rel)+len(".d/")+minName > maxPath:
 		return notExpanded("too_long")
 	case x.members >= x.limits.MaxFiles:
 		return notExpanded(errFull.Error())

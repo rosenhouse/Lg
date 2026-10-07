@@ -17,6 +17,8 @@ const (
 	// maxPath bounds a path below extracted/, before ~N suffixes, so it fits
 	// macOS's PATH_MAX of 1024 below a typical store.
 	maxPath = 512
+	// minName is the room a collapsed or expanded name always keeps below maxPath.
+	minName = 60
 )
 
 // namer gives each member a path below extracted/ that no other member has,
@@ -29,7 +31,7 @@ type node struct {
 	entries map[string]*entry
 	// renamed are the dirs placed under another name, keyed by their own.
 	renamed map[string]*entry
-	// next is the ~N to try first, by folded name.
+	// next is the last ~N given, by folded name.
 	next map[string]int
 }
 
@@ -95,10 +97,10 @@ func collapse(parts []string, keep, size int) []string {
 }
 
 // shorten collapses as few of parts below base as fit their path in maxPath,
-// leaving the collapsed name at least layout.MaxSlug bytes.
+// leaving the collapsed name at least minName bytes.
 func shorten(base, parts []string) []string {
 	keep := len(parts) - 1
-	for keep > 0 && maxPath-pathLen(base, parts[:keep])-1 < layout.MaxSlug {
+	for keep > 0 && maxPath-pathLen(base, parts[:keep])-1 < minName {
 		keep--
 	}
 	return collapse(parts, keep, min(maxPath-pathLen(base, parts[:keep])-1, maxComponent))

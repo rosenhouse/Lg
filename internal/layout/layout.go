@@ -17,8 +17,7 @@ import (
 // ExtractManifest is the file in an artifact's extracted/ that records how lg extract made it.
 const ExtractManifest = ".lg-extract.json"
 
-// MaxSlug is the length of the longest slug.
-const MaxSlug = 60
+const maxSlug = 60
 
 // Slug maps each byte outside [A-Za-z0-9.-] to -, collapses runs of -, trims
 // - and . from both ends, truncates to 60 bytes, and gives none when nothing is left.
@@ -35,8 +34,8 @@ func Slug(name string) string {
 		b.WriteByte(c)
 	}
 	slug := strings.Trim(b.String(), "-.")
-	if len(slug) > MaxSlug {
-		slug = strings.TrimRight(slug[:MaxSlug], "-.")
+	if len(slug) > maxSlug {
+		slug = strings.TrimRight(slug[:maxSlug], "-.")
 	}
 	if slug == "" {
 		return "none"
