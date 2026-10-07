@@ -61,5 +61,9 @@ func (c initCmd) Run(deps *Deps) error {
 	}
 	release()
 	_, err = fmt.Fprintf(f, "host: %s\nrepo: %s\n", cfg.Host, cfg.Repo)
-	return errors.Join(err, f.Close())
+	if err = errors.Join(err, f.Close()); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(deps.Stdout, "wrote %s; run `lg sync` next\n", file)
+	return err
 }

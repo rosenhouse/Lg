@@ -100,7 +100,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 		}
 		lines = append(lines,
 			"  horizon: "+orNone(r.Horizon, "none"),
-			fmt.Sprintf("  retention: %d days, disk_cap: %d bytes", r.RetentionDays, r.DiskCapBytes))
+			fmt.Sprintf("  retention: %d days, disk_cap: %s", r.RetentionDays, config.Bytes(r.DiskCapBytes)))
 	}
 	return lines
 }

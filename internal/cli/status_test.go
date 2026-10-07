@@ -144,7 +144,7 @@ github.com/rosenhouse/lg:
   runs: 0, attempts: 0, bytes: 0
   pending units: 0
   horizon: none
-  retention: 30 days, disk_cap: 1000000 bytes
+  retention: 30 days, disk_cap: 1MB
 `))
 	})
 })
@@ -225,8 +225,26 @@ var _ = DescribeTable("cli.Main before lg init", Label("status"),
 		Expect(s.Stderr.String()).To(HavePrefix(warning))
 	},
 	Entry("tells to run lg init", []string{"version"}, "lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"),
-	Entry("tells lg init to run lg sync next", []string{"init", "--repo", "o/r"}, "lg: warning: never synced; run `lg sync`\n"),
 )
+
+var _ = Describe("lg init", Label("status"), func() {
+	It("names the config it wrote and tells to run lg sync next, without a warning", func() {
+		s := harness.NewCLI()
+		Expect(os.Remove(s.Config)).To(Succeed())
+
+		Expect(s.Main("init", "--repo", "o/r")).To(Equal(0))
+		Expect(s.Stdout.String()).To(Equal("wrote " + s.Config + "; run `lg sync` next\n"))
+		Expect(s.Stderr.String()).To(BeEmpty())
+	})
+
+	It("prints only its error when it fails", func() {
+		s := harness.NewCLI()
+
+		Expect(s.Main("init", "--repo", "o/r")).To(Equal(2))
+		Expect(s.Stdout.String()).To(BeEmpty())
+		Expect(s.Stderr.String()).To(Equal("lg: " + s.Config + " already exists\n"))
+	})
+})
 
 var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 	It("records the unit with its error in status.json, and the sync as ok", func() {

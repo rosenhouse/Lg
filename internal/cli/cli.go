@@ -117,8 +117,10 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		err = config.Error(err.Error())
 	}
-	if err == nil {
+	if err == nil && ctx.Command() != "init" {
 		warn(&deps, ctx.Command())
+	}
+	if err == nil {
 		err = checkStore(ctx.Command(), deps.Env)
 	}
 	if err == nil {
@@ -172,7 +174,7 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning, hint := status.Warning(deps.Clock.Now(), st)
-	if file, err := config.File(deps.Env); hint == "sync" && command != "init" && err == nil && !exists(file) {
+	if file, err := config.File(deps.Env); hint == "sync" && err == nil && !exists(file) {
 		hint = "init"
 	}
 	runsHint := command == hint || hint == "sync" && command == "daemon run"

@@ -177,7 +177,7 @@ github.com/rosenhouse/lg:
   pending units: 1
     run 37129390741 attempt 2: 502 Bad Gateway
   horizon: 2026-09-01T00:00:00Z
-  retention: 90 days, disk_cap: 50000000000 bytes
+  retention: 90 days, disk_cap: 50GB
 `))
 
 		jsonOut := env.Lg("status", "--json")
