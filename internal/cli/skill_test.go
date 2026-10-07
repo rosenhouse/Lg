@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/testsupport/doctest"
 	"github.com/rosenhouse/lg/internal/testsupport/faultfs"
 	skill "github.com/rosenhouse/lg/skill/lg"
@@ -69,6 +71,17 @@ var _ = DescribeTable("passes every flag its prose names in some `lg …` line o
 	Entry("SKILL.md", func() string { return skill.Markdown }),
 	Entry("README.md", readme),
 )
+
+var _ = Describe("README.md", Label("skill"), func() {
+	It("states the defaults that config.Defaults gives", func() {
+		d := config.Defaults()
+		for key, value := range map[string]fmt.Stringer{
+			"sync_interval": d.SyncInterval, "backfill": d.Backfill, "retention": d.Retention, "disk_cap": d.DiskCap,
+		} {
+			Expect(readme()).To(ContainSubstring(fmt.Sprintf("`%s`, %s by default", key, value)))
+		}
+	})
+})
 
 func readme() string {
 	GinkgoHelper()
