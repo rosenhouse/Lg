@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/store"
@@ -19,9 +17,6 @@ type skillInstallCmd struct{}
 func (skillInstallCmd) Run(deps *Deps) error {
 	path, err := config.SkillFile(deps.Env)
 	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	if err := store.ReplaceFileUnlocked(deps.StoreFS, path, []byte(skill.Markdown), deps.Clock.Now()); err != nil {

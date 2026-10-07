@@ -629,11 +629,14 @@ func ReplaceFileFS(fsys FS, path string, data []byte) error {
 	return replaceVia(fsys, tmp, path, data)
 }
 
-// ReplaceFileUnlocked is ReplaceFileFS for callers that hold no lock. Each
-// call stages its own temp file, and removes those that crashed calls left
-// over a minute before now.
+// ReplaceFileUnlocked is ReplaceFileFS for callers that hold no lock, and
+// makes path's missing parents. Each call stages its own temp file, and
+// removes those that crashed calls left over a minute before now.
 func ReplaceFileUnlocked(fsys FS, path string, data []byte, now time.Time) error {
 	dir, prefix := filepath.Dir(path), "."+filepath.Base(path)+"."
+	if err := mkdirAll(fsys, dir); err != nil {
+		return err
+	}
 	if err := removeStaleTemps(fsys, dir, prefix, now.Add(-time.Minute)); err != nil {
 		return err
 	}

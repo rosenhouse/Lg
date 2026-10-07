@@ -17,22 +17,26 @@ import (
 )
 
 var _ = Describe("lg skill install", Label("skill"), func() {
-	It("exits 1 with the error when it cannot write SKILL.md", func() {
-		fsys := faultfs.New()
-		fsys.FailOn("create", syscall.EROFS)
-		var stderr bytes.Buffer
+	DescribeTable("exits 1 with the error when it cannot write SKILL.md",
+		func(op string) {
+			fsys := faultfs.New()
+			fsys.FailOn(op, syscall.EROFS)
+			var stderr bytes.Buffer
 
-		code := cli.Main([]string{"skill", "install"}, cli.Deps{
-			Env:     map[string]string{"CLAUDE_CONFIG_DIR": GinkgoT().TempDir()},
-			Stdout:  &bytes.Buffer{},
-			Stderr:  &stderr,
-			Clock:   clock.Real{},
-			StoreFS: fsys,
-		})
+			code := cli.Main([]string{"skill", "install"}, cli.Deps{
+				Env:     map[string]string{"CLAUDE_CONFIG_DIR": GinkgoT().TempDir()},
+				Stdout:  &bytes.Buffer{},
+				Stderr:  &stderr,
+				Clock:   clock.Real{},
+				StoreFS: fsys,
+			})
 
-		Expect(code).To(Equal(1))
-		Expect(stderr.String()).To(ContainSubstring("read-only file system"))
-	})
+			Expect(code).To(Equal(1))
+			Expect(stderr.String()).To(ContainSubstring("read-only file system"))
+		},
+		Entry("making its dir", "mkdir"),
+		Entry("creating the file", "create"),
+	)
 })
 
 var _ = Describe("SKILL.md", Label("skill"), func() {

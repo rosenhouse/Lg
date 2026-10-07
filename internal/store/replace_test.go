@@ -116,6 +116,20 @@ var _ = Describe("ReplaceFileUnlocked", Label("store"), func() {
 		}))
 	})
 
+	It("makes path's missing parent dirs, and fsyncs each one's parent", func() {
+		fsys := faultfs.New()
+		deep := filepath.Join(dir, "a", "b", "f.json")
+		Expect(store.ReplaceFileUnlocked(fsys, deep, []byte("new"), now)).To(Succeed())
+
+		Expect(os.ReadFile(deep)).To(Equal([]byte("new")))
+		Expect(fsys.Journal()[:4]).To(Equal([]faultfs.Op{
+			{Name: "mkdir", Path: filepath.Join(dir, "a")},
+			{Name: "fsync", Path: dir},
+			{Name: "mkdir", Path: filepath.Join(dir, "a", "b")},
+			{Name: "fsync", Path: filepath.Join(dir, "a")},
+		}))
+	})
+
 	It("stages each call in a different temp file", func() {
 		temps := map[string]bool{}
 		for range 2 {
