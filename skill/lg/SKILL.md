@@ -72,7 +72,7 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 
 - `<owner>/<repo>` takes GitHub's spelling of the repository's name, whatever case the config uses, so take paths from `lg paths` or a glob rather than typing them.
 - The date dir is the UTC date the run was created. A rerun stays under that date.
-- Names keep `[A-Za-z0-9.-]`, so branch `feat/retry upload` becomes `feat-retry-upload`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
+- Names keep `[A-Za-z0-9.-]`, so branch `feat/retry_upload` becomes `feat-retry-upload`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
 - A dir that exists is complete, and files never change. Expiry and eviction remove whole dirs.
 - JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg --no-config '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
 - `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
@@ -95,7 +95,7 @@ It prints only files that exist, never tombstones.
 - `lg paths --branch main --branch release-3 --sha 1a51097 --pr 42 --workflow lg-fixture --job 'build*' --event push --conclusion failure` shows every filter. `--sha` takes a prefix and `--job` a glob.
 - Filters may repeat. Repeats of one flag match any value, and different flags must all match.
 - `--since` and `--until` take `30d`, `12h`, `2026-09-01` (UTC) or RFC 3339, as in `lg paths --since 30d --until 2026-10-01`. A date means its 00:00 UTC, so `--until 2026-10-01` stops at the start of October 1.
-- `--branch` takes the branch as GitHub names it, such as `feat/retry upload`, not its slug in a path, such as `feat-retry-upload`. It skips runs from forks.
+- `--branch` takes the branch as GitHub names it, such as `feat/retry_upload`, not its slug in a path, such as `feat-retry-upload`. It skips runs from forks.
 - `--pr` finds the runs of open and merged pull requests from this repository, even after GitHub drops them from `pull_requests`; it may miss fork runs and runs of pull requests closed without merging, which `lg paths --event pull_request` or `lg paths --sha 1a51097` find.
 
 `lg paths` has no run filter.
