@@ -236,6 +236,19 @@ var _ = Describe("lg extract", Label("extract"), func() {
 	})
 })
 
+var _ = Describe("lg extract PATH", Label("extract"), func() {
+	It("takes a PATH relative to the working dir", func() {
+		env := harness.New(lgPath)
+		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
+		Expect(env.Sync()).To(gexec.Exit(0))
+		runDir := filepath.Join(env.Data(), fixtureRunDir)
+
+		session := env.Sh("cd '" + runDir + "' && lg extract artifacts/11276272069_pass-artifact")
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(filepath.Join(runDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
+	})
+})
+
 var _ = Describe("lg extract on a crafted archive", Label("extract"), func() {
 	It("never writes outside extracted/ for .., absolute, symlink or hardlink entries, skips devices and FIFOs, drops setuid bits, and records each in .lg-extract.json", func() {
 		inner := archives.Tar(
