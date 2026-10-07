@@ -21,15 +21,16 @@ type flakesCmd struct {
 }
 
 func (flakesCmd) Help() string {
-	return "Only jobs that ran count. A name fails in an attempt if any of its jobs failed, was cancelled or timed out; skipped and neutral count as neither. " +
-		"A rerun flip is a name that failed in one attempt of a run and succeeded in another. " +
-		"An attempt that carries forward a failed job or step gives its name no success. " +
-		"An intermittent failure is a name that failed in the first attempt of one run of the default branch and succeeded in the first attempts of the runs before and after it. " +
-		"A run whose first attempt is not on disk, as when lg sync has not fetched it yet, leaves no failure next to it alone. " +
-		"The default branch is the one status.json records; --branch replaces it. Intermittent failures leave out pull_request and pull_request_target runs and runs whose first or latest attempt was cancelled. " +
-		"--job selects job names. The other filters select runs: --since and --until match the start of any attempt, and --conclusion the latest attempt. " +
-		"Intermittent failures are judged among every run of their branch and workflow that --branch, --workflow and --event select, " +
-		"so --sha, --pr, --conclusion, --since and --until select failures, not neighbours."
+	return `A name fails in an attempt if any job of that name failed, was cancelled or timed out. Only jobs that ran count. Each finding names a job, or a job and step.
+
+A rerun flip is a name that failed in one attempt of a run and succeeded in another. A carried-forward failure counts as no success. A line reads:
+  run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success; failing steps: "Fail on first attempt only"
+
+An intermittent failure is a name that failed in attempt 1 of a run on the default branch while the runs just before and after it passed. A failure next to a run whose attempt 1 is not on disk is not reported. Pull request runs and runs whose first or latest attempt was cancelled are left out. The default branch comes from status.json; --branch replaces it.
+
+--branch, --workflow and --event choose the runs each series compares. --sha, --pr, --conclusion, --since and --until choose only which failures are reported. --conclusion matches the latest attempt, --since and --until the start of any attempt, and --job job names.
+
+--json prints kind, run_id, head_sha, job, step, attempts, conclusions, failing_steps and logs for a flip, and kind, workflow_id, workflow, branch, job, step, runs, failures and logs for an intermittent failure.`
 }
 
 func (f flakesCmd) Validate() error { return f.validate() }

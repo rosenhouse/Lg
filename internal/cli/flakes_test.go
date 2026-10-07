@@ -165,16 +165,16 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 
 		Expect(c.Main("flakes", "--help")).To(Equal(0))
 		help := strings.Join(strings.Fields(c.Stdout.String()), " ")
-		Expect(help).To(ContainSubstring("The other filters select runs"))
+		Expect(help).To(ContainSubstring("--conclusion matches the latest attempt, --since and --until the start of any attempt, and --job job names."))
 		Expect(help).NotTo(ContainSubstring("unit"))
 	})
 
-	It("says in --help that no failure next to a run whose first attempt is not on disk is alone", func() {
+	It("says in --help that a failure next to a run whose attempt 1 is not on disk is not reported", func() {
 		c := harness.NewCLI()
 
 		Expect(c.Main("flakes", "--help")).To(Equal(0))
 		Expect(strings.Join(strings.Fields(c.Stdout.String()), " ")).To(ContainSubstring(
-			"A run whose first attempt is not on disk, as when lg sync has not fetched it yet, leaves no failure next to it alone."))
+			"A failure next to a run whose attempt 1 is not on disk is not reported."))
 	})
 
 	DescribeTable("exits 2",

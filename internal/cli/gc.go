@@ -19,6 +19,10 @@ type gcCmd struct {
 	Timeout time.Duration `default:"${write_lock_wait}" help:"How long to wait for another lg writing the store."`
 }
 
+func (gcCmd) Help() string {
+	return "Every sync does this too. gc prints each dir it removes."
+}
+
 func (c gcCmd) Validate() error { return validateTimeout(c.Timeout) }
 
 // Run prints each dir it removes. A dry run takes no lock, so it reads the

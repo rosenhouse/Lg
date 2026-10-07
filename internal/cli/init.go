@@ -14,8 +14,16 @@ import (
 )
 
 type initCmd struct {
-	Repo string `required:"" help:"Repository as owner/name."`
-	Host string `default:"github.com" help:"GitHub host."`
+	Repo string `required:"" placeholder:"OWNER/NAME" help:"Repository as owner/name."`
+	Host string `default:"github.com" placeholder:"HOST" help:"GitHub host: github.com, or a GitHub Enterprise Server host."`
+}
+
+func (initCmd) Help() string {
+	return "Writes host and repo to $LG_CONFIG, default ${XDG_CONFIG_HOME:-~/.config}/lg/config.yaml, " +
+		"and creates the store at $LG_HOME, default ${XDG_DATA_HOME:-~/.local/share}/lg. " +
+		"It refuses to overwrite an existing config.yaml. " +
+		"Edit that file to set sync_interval, backfill, retention, disk_cap, artifact_max_bytes, log_grace or api_url. " +
+		"lg reads its token from gh auth token --hostname HOST, so run gh auth login first."
 }
 
 // Run writes config.yaml, holding only host and repo, and initializes the

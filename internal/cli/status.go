@@ -19,7 +19,7 @@ import (
 )
 
 type statusCmd struct {
-	JSON bool `name:"json" help:"Print state/status.json as it is."`
+	JSON bool `name:"json" help:"Print $LG_HOME/state/status.json as it is. It fails before the first sync."`
 }
 
 func (c statusCmd) Run(deps *Deps) error {

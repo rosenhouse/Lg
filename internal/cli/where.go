@@ -23,11 +23,14 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a line rg or grep printed. A relative path is resolved against the working directory, data/, or a repo dir. Without any, lg reads lines from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a hit. A relative path resolves against the working directory, data/ or a repo dir. With none, lg where reads hits from stdin."`
 }
 
 func (whereCmd) Help() string {
-	return "Prints one JSON object per input. It reads files only, never lg.db."
+	return "Prints one JSON object per input: run, attempt, job or artifact, workflow, branch, SHA, PRs, conclusions and the GitHub URL, plus line and text for a hit. " +
+		"A hit is a line that rg -Hn or grep -Hn prints, path:line:text. " +
+		"For example: rg -Hn 'foo bar' | lg where | jq -c 'del(.path)'. " +
+		"It reads the mirrored files only."
 }
 
 func (w whereCmd) Run(deps *Deps) error {
