@@ -46,13 +46,21 @@ type RunOutcome struct {
 	Logs       []string
 }
 
+// Gap is a run of a workflow on a branch whose first attempt is not on disk.
+type Gap struct {
+	RunID, WorkflowID int64
+	HeadSHA, Branch   string
+	// At places the gap among the run_started_at of first attempts.
+	At time.Time
+}
+
 // FirstAttemptSeries gives the series of each job name, and of each step
 // name of it, over jobs of the first attempts of runs. Only jobs that ran count. A
 // name fails in a run if any of its jobs, or the step in any of them, failed;
 // it succeeds if none failed and one succeeded. Series come by branch,
 // workflow id and job name, each job before its steps, which come in the
 // order they first ran.
-func FirstAttemptSeries(jobs []RunJob) []Series {
+func FirstAttemptSeries(jobs []RunJob, gaps []Gap) []Series {
 	ran := slices.DeleteFunc(slices.Clone(jobs), func(j RunJob) bool { return j.Kind != Ran })
 	slices.SortFunc(ran, func(a, b RunJob) int {
 		return cmp.Or(a.StartedAt.Compare(b.StartedAt), cmp.Compare(a.RunID, b.RunID), cmp.Compare(a.Job.ID, b.Job.ID))

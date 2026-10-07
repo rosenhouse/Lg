@@ -74,7 +74,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			firstAttempt(2, 2, 21, "test", "success", "go test", "success"),
 			inWorkflow(firstAttempt(4, 0, 41, "test", "failure"), 200, "release"),
 			onBranch(firstAttempt(5, 0, 51, "test", "failure"), "release-3"),
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(
 			model.Series{WorkflowID: 100, Workflow: "CI", Branch: "main", Job: "build", Runs: []model.RunOutcome{ran(1, "success")}},
@@ -102,7 +102,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			firstAttempt(2, 2, 21, "test", "success", "unit", "success", "e2e", "success"),
 			firstAttempt(2, 2, 22, "test", "neutral"),
 			notApplicable,
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(
 			HaveField("Runs", []model.RunOutcome{ran(1, "failure", "attempt-1/11/log.txt"), ran(2, "success")}),
@@ -118,7 +118,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			firstAttempt(2, 2, 22, "lint", "neutral"),
 			firstAttempt(3, 3, 31, "test", "failure", "e2e", "failure"),
 			firstAttempt(3, 3, 32, "lint", "failure"),
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(
 			SatisfyAll(HaveField("Job", "lint"), HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(3, "failure", "attempt-1/32/log.txt")})),
@@ -131,7 +131,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 		series := model.FirstAttemptSeries([]model.RunJob{
 			firstAttempt(1, 1, 11, "test", "failure", "go test", "failure"),
 			firstAttempt(1, 1, 12, "lint", "success", "go test", "success"),
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(
 			HaveField("Job", "lint"),
@@ -146,7 +146,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 			firstAttempt(1, 1, 11, "test", "success"),
 			firstAttempt(2, 1, 12, "test", "success"),
 			firstAttempt(1, 1, 13, "test", "success"),
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(HaveField("Runs", []model.RunOutcome{ran(1, "success"), ran(2, "success")})))
 	})
@@ -155,9 +155,29 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 		series := model.FirstAttemptSeries([]model.RunJob{
 			firstAttempt(1, 1, 12, "test", "failure"),
 			firstAttempt(1, 1, 11, "test", "failure"),
-		})
+		}, nil)
 
 		Expect(series).To(HaveExactElements(HaveField("Runs", []model.RunOutcome{ran(1, "failure", "attempt-1/11/log.txt", "attempt-1/12/log.txt")})))
+	})
+
+	It("places each gap by its time, concluding \"\", in each series of its workflow and branch", func() {
+		series := model.FirstAttemptSeries([]model.RunJob{
+			firstAttempt(1, 1, 11, "test", "success"),
+			firstAttempt(3, 3, 31, "test", "failure"),
+			firstAttempt(4, 4, 41, "test", "success"),
+			inWorkflow(firstAttempt(5, 1, 51, "test", "success"), 200, "release"),
+		}, []model.Gap{
+			{RunID: 2, HeadSHA: "sha2", WorkflowID: 100, Branch: "main", At: time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)},
+			{RunID: 6, HeadSHA: "sha6", WorkflowID: 100, Branch: "release-3", At: time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)},
+			{RunID: 7, HeadSHA: "sha7", WorkflowID: 200, Branch: "main", At: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		})
+
+		Expect(series).To(HaveExactElements(
+			SatisfyAll(HaveField("WorkflowID", BeEquivalentTo(100)), HaveField("Runs", []model.RunOutcome{
+				ran(1, "success"), ran(2, ""), ran(3, "failure", "attempt-1/31/log.txt"), ran(4, "success"),
+			})),
+			SatisfyAll(HaveField("WorkflowID", BeEquivalentTo(200)), HaveField("Runs", []model.RunOutcome{ran(7, ""), ran(5, "success")})),
+		))
 	})
 
 	It("leaves its input as it was", func() {
@@ -166,7 +186,7 @@ var _ = Describe("FirstAttemptSeries", Label("flakes"), func() {
 		jobs := []model.RunJob{firstAttempt(2, 2, 21, "test", "success"), notApplicable, firstAttempt(1, 1, 11, "test", "failure")}
 		given := slices.Clone(jobs)
 
-		model.FirstAttemptSeries(jobs)
+		model.FirstAttemptSeries(jobs, nil)
 
 		Expect(jobs).To(Equal(given))
 	})
