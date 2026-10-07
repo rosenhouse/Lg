@@ -15,9 +15,29 @@ import (
 	"github.com/rosenhouse/lg/internal/layout"
 )
 
-// writeScaleStore writes runs of one attempt, with two or three jobs and one
-// artifact each: 100,000 files for 9,000 runs.
-func writeScaleStore(data string, runs int) (files int) {
+// storeShape gives how many attempts and jobs each run has, and how many steps each job has.
+type storeShape struct {
+	attempts, jobs func(run int) int
+	steps          int
+}
+
+// thinStore has runs of one attempt, with two or three jobs of one step:
+// 100,000 files for 9,000 runs.
+var thinStore = storeShape{
+	attempts: func(int) int { return 1 },
+	jobs: func(run int) int {
+		if run%18 == 17 {
+			return 3
+		}
+		return 2
+	},
+	steps: 1,
+}
+
+// writeScaleStore writes runs of the shape given, each with one artifact. In
+// a run of more than one attempt, the first job and its first step fail in
+// attempt 1 and every job is re-run.
+func writeScaleStore(data string, runs int, shape storeShape) (files int) {
 	GinkgoHelper()
 	write := func(path, content string) {
 		Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
@@ -27,32 +47,48 @@ func writeScaleStore(data string, runs int) (files int) {
 	for i := range runs {
 		id := int64(1_000_000 + i)
 		created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * 15 * time.Minute)
-		at := created.Format(time.RFC3339)
+		createdAt := created.Format(time.RFC3339)
 		runDir := filepath.Join(data, "github.com", "o", "r", "runs", created.Format(time.DateOnly), fmt.Sprintf("%d_ci_main", id))
-		attempt := layout.AttemptDir(runDir, 1)
-		write(filepath.Join(attempt, "attempt.json"), fmt.Sprintf(`{"id":%d,"name":"ci","head_branch":"main","head_sha":"%040d","event":"push","status":"completed","conclusion":"success","workflow_id":7,"pull_requests":[],"display_title":"commit %d","created_at":%q,"updated_at":%q,"run_started_at":%q,"run_attempt":1,"repository":{"full_name":"o/r"}}`, id, id, i, at, at, at))
-		var jobsJSON []string
-		jobs := 2
-		if i%18 == 17 {
-			jobs = 3
+		attempts := shape.attempts(i)
+		artifact := fmt.Sprintf(`{"id":%d,"name":"report","size_in_bytes":22,"expired":false,"created_at":%q,"workflow_run":{"id":%d,"head_branch":"main","head_sha":"%040d"}}`, id, createdAt, id, id)
+		fetch := func(n int) string {
+			return fmt.Sprintf(`{"lg_format":1,"host":"github.com","repo":"o/r","run_id":%d,"run_created_at":%q,"run_attempt_at_fetch":%d,"run_status_at_fetch":"completed"`, id, createdAt, n)
 		}
-		for j := range jobs {
-			jobID := id*10 + int64(j)
-			job := fmt.Sprintf(`{"id":%d,"run_id":%d,"run_attempt":1,"name":"build %d","status":"completed","conclusion":"success","started_at":%q,"completed_at":%q,"runner_name":"r","labels":["ubuntu-latest"],"steps":[{"name":"Run","status":"completed","conclusion":"success","number":1,"started_at":%q,"completed_at":%q}]}`, jobID, id, j, at, at, at, at)
-			jobsJSON = append(jobsJSON, job)
-			jobDir := layout.JobDir(attempt, jobID, fmt.Sprintf("build %d", j))
-			write(filepath.Join(jobDir, "job.json"), job)
-			write(filepath.Join(jobDir, "log.txt"), "\ufeff"+at+" build output\n")
+		for n := 1; n <= attempts; n++ {
+			at := created.Add(time.Duration(n-1) * time.Minute).Format(time.RFC3339)
+			conclusion := func(job, step int) string {
+				if n == 1 && attempts > 1 && job == 0 && step == 0 {
+					return "failure"
+				}
+				return "success"
+			}
+			attempt := layout.AttemptDir(runDir, n)
+			write(filepath.Join(attempt, "attempt.json"), fmt.Sprintf(`{"id":%d,"name":"ci","head_branch":"main","head_sha":"%040d","event":"push","status":"completed","conclusion":%q,"workflow_id":7,"pull_requests":[],"display_title":"commit %d","created_at":%q,"updated_at":%q,"run_started_at":%q,"run_attempt":%d,"repository":{"full_name":"o/r"}}`, id, id, conclusion(0, 0), i, createdAt, at, at, n))
+			var jobsJSON []string
+			for j := range shape.jobs(i) {
+				jobID := (id*10+int64(n))*100 + int64(j)
+				var steps []string
+				for k := range shape.steps {
+					steps = append(steps, fmt.Sprintf(`{"name":"step %d","status":"completed","conclusion":%q,"number":%d,"started_at":%q,"completed_at":%q}`, k, conclusion(j, k), k+1, at, at))
+				}
+				job := fmt.Sprintf(`{"id":%d,"run_id":%d,"run_attempt":%d,"name":"build %d","status":"completed","conclusion":%q,"started_at":%q,"completed_at":%q,"runner_name":"r","labels":["ubuntu-latest"],"steps":[%s]}`, jobID, id, n, j, conclusion(j, 0), at, at, strings.Join(steps, ","))
+				jobsJSON = append(jobsJSON, job)
+				jobDir := layout.JobDir(attempt, jobID, fmt.Sprintf("build %d", j))
+				write(filepath.Join(jobDir, "job.json"), job)
+				write(filepath.Join(jobDir, "log.txt"), "\ufeff"+at+" build output\n")
+			}
+			write(filepath.Join(attempt, "jobs.json"), "["+strings.Join(jobsJSON, ",")+"]")
+			listed := ""
+			if n == 1 {
+				listed = artifact
+			}
+			write(filepath.Join(attempt, "artifacts.json"), "["+listed+"]")
+			write(filepath.Join(attempt, "fetch.json"), fetch(n)+fmt.Sprintf(`,"attempt":%d,"sources":{},"carried_forward_jobs":[]}`, n))
 		}
-		artifact := fmt.Sprintf(`{"id":%d,"name":"report","size_in_bytes":22,"expired":false,"created_at":%q,"workflow_run":{"id":%d,"head_branch":"main","head_sha":"%040d"}}`, id, at, id, id)
-		write(filepath.Join(attempt, "jobs.json"), "["+strings.Join(jobsJSON, ",")+"]")
-		write(filepath.Join(attempt, "artifacts.json"), "["+artifact+"]")
-		fetch := fmt.Sprintf(`{"lg_format":1,"host":"github.com","repo":"o/r","run_id":%d,"run_created_at":%q,"run_attempt_at_fetch":1,"run_status_at_fetch":"completed"`, id, at)
-		write(filepath.Join(attempt, "fetch.json"), fetch+`,"attempt":1,"sources":{},"carried_forward_jobs":[]}`)
 		artifactDir := layout.ArtifactDir(runDir, id, "report")
 		write(filepath.Join(artifactDir, "artifact.json"), artifact)
 		write(filepath.Join(artifactDir, "artifact.zip"), "PK\x05\x06"+string(make([]byte, 18)))
-		write(filepath.Join(artifactDir, "fetch.json"), fetch+`,"workflow_id":7,"workflow_name":"ci","event":"push","pr_numbers":[],"display_title":"t","sources":{}}`)
+		write(filepath.Join(artifactDir, "fetch.json"), fetch(1)+`,"workflow_id":7,"workflow_name":"ci","event":"push","pr_numbers":[],"display_title":"t","sources":{}}`)
 	}
 	return files
 }
@@ -60,7 +96,7 @@ func writeScaleStore(data string, runs int) (files int) {
 var _ = Describe("a store of 9,000 runs and 100,000 files", Label("scale"), func() {
 	It("reconciles a no-op in under 1s and rebuilds in under 60s", func(ctx SpecContext) {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
-		Expect(writeScaleStore(data, 9_000)).To(Equal(100_000))
+		Expect(writeScaleStore(data, 9_000, thinStore)).To(Equal(100_000))
 		path := filepath.Join(GinkgoT().TempDir(), "lg.db")
 		ix, err := index.Open(ctx, path, data, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -80,10 +116,23 @@ var _ = Describe("a store of 9,000 runs and 100,000 files", Label("scale"), func
 	}, NodeTimeout(5*time.Minute))
 })
 
-var _ = Describe("rerun flips over a store of 9,000 runs", Label("scale"), func() {
+var _ = Describe("rerun flips over a store of 9,000 runs of ten jobs of ten steps, 4% of them re-run", Label("scale"), func() {
 	It("gives them in under 2s", func(ctx SpecContext) {
 		data := filepath.Join(GinkgoT().TempDir(), "data")
-		writeScaleStore(data, 9_000)
+		rerun := storeShape{
+			attempts: func(run int) int {
+				switch run % 50 {
+				case 49:
+					return 3
+				case 24:
+					return 2
+				}
+				return 1
+			},
+			jobs:  func(int) int { return 10 },
+			steps: 10,
+		}
+		writeScaleStore(data, 9_000, rerun)
 		ix, err := index.Open(ctx, filepath.Join(GinkgoT().TempDir(), "lg.db"), data, nil)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(ix.Close)
@@ -95,7 +144,7 @@ var _ = Describe("rerun flips over a store of 9,000 runs", Label("scale"), func(
 		AddReportEntry("timings", fmt.Sprintf("rerun flips %s", took))
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(flips).To(BeEmpty())
+		Expect(flips).To(HaveLen(9_000 * 2 / 50 * 2))
 		Expect(took).To(BeNumerically("<", 2*time.Second))
 	}, NodeTimeout(5*time.Minute))
 })
