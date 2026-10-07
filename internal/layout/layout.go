@@ -14,6 +14,9 @@ import (
 	"github.com/rosenhouse/lg/internal/model"
 )
 
+// ExtractManifest is the file in an artifact's extracted/ that records how lg extract made it.
+const ExtractManifest = ".lg-extract.json"
+
 const maxSlug = 60
 
 // Slug maps each byte outside [A-Za-z0-9.-] to -, collapses runs of -, trims

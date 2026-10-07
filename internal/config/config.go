@@ -50,17 +50,26 @@ func (b *Bytes) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode {
 		return fmt.Errorf("line %d: want a size such as 500MB, not %s", node.Line, node.ShortTag())
 	}
-	m := size.FindStringSubmatch(node.Value)
+	parsed, err := ParseBytes(node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: %w", node.Line, err)
+	}
+	*b = parsed
+	return nil
+}
+
+// ParseBytes parses a size such as 500MB.
+func ParseBytes(s string) (Bytes, error) {
+	m := size.FindStringSubmatch(s)
 	if m == nil {
-		return fmt.Errorf("line %d: want a size such as 500MB, not %q", node.Line, node.Value)
+		return 0, fmt.Errorf("want a size such as 500MB, not %q", s)
 	}
 	n, err := strconv.ParseInt(m[1], 10, 64)
 	unit := sizeUnits[m[2]]
 	if err != nil || n > math.MaxInt64/unit {
-		return fmt.Errorf("line %d: size %q is too large", node.Line, node.Value)
+		return 0, fmt.Errorf("size %q is too large", s)
 	}
-	*b = Bytes(n * unit)
-	return nil
+	return Bytes(n * unit), nil
 }
 
 // Duration is a Go duration such as 1h or 0s, a whole number of days such
@@ -232,4 +241,14 @@ func baseURL(s string) (u *url.URL, shown string, ok bool) {
 		return nil, u.Redacted(), false
 	}
 	return u, s, (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && !strings.ContainsAny(s, "?#")
+}
+
+// String gives b in the largest decimal unit that divides it.
+func (b Bytes) String() string {
+	for _, unit := range []string{"TB", "GB", "MB", "KB"} {
+		if n := int64(b); n != 0 && n%sizeUnits[unit] == 0 {
+			return fmt.Sprintf("%d%s", n/sizeUnits[unit], unit)
+		}
+	}
+	return fmt.Sprintf("%dB", int64(b))
 }

@@ -1,6 +1,7 @@
 package faultfs_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -143,6 +144,19 @@ var _ = Describe("FS", Label("store"), func() {
 		Expect(f.RemoveAll(filepath.Join(dir, "d"))).To(Succeed())
 		Expect(filepath.Join(dir, "d")).NotTo(BeAnExistingFile())
 		Expect(f.Journal()).To(ContainElement(faultfs.Op{Name: "chmod", Path: readOnly}))
+	})
+
+	It("FailRemoveOfReadOnly fails remove with the given error while the tree holds a non-empty dir without owner write permission", func() {
+		readOnly := filepath.Join(dir, "d", "ro")
+		Expect(os.MkdirAll(readOnly, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(readOnly, "a"), nil, 0o644)).To(Succeed())
+		Expect(os.Chmod(readOnly, 0o555)).To(Succeed())
+		symlinkErr := errors.New("symlink")
+		f.FailRemoveOfReadOnly(symlinkErr)
+
+		Expect(f.RemoveAll(filepath.Join(dir, "d"))).To(MatchError(symlinkErr))
+		Expect(f.Chmod(readOnly, 0o755)).To(Succeed())
+		Expect(f.RemoveAll(filepath.Join(dir, "d"))).To(Succeed())
 	})
 
 	It("reports the mount it was told for a path, and the inner FS's otherwise", func() {

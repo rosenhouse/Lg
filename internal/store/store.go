@@ -467,6 +467,14 @@ func (u *Unit) Sum(name string) (Sum, error) {
 	return sum, nil
 }
 
+// Open opens a closed member for reading.
+func (u *Unit) Open(name string) (*os.File, error) {
+	if _, closed := u.sums[name]; !closed {
+		return nil, fmt.Errorf("member %q is not closed", name)
+	}
+	return os.Open(filepath.Join(u.dir, name))
+}
+
 // Remove deletes a closed member.
 func (u *Unit) Remove(name string) error {
 	if _, closed := u.sums[name]; !closed {
@@ -480,11 +488,11 @@ func (u *Unit) Remove(name string) error {
 func (u *Unit) Abort() error { return removeTree(u.fs, u.dir) }
 
 // removeTree removes dir, which is under tmp/, also when a dir in it lacks
-// owner write permission, as one from an extracted archive may.
+// owner write permission, as one from an extracted archive may. RemoveAll
+// does not always report that as ErrPermission, so any error gets a retry.
 func removeTree(fsys FS, dir string) error {
-	err := fsys.RemoveAll(dir)
-	if !errors.Is(err, fs.ErrPermission) {
-		return err
+	if fsys.RemoveAll(dir) == nil {
+		return nil
 	}
 	if err := makeWritable(fsys, dir); err != nil {
 		return err
@@ -581,7 +589,7 @@ func (m *member) Close() error {
 // on its own line for grep.
 func (u *Unit) WriteJSON(name string, raw []byte) error {
 	var buf bytes.Buffer
-	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+	if err := json.Indent(&buf, bytes.TrimRight(raw, " \t\r\n"), "", "  "); err != nil {
 		return err
 	}
 	buf.WriteByte('\n')
@@ -594,6 +602,17 @@ func (u *Unit) WriteJSON(name string, raw []byte) error {
 		return err
 	}
 	return w.Close()
+}
+
+// WriteValue stores v as WriteJSON does, with <, > and & as they are, so rg finds them.
+func (u *Unit) WriteValue(name string, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	return u.WriteJSON(name, buf.Bytes())
 }
 
 // ReplaceFile replaces path with data, so that a crash leaves the old file

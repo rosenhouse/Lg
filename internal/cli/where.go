@@ -122,6 +122,8 @@ type artifactPlace struct {
 	Artifact          string            `json:"artifact"`
 	AttributedAttempt *int              `json:"attributed_attempt"`
 	Attribution       model.Attribution `json:"attribution"`
+	// InnerPath is the path below extracted/ of a file lg extract wrote.
+	InnerPath string `json:"inner_path,omitempty"`
 }
 
 type tombstonePlace struct {
@@ -199,13 +201,9 @@ func (f *placeFinder) find(hit string) (place, error) {
 		}
 		return place{}, fmt.Errorf("%q names no file", hit)
 	}
-	real, err := filepath.EvalSymlinks(path)
+	rel, err := relToData(f.real, f.data, path)
 	if err != nil {
 		return place{}, err
-	}
-	rel, err := filepath.Rel(f.real, real)
-	if err != nil || !filepath.IsLocal(rel) {
-		return place{}, fmt.Errorf("%s is outside the store %s", path, f.data)
 	}
 	loc, err := layout.Parse(rel)
 	if err != nil {
@@ -231,6 +229,23 @@ func (f *placeFinder) find(hit string) (place, error) {
 	}
 	p.Path, p.Line, p.Text = path, h.Line, h.Text
 	return p, err
+}
+
+// relToData gives path relative to data, whose real path is realData, with
+// the symlinks in path resolved too.
+func relToData(realData, data, path string) (string, error) {
+	real, err := filepath.Abs(path)
+	if err == nil {
+		real, err = filepath.EvalSymlinks(real)
+	}
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(realData, real)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("%s is outside the store %s", path, data)
+	}
+	return rel, nil
 }
 
 // rgOmission is what rg --max-columns prints in place of a line or its end.
@@ -387,6 +402,9 @@ func describeRun(data string, loc layout.Location, facts runFacts) (place, error
 			return place{}, unread("its artifact " + filepath.Base(loc.ArtifactDir))
 		}
 		p.artifactPlace = artifactOf(rows.Artifacts[i])
+		if inner, ok := strings.CutPrefix(filepath.ToSlash(loc.File), "extracted/"); ok {
+			p.InnerPath = inner
+		}
 	}
 	p.Conclusion = conclusionOf(rows, p)
 	if facts.err != nil {

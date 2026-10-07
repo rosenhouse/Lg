@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -44,7 +45,7 @@ func (c initCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	_, release, err := openForWriting(roots, deps, writeLockWait, nil)
+	_, release, err := openForWriting(context.Background(), roots, deps, writeLockWait, nil)
 	if err != nil {
 		return errors.Join(failure.FromErrno(err), f.Close(), os.Remove(file))
 	}

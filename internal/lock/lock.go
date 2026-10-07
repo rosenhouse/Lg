@@ -15,7 +15,8 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 )
 
-const pollInterval = 50 * time.Millisecond
+// PollInterval is how often Wait retries a busy lock.
+const PollInterval = 50 * time.Millisecond
 
 // ErrTimeout is wrapped by Wait's error when the lock stays busy past its timeout.
 var ErrTimeout = errors.New("gave up")
@@ -58,7 +59,7 @@ func WaitContext(ctx context.Context, path string, timeout time.Duration, clk cl
 		case <-deadline:
 			_ = file.Close()
 			return nil, fmt.Errorf("%s is held by %s; %w after %s", path, holder(path), ErrTimeout, timeout)
-		case <-clk.After(pollInterval):
+		case <-clk.After(PollInterval):
 		}
 	}
 	// The pid only names the holder to waiters, so a full disk, where gc

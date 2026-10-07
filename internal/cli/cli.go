@@ -16,6 +16,7 @@ import (
 	"github.com/rosenhouse/lg/internal/clock"
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/execx"
+	"github.com/rosenhouse/lg/internal/extract"
 	"github.com/rosenhouse/lg/internal/failure"
 	"github.com/rosenhouse/lg/internal/github"
 	"github.com/rosenhouse/lg/internal/lock"
@@ -56,6 +57,7 @@ type commands struct {
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
 	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another, or failed alone on the default branch."`
+	Extract extractCmd `cmd:"" help:"Expand artifacts' zips, and the archives in them, into extracted/ beside each zip, for grep or rg."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 }
@@ -81,7 +83,11 @@ func Main(args []string, deps Deps) (code int) {
 	stdout := &errWriter{w: deps.Stdout}
 	parser := kong.Must(&commands{},
 		kong.Name("lg"),
-		kong.Vars{"write_lock_wait": writeLockWait.String(), "cycle_wait": cycleWait.String()},
+		kong.Vars{
+			"write_lock_wait":   writeLockWait.String(),
+			"cycle_wait":        cycleWait.String(),
+			"extract_max_bytes": config.Bytes(extract.Defaults().MaxBytes).String(),
+		},
 		kong.Writers(stdout, deps.Stderr),
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 	defer func() {

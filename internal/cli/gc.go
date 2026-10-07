@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -31,14 +30,11 @@ func (c gcCmd) Run(deps *Deps) error {
 	if err != nil {
 		return err
 	}
-	// gc only removes, so a root without a store is a mistyped LG_HOME, unless
-	// a writer holding state/write.lock is making the store.
-	format := filepath.Join(roots.Store, "FORMAT")
-	if !exists(format) && !exists(filepath.Join(roots.State, "write.lock")) {
-		return noStore(roots)
-	}
 	now, keep, diskCap := deps.Clock.Now(), time.Duration(cfg.Retention), int64(cfg.DiskCap)
 	if c.DryRun {
+		if err := checkHasStore(roots); err != nil {
+			return err
+		}
 		h, err := retention.PeekHorizons(roots.State)
 		if err != nil {
 			return err
@@ -51,12 +47,7 @@ func (c gcCmd) Run(deps *Deps) error {
 		}
 		return err
 	}
-	s, release, err := openForWriting(roots, deps, c.Timeout, func() error {
-		if !exists(format) {
-			return noStore(roots)
-		}
-		return nil
-	})
+	s, release, err := openExisting(context.Background(), roots, deps, c.Timeout)
 	if err != nil {
 		return failure.FromErrno(err)
 	}

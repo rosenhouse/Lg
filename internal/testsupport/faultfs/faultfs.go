@@ -35,7 +35,9 @@ type FS struct {
 	before   map[string]scopedHook
 	journal  []Op
 	mounts   map[string]store.Mount
-	nonRoot  bool
+	// readOnlyRemoveErr is what remove fails with while the tree holds a
+	// read-only dir, or nil.
+	readOnlyRemoveErr error
 }
 
 func New() *FS {
@@ -109,10 +111,10 @@ func (f *FS) SyncDir(path string) error {
 func (f *FS) RemoveAll(path string) error {
 	return f.do(Op{Name: "remove", Path: path}, func() error {
 		f.mu.Lock()
-		nonRoot := f.nonRoot
+		failure := f.readOnlyRemoveErr
 		f.mu.Unlock()
-		if dir := readOnlyDir(path); nonRoot && dir != "" {
-			return &fs.PathError{Op: "unlinkat", Path: dir, Err: syscall.EACCES}
+		if dir := readOnlyDir(path); failure != nil && dir != "" {
+			return &fs.PathError{Op: "unlinkat", Path: dir, Err: failure}
 		}
 		return f.inner.RemoveAll(path)
 	})
@@ -124,10 +126,14 @@ func (f *FS) Chmod(path string, mode fs.FileMode) error {
 
 // ActAsNonRoot makes remove fail with EACCES, as it does for a user other than
 // root, while the tree holds a non-empty dir without owner write permission.
-func (f *FS) ActAsNonRoot() {
+func (f *FS) ActAsNonRoot() { f.FailRemoveOfReadOnly(syscall.EACCES) }
+
+// FailRemoveOfReadOnly makes remove fail with err while the tree holds a
+// non-empty dir without owner write permission.
+func (f *FS) FailRemoveOfReadOnly(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.nonRoot = true
+	f.readOnlyRemoveErr = err
 }
 
 // readOnlyDir gives a non-empty dir in the tree at root that lacks owner

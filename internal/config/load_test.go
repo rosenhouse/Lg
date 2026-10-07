@@ -92,6 +92,19 @@ var _ = Describe("Load", Label("sync"), func() {
 		Entry("the largest", "9223372036854775807", config.Bytes(math.MaxInt64)),
 	)
 
+	DescribeTable("writes a size in the largest decimal unit that divides it", Label("extract"),
+		func(bytes config.Bytes, want string) {
+			Expect(bytes.String()).To(Equal(want))
+			Expect(config.ParseBytes(want)).To(Equal(bytes))
+		},
+		Entry("zero", config.Bytes(0), "0B"),
+		Entry("bytes", config.Bytes(1500), "1500B"),
+		Entry("KB", config.Bytes(2_000), "2KB"),
+		Entry("MB", config.Bytes(500_000_000), "500MB"),
+		Entry("GB", config.Bytes(1_000_000_000), "1GB"),
+		Entry("TB", config.Bytes(3_000_000_000_000), "3TB"),
+	)
+
 	DescribeTable("rejects an artifact_max_bytes that is not a size", Label("artifacts"),
 		func(value, message string) {
 			_, err := config.Load(write("repo: rosenhouse/lg\nartifact_max_bytes: " + value + "\n"))
