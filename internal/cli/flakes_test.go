@@ -169,6 +169,14 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(help).NotTo(ContainSubstring("unit"))
 	})
 
+	It("says in --help that no failure next to a run whose first attempt is not on disk is alone", func() {
+		c := harness.NewCLI()
+
+		Expect(c.Main("flakes", "--help")).To(Equal(0))
+		Expect(strings.Join(strings.Fields(c.Stdout.String()), " ")).To(ContainSubstring(
+			"A run whose first attempt is not on disk, as when lg sync has not fetched it yet, leaves no failure next to it alone."))
+	})
+
 	DescribeTable("exits 2",
 		func(args []string, message string) {
 			c := harness.NewCLI()
