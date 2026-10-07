@@ -208,7 +208,7 @@ var _ = DescribeTable("lg paths prints the paths it can read, then exits 1 namin
 		}
 		return attempt, runDir
 	}),
-	Entry("a job dir that is now a file", func(c *harness.CLI, runDir string) (string, string) {
+	Entry("a job dir replaced by a file", func(c *harness.CLI, runDir string) (string, string) {
 		jobs, err := filepath.Glob(filepath.Join(runDir, "attempt-1", "jobs", "*"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.RemoveAll(jobs[0])).To(Succeed())

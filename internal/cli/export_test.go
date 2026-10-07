@@ -20,7 +20,6 @@ func RunDaemonCycle(ctx context.Context, deps Deps, serving func() int64) (daemo
 
 type LineReader = lineReader
 
-// NewLineReader gives a LineReader that opens files with open.
 func NewLineReader(open func(path string) (io.ReadSeekCloser, error)) *LineReader {
 	return newLineReader(open)
 }
@@ -31,7 +30,6 @@ func (l *LineReader) Close() { l.close() }
 
 type DirCache = dirCache
 
-// NewDirCache gives a DirCache that lists dirs with readDir.
 func NewDirCache(readDir func(dir string) ([]fs.DirEntry, error)) *DirCache {
 	return newDirCache(readDir)
 }

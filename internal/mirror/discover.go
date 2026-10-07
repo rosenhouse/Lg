@@ -204,7 +204,7 @@ func ofRepo(run github.Run, repo github.Repo) bool {
 	return strings.EqualFold(run.Repository.FullName, repo.FullName)
 }
 
-// rescan lists the runs of RescanWindow that are on disk, an hour or more
+// rescan lists the runs of rescanWindow that are on disk, an hour or more
 // after state/rescan.json says it last did, so that a rerun of an older run
 // that started and finished between two cycles gets its new attempts. A
 // record from the future, after a clock step, does not delay it. Runs not
@@ -249,10 +249,9 @@ func (m *Mirror) recordRescan(rescannedAt time.Time) error {
 	return m.Store.WriteState("rescan.json", rescan{RescannedAt: rescannedAt.UTC().Truncate(time.Second)})
 }
 
-// fetchWatched gets each watched run that no listing named, since a run
-// created before the backfill window appears in no listing once it
-// completes. A run GitHub no longer has leaves the watch list. It returns
-// the errors that runScoped accepts, leaving their runs watched.
+// fetchWatched gets each watched run that no listing named. A run GitHub no
+// longer has leaves the watch list. It returns the errors that runScoped
+// accepts, leaving their runs watched.
 func (m *Mirror) fetchWatched(ctx context.Context, gh github.Client, w *watch, listed []github.Run) (runs []github.Run, failed []UnitError, err error) {
 	for _, id := range slices.Sorted(maps.Keys(w.runs)) {
 		if slices.ContainsFunc(listed, func(run github.Run) bool { return run.ID == id }) {

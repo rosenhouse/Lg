@@ -115,7 +115,7 @@ var _ = Describe("lg sync", Label("discovery"), func() {
 		env.WriteConfig(fake.URL())
 	})
 
-	DescribeTable("exits 2 naming the key for an unknown config key, a sync_interval under 1m, or a backfill longer than retention",
+	DescribeTable("exits 2 naming the key of an unknown or invalid config entry, and sends no request",
 		func(line, message string) {
 			env.WriteConfig(fake.URL(), line)
 

@@ -323,7 +323,6 @@ var _ = Describe("a snapshot whose listing a re-run overtook", Label("artifacts"
 	}, cycleTimeout)
 })
 
-// jsonField is a field of a JSON object.
 func jsonField(raw []byte, name string) json.RawMessage {
 	GinkgoHelper()
 	var object map[string]json.RawMessage

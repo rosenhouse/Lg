@@ -60,11 +60,11 @@ func FromError(err error, attemptUpdatedAt time.Time, logGrace time.Duration, no
 }
 
 // FromZipError tombstones artifact.zip when err shows GitHub has lost it for
-// good. A 410 is expired, whatever expires_at says, since GitHub delists an
-// expired artifact and keeps answering 404 for one deleted before its
-// expiry. An API-hop 404 is deleted at once; a blob-hop 404 is Transient
-// until log_grace has passed since the artifact's created_at, then deleted.
-// Any other error comes back as it is.
+// good. It ignores expires_at, since GitHub keeps answering 404 for an
+// artifact deleted before its expiry. A 410 is expired. An API-hop 404 is
+// deleted at once; a blob-hop 404 is Transient until log_grace has passed
+// since the artifact's created_at, then deleted. Any other error comes back
+// as it is.
 func FromZipError(err error, artifact model.Artifact, logGrace time.Duration, now time.Time) (Tombstone, error) {
 	statusErr, ok := permanent(err)
 	if !ok {

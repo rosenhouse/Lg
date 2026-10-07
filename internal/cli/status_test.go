@@ -128,7 +128,7 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 })
 
 var _ = Describe("lg status after a good sync", Label("status"), func() {
-	It("prints no blocked state, next sync, horizon or daemon", func() {
+	It("prints every field of a status.json with nothing blocked, scheduled or running", func() {
 		s := harness.NewCLI()
 		s.WriteStatus(goodStatus)
 

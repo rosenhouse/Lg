@@ -38,7 +38,7 @@ func (r *repeated) Set(v string) error {
 type fail struct {
 	host, match string
 	fault       fakegithub.Fault
-	// bodyFile holds the body of a 200 fault.
+	// bodyFile names the file whose bytes are a body= fault's body.
 	bodyFile string
 }
 

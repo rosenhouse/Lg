@@ -102,7 +102,7 @@ var _ = Describe("ListRuns", Label("discovery"), func() {
 		Expect(fake.Requests()).To(HaveLen(10))
 	})
 
-	It("reports a listing whose last page has no Link next as complete, whatever its total_count", func() {
+	It("reports a listing of fewer than ListingCap runs with no Link next as complete, whatever its total_count", func() {
 		fake := fakegithub.New()
 		DeferCleanup(fake.Close)
 		body := fmt.Sprintf(`{"total_count":%d,"workflow_runs":[%s]}`, github.ListingCap, scenario.ListedRun(1, at))

@@ -92,8 +92,7 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// ParseDuration parses a Go duration such as 1h or 0s, a whole number of
-// days such as 7d, or a bare 0.
+// ParseDuration parses a Duration.
 func ParseDuration(s string) (time.Duration, error) {
 	if strings.HasSuffix(s, "d") {
 		n, err := strconv.ParseInt(strings.TrimSuffix(s, "d"), 10, 64)

@@ -15,7 +15,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/matchers"
 )
 
-var _ = Describe("store.Evict", Label("retention"), func() {
+var _ = Describe("Evict", Label("retention"), func() {
 	var root, runDir, log string
 
 	BeforeEach(func() {

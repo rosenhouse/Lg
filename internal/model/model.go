@@ -44,7 +44,7 @@ type RunRepositories struct {
 	HeadRepository *struct{ ID int64 } `json:"head_repository"`
 }
 
-// FromFork reports whether the run's head repository is another than its repository.
+// FromFork reports whether the run's head repository differs from its repository.
 func (r RunRepositories) FromFork() bool {
 	return r.HeadRepository == nil || r.HeadRepository.ID != r.Repository.ID
 }
@@ -112,7 +112,7 @@ type ArtifactRun struct {
 	HeadSHA          string `json:"head_sha"`
 }
 
-// FromFork reports whether the run's head repository is another than its repository.
+// FromFork reports whether the run's head repository differs from its repository.
 func (r ArtifactRun) FromFork() bool { return r.HeadRepositoryID != r.RepositoryID }
 
 // ArtifactAction is what lg does with a listed artifact.

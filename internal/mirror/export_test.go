@@ -20,7 +20,6 @@ type Retry struct {
 	RunAttempt int
 }
 
-// RetrySet gives the run's retry set.
 func (m *Mirror) RetrySet(runDir string, listing, pending []github.Artifact) ([]Retry, error) {
 	pendingCandidates := (&artifactListing{artifacts: pending}).candidates()
 	onDisk, err := m.attemptsOnDisk(runDir)

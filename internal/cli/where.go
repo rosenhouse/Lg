@@ -291,7 +291,6 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 	return "", false
 }
 
-// anyHolding tells whether any line of path holds text.
 func (f *placeFinder) anyHolding(path, text string) bool {
 	for n := 1; ; n++ {
 		line, ok := f.lines.line(path, n)
@@ -394,7 +393,6 @@ func (f *placeFinder) close() {
 	f.lines.close()
 }
 
-// describeRun describes loc, in the run at facts.dir, from facts.
 func describeRun(data string, loc layout.Location, facts runFacts) (place, error) {
 	runDir := facts.dir
 	rows := facts.rows
@@ -534,7 +532,6 @@ type lineStarts struct {
 	starts []int64
 }
 
-// line gives line n of the file at path.
 func (l *lineReader) line(path string, n int) (string, bool) {
 	if l.file == nil || l.files[len(l.files)-1].path != path {
 		if !l.switchTo(path) {

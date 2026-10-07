@@ -44,7 +44,7 @@ type Loop struct {
 	// Lost gives an error once this daemon no longer holds the instance lock.
 	Lost      func() error
 	Reconcile func(ctx context.Context) error
-	// Log is stderr, which launchd sends to a file.
+	// Log is stderr, which launchd sends to a file and systemd to its journal.
 	Log io.Writer
 }
 

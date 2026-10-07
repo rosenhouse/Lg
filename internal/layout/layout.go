@@ -1,4 +1,4 @@
-// Package layout names the directories of the data tree.
+// Package layout names and parses the paths of the data tree.
 package layout
 
 import (

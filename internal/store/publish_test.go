@@ -18,7 +18,7 @@ import (
 
 const attemptPath = "data/github.com/o/r/runs/2026-10-03/1_ci_main/attempt-1"
 
-var _ = Describe("store.Publish", Label("store"), func() {
+var _ = Describe("Publish", Label("store"), func() {
 	var root string
 
 	BeforeEach(func() {
@@ -104,7 +104,7 @@ var _ = Describe("store.Publish", Label("store"), func() {
 	})
 })
 
-var _ = Describe("store.Open", Label("store"), func() {
+var _ = Describe("Open", Label("store"), func() {
 	It("refuses a store whose tmp/ and data/ are on different devices", func() {
 		root := newStore()
 		Expect(store.OpenFS(faultfs.New(), root)).Error().NotTo(HaveOccurred())
@@ -152,7 +152,7 @@ var _ = DescribeTable("store.Open and store.Init refuse a store whose tmp/, tmp/
 	Entry("data/ elsewhere", "data", "elsewhere"),
 )
 
-var _ = Describe("store.Init", Label("store"), func() {
+var _ = Describe("Init", Label("store"), func() {
 	It("refuses a root whose tmp/ and data/ are on different mounts before staging anything", func() {
 		root := filepath.Join(GinkgoT().TempDir(), "lg")
 		otherDevice := faultfs.New()

@@ -15,7 +15,7 @@ var _ = Describe("RecordedAt", Label("artifacts"), func() {
 		Expect(recordings.RecordedAt(37129738159, "after-expiry")).To(Equal(time.Date(2026, 10, 4, 16, 30, 1, 0, time.UTC)))
 	})
 
-	It("fails for a stage recorded before record.sh wrote recorded_at.txt", func() {
+	It("fails for a stage with no recorded_at.txt", func() {
 		_, err := recordings.RecordedAt(37129390741, "after-attempt-3")
 		Expect(err).To(MatchError(ContainSubstring("recorded_at.txt")))
 	})

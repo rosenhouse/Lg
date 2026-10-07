@@ -45,8 +45,8 @@ type Blocked struct {
 
 // Warning is the one line every command prints while st, the status at
 // now, is blocked or stale, has units stuck pending, or records an invalid
-// config.yaml, and "" otherwise (D24). hint is the lg command to run about
-// it, if any.
+// config.yaml, and "" otherwise. hint is the lg command to run about it,
+// if any.
 func Warning(now time.Time, st *Status) (warning, hint string) {
 	switch {
 	case st == nil:

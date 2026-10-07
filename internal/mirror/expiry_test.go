@@ -29,7 +29,7 @@ func advanceToExpiry(env *harness.InProcessEnv) {
 }
 
 var _ = Describe("mirror.Cycle at after-expiry", Label("artifacts"), func() {
-	It("tombstones 11276327411 and 11276237903 as expired when listed, and writes nothing for them when they are no longer listed", func(ctx SpecContext) {
+	It("tombstones 11276327411 and 11276237903 as expired when a retry follows their expiry, and writes nothing for them when the run is first listed after it", func(ctx SpecContext) {
 		By("retrying an artifact that was listed before it expired")
 		env := harness.InProcess()
 		for run, stage := range lastStageBeforeExpiry {

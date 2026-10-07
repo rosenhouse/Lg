@@ -12,7 +12,7 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/recordings"
 )
 
-var _ = DescribeTable("RunRepositories.FromFork reports whether the head repository is another than the repository", Label("paths"),
+var _ = DescribeTable("RunRepositories.FromFork reports whether the head repository differs from the repository", Label("paths"),
 	func(raw string, fork bool) {
 		var run model.RunRepositories
 		Expect(json.Unmarshal([]byte(raw), &run)).To(Succeed())
@@ -23,7 +23,7 @@ var _ = DescribeTable("RunRepositories.FromFork reports whether the head reposit
 	Entry("a deleted fork", `{"repository":{"id":7},"head_repository":null}`, true),
 )
 
-var _ = DescribeTable("ArtifactRun.FromFork reports whether the head repository is another than the repository", Label("paths"),
+var _ = DescribeTable("ArtifactRun.FromFork reports whether the head repository differs from the repository", Label("paths"),
 	func(raw string, fork bool) {
 		var artifact model.Artifact
 		Expect(json.Unmarshal([]byte(raw), &artifact)).To(Succeed())

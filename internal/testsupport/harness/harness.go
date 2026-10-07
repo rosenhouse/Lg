@@ -150,7 +150,6 @@ func (e *Env) WriteStatus(raw string) {
 	writeStatus(e.Store(), filepath.Join(e.State(), "status.json"), raw)
 }
 
-// writeStatus initializes the store at root and replaces the status.json at path with raw.
 func writeStatus(root, path, raw string) {
 	ginkgo.GinkgoHelper()
 	gomega.Expect(store.Init(root)).To(gomega.Succeed())

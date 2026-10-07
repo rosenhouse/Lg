@@ -116,8 +116,8 @@ func (s *Store) placeFormat(unit *Unit, root string) error {
 	return unit.place("FORMAT", format+"\n", root)
 }
 
-// Check returns an error unless root is an lg-store 1 store, or holds only
-// what Init writes before FORMAT.
+// Check returns an error unless root is missing, is an lg-store 1 store, or
+// holds only what isOwn accepts.
 func Check(root string) error { return check(OSFS{}, root) }
 
 func check(fsys FS, root string) error {

@@ -18,7 +18,7 @@ import (
 )
 
 var _ = Describe("lg sync", Label("status"), func() {
-	It("writes state/status.json with lg_format, cycle, last_sync_started_at, last_sync_finished_at, last_sync_ok_at, next_sync_at, sync_interval_seconds, blocked null, daemon_pid, daemon_version, and per repo default_branch, newest_completed_run_created_at, lag_seconds, runs, attempts, bytes_data, pending_units, retention_days, disk_cap_bytes and horizon", func() {
+	It("writes state/status.json describing the cycle and, per repo, the store's contents and limits", func() {
 		env := harness.New(lgPath)
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())

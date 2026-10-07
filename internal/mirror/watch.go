@@ -50,7 +50,6 @@ func loadWatch(s *store.Store, host string) (w *watch, discarded, err error) {
 	return &watch{store: s, host: host, hosts: hosts, runs: runs, loaded: slices.Sorted(maps.Keys(runs))}, discarded, nil
 }
 
-// add watches the run.
 func (w *watch) add(run model.Run) {
 	w.runs[run.ID] = watchedRun{CreatedAt: run.CreatedAt}
 }

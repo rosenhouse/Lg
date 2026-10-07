@@ -61,7 +61,7 @@ func ofDB(err error) error {
 }
 
 // Open opens the index at path over the data dir data. It starts from empty
-// when SQLite cannot read meta. A transaction takes the write lock at its
+// when lg.db is unreadable or has another format or schema. A transaction takes the write lock at its
 // start, and waits up to busyTimeout for another process to release it.
 // Whenever the index waits longer than quietWait for lg.db.lock, it calls
 // waiting, unless nil, with the holder.

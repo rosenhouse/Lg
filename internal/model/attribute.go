@@ -24,11 +24,12 @@ const (
 	Unknown     Attribution = "unknown"
 )
 
-// Attribute gives the attempt that uploaded an artifact. Attempt N lists it by
-// listing-diff when attempt N-1 does not, provided each listed during its own
-// attempt. Otherwise createdAt must fall in [run_started_at(N),
-// run_started_at(N+1)), which needs attempt N+1 on disk unless N is the last
-// attempt known. No attempt after fetchedDuring can hold the artifact.
+// Attribute gives the attempt that uploaded an artifact. By listing-diff it
+// is attempt N when N lists it and N-1 does not, each listed during its own
+// attempt. Otherwise, by timestamp, it is the N whose [run_started_at(N),
+// run_started_at(N+1)) holds createdAt, which needs attempt N+1 on disk
+// unless N is the last attempt known. No attempt after fetchedDuring can
+// hold the artifact.
 func Attribute(id int64, createdAt time.Time, fetchedDuring int, snapshots []Snapshot) (int, Attribution) {
 	last := fetchedDuring
 	byAttempt := map[int]Snapshot{}

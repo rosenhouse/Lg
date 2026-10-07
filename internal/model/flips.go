@@ -126,7 +126,6 @@ func failing(conclusion string) bool {
 	return conclusion == "failure" || conclusion == "cancelled" || conclusion == "timed_out"
 }
 
-// appendNew appends s unless list already holds it.
 func appendNew(list []string, s string) []string {
 	if slices.Contains(list, s) {
 		return list
