@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/rosenhouse/lg/internal/config"
@@ -53,10 +52,11 @@ func (f flakesCmd) Run(deps *Deps) error {
 		}
 		if f.Kind != "rerun" {
 			if len(filter.Branches) == 0 {
-				var err error
-				if filter.Branches, err = defaultBranches(roots.State); err != nil {
+				branch, err := defaultBranch(roots.State)
+				if err != nil {
 					return errors.Join(append(unread, err)...)
 				}
+				filter.Branches = []string{branch}
 			}
 			found, err := ix.IntermittentFailures(ctx, filter)
 			unread = append(unread, err)
@@ -70,25 +70,23 @@ func (f flakesCmd) Run(deps *Deps) error {
 	})
 }
 
-// defaultBranches gives the default branch of each repository status.json records.
-func defaultBranches(state string) ([]string, error) {
+// defaultBranch gives the default branch status.json records for the repository.
+func defaultBranch(state string) (string, error) {
 	st, err := status.Read(filepath.Join(state, "status.json"))
 	if err != nil {
-		return nil, fmt.Errorf("%w; pass --branch", err)
+		return "", fmt.Errorf("%w; pass --branch", err)
 	}
-	var branches []string
+	var branch string
 	if st != nil {
+		// status.json records one repository.
 		for _, repo := range st.Repos {
-			if repo.DefaultBranch != "" && !slices.Contains(branches, repo.DefaultBranch) {
-				branches = append(branches, repo.DefaultBranch)
-			}
+			branch = repo.DefaultBranch
 		}
 	}
-	if len(branches) == 0 {
-		return nil, errors.New("the default branch is unknown until lg sync records it in status.json; pass --branch")
+	if branch == "" {
+		return "", errors.New("the default branch is unknown until lg sync records it in status.json; pass --branch")
 	}
-	slices.Sort(branches)
-	return branches, nil
+	return branch, nil
 }
 
 // flipJSON is a rerun flip as lg flakes --json prints it.
