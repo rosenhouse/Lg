@@ -14,12 +14,13 @@ Do not call the GitHub API for data that lg mirrors.
 Always run `lg status` first.
 It shows the last sync, the lag, pending units, and why a sync is blocked.
 Every lg command also prints `lg: warning: ...` to stderr while the mirror is stale or blocked, or while units stay pending.
-A mirror that is behind can miss recent runs, so run `lg sync --wait` before you conclude there is no match.
+A mirror that is behind can miss recent runs, so run `lg sync --wait --timeout 90s` before you conclude there is no match.
 It waits for a fresh sync, by the daemon if one runs.
+Exit 4 means the sync has not finished, so do not conclude there is no match.
 
 ```sh
 lg status
-lg sync --wait
+lg sync --wait --timeout 90s
 ```
 
 | Exit | Meaning |

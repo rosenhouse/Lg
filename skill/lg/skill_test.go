@@ -44,7 +44,7 @@ var _ = DescribeTable("SKILL.md covers", Label("skill"),
 		}
 	},
 	Entry("lg status first, and lg sync --wait before concluding no match",
-		"run `lg status` first", "`lg sync --wait`[^\n]*before[^\n]*no match"),
+		"run `lg status` first", "`lg sync --wait --timeout [^`]+`[^\n]*before[^\n]*no match", `exit 4[^\n]*not finished`),
 	Entry("exit codes",
 		`\| 0 \| ok`, `\| 1 \| [^\n]*pending`, `\| 2 \| usage`, `\| 3 \| blocked`, `\| 4 \| timeout`),
 	Entry("finding a carried-forward job's log with lg where",
