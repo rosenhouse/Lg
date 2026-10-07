@@ -236,23 +236,31 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		}
 
 		By("retrying them in a store that listed them before they expired")
+		// R1 recorded 404 for 11275917910, which a rerun deleted, and 410 for the other two.
+		recorded := []struct {
+			runID, artifactID int64
+			reason            string
+			status            int
+		}{
+			{fixtureRun, 11275917910, "deleted", http.StatusNotFound},
+			{fixtureRun, expiredArtifact, "expired", http.StatusGone},
+			{logsDeletedRun, 11276237903, "expired", http.StatusGone},
+		}
 		early := harness.NewLive(lgPath)
 		realGH := early.Getenv("LG_GH")
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
-		listed := map[int64][]model.Artifact{
-			fixtureRun:     expiring(fixtureRun, "after-attempt-1"),
-			logsDeletedRun: expiring(logsDeletedRun, "logs-deleted"),
-		}
 		// A failed download leaves each one pending until the live sync.
-		for _, artifacts := range listed {
-			Expect(artifacts).To(HaveLen(1))
-			fake.Fail("blob", fmt.Sprintf("/artifacts/%d.zip", artifacts[0].ID), fakegithub.Fault{Status: http.StatusServiceUnavailable})
+		for _, r := range recorded {
+			fake.Fail("api", fmt.Sprintf("/artifacts/%d/zip", r.artifactID), fakegithub.Fault{Status: http.StatusServiceUnavailable})
 		}
 		early.Setenv("LG_GH", fakegh.New(GinkgoT().TempDir()).Path)
 		early.Setenv("LG_TEST_NOW", harness.DefaultNow().Format(time.RFC3339))
 		window := liveWindow()
 		early.WriteConfig(fake.URL(), "backfill: "+window, "retention: "+window)
+		Expect(early.Sync()).To(gexec.Exit(1))
+		// Attempt 3 lists 11276327411.
+		Expect(fake.Advance(fixtureRun, fixtureStage)).To(Succeed())
 		Expect(early.Sync()).To(gexec.Exit(1))
 
 		early.Setenv("LG_GH", realGH)
@@ -260,41 +268,15 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		early.WriteLiveConfig("backfill: "+window, "retention: "+window)
 		Expect(syncLive(early)).To(gexec.Exit(0))
 
-		for runID, artifacts := range listed {
-			artifact := artifacts[0]
-			status := recordedZipStatus(runID, artifact.ID)
-			reason := map[int]string{http.StatusGone: "expired", http.StatusNotFound: "deleted"}[status]
-			Expect(reason).NotTo(BeEmpty(), "R1 recorded %d for artifact %d", status, artifact.ID)
-			tombstone := filepath.Join(layout.ArtifactDir(runDir(early, runID), artifact.ID, artifact.Name), "artifact.zip.tombstone")
+		for _, r := range recorded {
+			tombstone := filepath.Join(layout.ArtifactDir(runDir(early, r.runID), r.artifactID, expiringName), "artifact.zip.tombstone")
 			Expect(readJSON(tombstone)).To(SatisfyAll(
-				HaveKeyWithValue("reason", reason),
-				HaveKeyWithValue("http_status", BeEquivalentTo(status)),
-			), "artifact %d", artifact.ID)
+				HaveKeyWithValue("reason", r.reason),
+				HaveKeyWithValue("http_status", BeEquivalentTo(r.status)),
+			), "artifact %d", r.artifactID)
 		}
 	})
 })
-
-// expiring gives the expires-in-1-day artifacts of a recorded listing.
-func expiring(runID int64, stage string) []model.Artifact {
-	GinkgoHelper()
-	artifacts, err := recordings.Artifacts(runID, stage)
-	Expect(err).NotTo(HaveOccurred())
-	return slices.DeleteFunc(artifacts, func(a model.Artifact) bool { return a.Name != expiringName })
-}
-
-// recordedZipStatus is the final status R1 recorded for an artifact's zip.
-func recordedZipStatus(runID, artifactID int64) int {
-	GinkgoHelper()
-	status, err := os.Open(filepath.Join(recordings.Dir(runID, "after-expiry"), "status.txt"))
-	Expect(err).NotTo(HaveOccurred())
-	defer func() { _ = status.Close() }()
-	lines, err := recordings.ParseStatus(status)
-	Expect(err).NotTo(HaveOccurred())
-	path := fmt.Sprintf("artifacts/%d/zip", artifactID)
-	i := slices.IndexFunc(lines, func(l recordings.Line) bool { return l.Path == path })
-	Expect(i).NotTo(BeNumerically("<", 0), path)
-	return lines[i].Final
-}
 
 // lineOf gives line n of the file at path, without its newline.
 func lineOf(path string, n int) string {
