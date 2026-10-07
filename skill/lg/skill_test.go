@@ -55,7 +55,7 @@ var _ = DescribeTable("SKILL.md covers", Label("skill"),
 	Entry("W3 with lg paths --sha or --pr --unit attempt and jq",
 		`lg paths --sha \S+ --unit attempt[^\n]*\|[^\n]*jq`, `lg paths --pr \d+ --unit attempt[^\n]*\|[^\n]*jq`),
 	Entry("--pr missing fork pull_request runs, which --event and --sha find",
-		"`--pr`[^\n]*fork[^\n]*`--event`[^\n]*`--sha`"),
+		"`--pr`[^\n]*fork[^\n]*`--event[^\n]*`--sha`"),
 	Entry("flakes per job and per step",
 		`lg flakes`, `per job[^\n]*per[^\n]*step`),
 )
