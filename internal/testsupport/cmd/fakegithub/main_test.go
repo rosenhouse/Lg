@@ -271,6 +271,27 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 			HaveField("ID", int64(5)), HaveField("ID", int64(6)), HaveField("ID", int64(7)), HaveField("ID", int64(8))))
 	})
 
+	It("serves the -scenario runs so that the newest was created a day before the clock starts", Label("flakes"), func() {
+		newest := func(args ...string) time.Time {
+			GinkgoHelper()
+			session := start(append([]string{"-scenario", "intermittent", "-addr", "127.0.0.1:0"}, args...)...)
+			Eventually(session.Out, "5s").Should(gbytes.Say(`serving http://127\.0\.0\.1:\d+\n`))
+			url := regexp.MustCompile(`http://\S+`).FindString(string(session.Out.Contents()))
+			_, body := get(url + "/repos/rosenhouse/lg/actions/runs?per_page=1")
+			var runs struct {
+				WorkflowRuns []struct {
+					CreatedAt time.Time `json:"created_at"`
+				} `json:"workflow_runs"`
+			}
+			Expect(json.Unmarshal(body, &runs)).To(Succeed())
+			Expect(runs.WorkflowRuns).NotTo(BeEmpty())
+			return runs.WorkflowRuns[0].CreatedAt
+		}
+
+		Expect(newest("-now", "2026-12-01T00:00:00Z")).To(Equal(time.Date(2026, 11, 30, 0, 0, 0, 0, time.UTC)))
+		Expect(newest()).To(BeTemporally("~", time.Now().Add(-24*time.Hour), time.Minute))
+	})
+
 	It("exits 2 naming an unknown -scenario", Label("paths"), func() {
 		session := start("-scenario", "flakes", "-addr", "127.0.0.1:0")
 		Eventually(session, "5s").Should(gexec.Exit(2))
