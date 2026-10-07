@@ -93,13 +93,11 @@ type shell struct {
 }
 
 // keywords may precede a command.
-var keywords = map[string]bool{"if": true, "then": true, "else": true, "elif": true, "do": true, "while": true, "until": true, "!": true, "time": true}
-
-var assignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+var keywords = map[string]bool{"if": true, "!": true}
 
 func (p *shell) parse(line int, s string) {
 	for _, words := range p.commands(line, s) {
-		for len(words) > 0 && (keywords[words[0]] || assignment.MatchString(words[0])) {
+		for len(words) > 0 && keywords[words[0]] {
 			words = words[1:]
 		}
 		if len(words) > 0 && words[0] == "lg" {
