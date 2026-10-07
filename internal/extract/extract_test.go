@@ -370,10 +370,44 @@ var _ = Describe("Extract", Label("extract"), func() {
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
 		Expect(f.files()).To(HaveKeyWithValue("broken.zip", "PK\x03\x04 truncated"))
-		Expect(f.manifest()["not_expanded"]).To(ConsistOf(SatisfyAll(
-			record("archive", "artifact.zip", "name", "broken.zip", "path", "broken.zip"),
-			HaveKeyWithValue("reason", ContainSubstring("zip")),
-		)))
+		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", "broken.zip", "path", "broken.zip", "reason", "zip: not a valid zip file")))
+	})
+
+	It("skips, and records, a zip member that fails to read, keeping the members after it", func() {
+		members := []archives.Entry{
+			{Name: "a.log", Body: "a\n"},
+			{Name: "crc.log", Body: strings.Repeat("c", 100), BadCRC: true},
+			{Name: "bzip2.log", Body: "b\n", Method: 12},
+			{Name: "d.log", Body: "d\n"},
+		}
+		f := newFixture(archives.Zip(append(members, archives.Entry{Name: "inner.zip", Body: string(archives.Zip(members...))})...))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(
+			HaveKeyWithValue("a.log", "a\n"), HaveKeyWithValue("d.log", "d\n"),
+			HaveKeyWithValue("inner.zip.d/a.log", "a\n"), HaveKeyWithValue("inner.zip.d/d.log", "d\n"),
+		))
+		Expect(f.files()).To(HaveLen(6))
+		Expect(f.manifest()["skipped"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "crc.log", "reason", "corrupt: zip: checksum error"),
+			record("archive", "artifact.zip", "name", "bzip2.log", "reason", "corrupt: zip: unsupported compression algorithm"),
+			record("archive", "inner.zip", "name", "crc.log", "reason", "corrupt: zip: checksum error"),
+			record("archive", "inner.zip", "name", "bzip2.log", "reason", "corrupt: zip: unsupported compression algorithm"),
+		))
+		Expect(f.manifest()["not_expanded"]).To(BeEmpty())
+	})
+
+	It("keeps what a nested tar.gz holds before it is cut short, skips the member it cuts, and records the archive as partial", func() {
+		tgz := archives.TarGz(
+			archives.Entry{Name: "first.log", Body: "first\n"},
+			archives.Entry{Name: "second.log", Body: strings.Repeat("0123456789abcdef", 64*1024)},
+		)
+		f := newFixture(archives.Zip(archives.Entry{Name: "logs.tgz", Body: string(tgz[:len(tgz)*2/3])}))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("logs.tgz.d/first.log", "first\n"), HaveLen(3)))
+		Expect(f.manifest()["skipped"]).To(ConsistOf(record("archive", "logs.tgz", "name", "second.log", "reason", "corrupt: unexpected EOF")))
+		Expect(f.manifest()["not_expanded"]).To(ConsistOf(record("archive", "artifact.zip", "name", "logs.tgz", "path", "logs.tgz", "reason", "partial: tar.gz: unexpected EOF")))
 	})
 
 	It("stops at MaxBytes, counting every file it writes, and leaves no extracted/ and nothing in tmp/", func() {

@@ -75,6 +75,8 @@ type extraction struct {
 	names    *namer
 	manifest manifest
 	written  int64
+	// files counts the files written.
+	files int
 }
 
 // member is a file of an archive.
@@ -176,6 +178,15 @@ func (x *extraction) write(m member, archive string, dir []string, level int) er
 		return nil
 	}
 	rel, reason := x.names.file(dir, m.name)
+	var bad corrupt
+	if err := x.copy(m, rel); errors.As(err, &bad) {
+		rec.Reason = "corrupt: " + bad.Error()
+		x.manifest.Skipped = append(x.manifest.Skipped, rec)
+		return nil
+	} else if err != nil {
+		return err
+	}
+	x.files++
 	rec.Path = rel
 	if reason != "" {
 		rec.Reason = reason
@@ -183,9 +194,6 @@ func (x *extraction) write(m member, archive string, dir []string, level int) er
 	}
 	if m.setuid {
 		x.manifest.SetuidDropped = append(x.manifest.SetuidDropped, record{Archive: archive, Name: m.name, Path: rel})
-	}
-	if err := x.copy(m, rel); err != nil {
-		return err
 	}
 	return x.expandNested(rel, archive, m.name, level+1)
 }
@@ -216,6 +224,11 @@ func (x *extraction) copy(m member, rel string) error {
 	x.written += n
 	if closeErr := w.Close(); err == nil {
 		return closeErr
+	}
+	if errors.As(err, new(corrupt)) {
+		if removeErr := x.unit.Remove(rel); removeErr != nil {
+			return removeErr
+		}
 	}
 	return err
 }
@@ -263,6 +276,7 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 	if reason != "" {
 		x.manifest.Renamed = append(x.manifest.Renamed, record{Archive: archive, Name: name + ".d", Path: strings.Join(dir, "/"), Reason: reason})
 	}
+	files := x.files
 	switch kind {
 	case "zip":
 		err = x.expandZip(f, rel, dir, level)
@@ -275,10 +289,17 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		err = x.expandTar(f, rel, dir, level)
 	}
 	var bad corrupt
-	if errors.As(err, &bad) {
-		return notExpanded(kind + ": " + bad.Error())
+	if !errors.As(err, &bad) {
+		return err
 	}
-	return err
+	why := bad.Error()
+	if !strings.HasPrefix(why, kind+": ") {
+		why = kind + ": " + why
+	}
+	if x.files > files {
+		why = "partial: " + why
+	}
+	return notExpanded(why)
 }
 
 // sniff names the kind of archive f holds, by its first bytes, and rewinds f.
@@ -315,8 +336,6 @@ func sniff(f *os.File) (string, error) {
 func isTar(block []byte) bool {
 	return len(block) >= 262 && string(block[257:262]) == "ustar"
 }
-
-func (c corrupt) Error() string { return c.error.Error() }
 
 // manifest is extracted/.lg-extract.json.
 type manifest struct {
