@@ -188,6 +188,9 @@ func components(name string) ([]string, string) {
 	}
 	parts := strings.Split(clean, "/")
 	reason := ""
+	if clean != strings.TrimSuffix(trimDotSlash(name), "/") {
+		reason = "normalized"
+	}
 	for i, part := range parts {
 		switch {
 		case strings.ContainsFunc(part, isControl) || !utf8.ValidString(part):
@@ -197,6 +200,14 @@ func components(name string) ([]string, string) {
 		}
 	}
 	return parts, reason
+}
+
+// trimDotSlash drops the ./ prefixes that tar often gives members.
+func trimDotSlash(name string) string {
+	for strings.HasPrefix(name, "./") {
+		name = name[2:]
+	}
+	return name
 }
 
 func isControl(r rune) bool { return r < 0x20 || r == 0x7f }

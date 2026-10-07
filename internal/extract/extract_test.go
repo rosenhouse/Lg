@@ -458,6 +458,21 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", "a.zip.d", "path", "a.zip.d~1", "reason", "collision")))
 	})
 
+	It("records a member whose name it cleans, but not one that only starts with ./", func() {
+		f := newFixture(archives.Zip(
+			archives.Entry{Name: "x/../y.txt", Body: "y\n"},
+			archives.Entry{Name: "a/./b//c.txt", Body: "c\n"},
+			archives.Entry{Name: "./ok.txt", Body: "ok\n"},
+		))
+
+		Expect(f.extract(extract.Defaults())).To(Succeed())
+		Expect(f.files()).To(SatisfyAll(HaveKeyWithValue("y.txt", "y\n"), HaveKeyWithValue("a/b/c.txt", "c\n"), HaveKeyWithValue("ok.txt", "ok\n")))
+		Expect(f.manifest()["renamed"]).To(ConsistOf(
+			record("archive", "artifact.zip", "name", "x/../y.txt", "path", "y.txt", "reason", "normalized"),
+			record("archive", "artifact.zip", "name", "a/./b//c.txt", "path", "a/b/c.txt", "reason", "normalized"),
+		))
+	})
+
 	It("names a member whose name is only dots and slashes none", func() {
 		f := newFixture(archives.Zip(archives.Entry{Name: "member.tar", Body: string(archives.Tar(archives.Entry{Name: ".", TarType: tar.TypeReg, Body: "dot\n"}))}))
 
