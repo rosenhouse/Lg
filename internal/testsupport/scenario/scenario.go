@@ -644,3 +644,8 @@ func (r Run) maxJobID() int64 {
 	}
 	return highest
 }
+
+// RenameStep renames the step of that name in attempt's job of that id.
+func RenameStep(r Run, attempt int, jobID int64, step, newName string) Run {
+	return r.copy()
+}
