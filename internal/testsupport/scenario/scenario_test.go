@@ -2,6 +2,9 @@ package scenario_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"testing/fstest"
 	"time"
@@ -9,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/testsupport/scenario"
 )
 
@@ -357,5 +361,231 @@ var _ = Describe("QueuedRun", Label("discovery"), func() {
 			HaveKeyWithValue("status", "queued"),
 			HaveKeyWithValue("conclusion", BeNil()),
 		))
+	})
+})
+
+var _ = Describe("job edits", Label("flakes"), func() {
+	var run scenario.Run
+
+	BeforeEach(func() {
+		run = scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), 7)
+	})
+
+	// jobOf is the attempt's job of that id.
+	jobOf := func(r scenario.Run, attempt string, id int64) map[string]any {
+		GinkgoHelper()
+		for _, job := range jobs(r, attempt) {
+			if job["id"] == float64(id) {
+				return job
+			}
+		}
+		Fail(fmt.Sprintf("%s has no job %d", attempt, id))
+		return nil
+	}
+
+	stepOf := func(job map[string]any, name string) map[string]any {
+		GinkgoHelper()
+		for _, step := range job["steps"].([]any) {
+			if step := step.(map[string]any); step["name"] == name {
+				return step
+			}
+		}
+		Fail(fmt.Sprintf("job %v has no step %q", job["id"], name))
+		return nil
+	}
+
+	Describe("JobIDs", func() {
+		It("lists the ids of the attempt's jobs of that name in listing order", func() {
+			Expect(run.JobIDs(1, "same name")).To(Equal([]int64{7111221289952, 7111221289997}))
+			Expect(run.JobIDs(1, "flaky")).To(Equal([]int64{7111221289888}))
+			Expect(run.JobIDs(1, "none")).To(BeEmpty())
+		})
+	})
+
+	Describe("SetJobConclusion", func() {
+		It("concludes only the attempt's job of that id so, leaving the run given unchanged", func() {
+			first, second := run.JobIDs(1, "same name")[0], run.JobIDs(1, "same name")[1]
+			concluded := scenario.SetJobConclusion(run, 1, first, "failure")
+
+			Expect(jobOf(concluded, "attempt-1", first)).To(HaveKeyWithValue("conclusion", "failure"))
+			Expect(jobOf(concluded, "attempt-1", second)).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(jobOf(run, "attempt-1", first)).To(HaveKeyWithValue("conclusion", "success"))
+		})
+
+		It("panics when the attempt has no job of that id", func() {
+			Expect(func() { scenario.SetJobConclusion(run, 1, 1, "failure") }).To(PanicWith(ContainSubstring("job 1")))
+		})
+	})
+
+	Describe("SetStepConclusion", func() {
+		It("concludes only the step of that name in the attempt's job of that id so, leaving the run given unchanged", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			concluded := scenario.SetStepConclusion(run, 1, pass, "Build nested archives", "failure")
+
+			Expect(stepOf(jobOf(concluded, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "failure"))
+			Expect(stepOf(jobOf(concluded, "attempt-1", pass), "Emit log markers")).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(jobOf(concluded, "attempt-1", pass)).To(HaveKeyWithValue("conclusion", "success"))
+			Expect(stepOf(jobOf(run, "attempt-1", pass), "Build nested archives")).To(HaveKeyWithValue("conclusion", "success"))
+		})
+
+		It("panics when the job has no step of that name", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			Expect(func() { scenario.SetStepConclusion(run, 1, pass, "No such step", "failure") }).To(PanicWith(ContainSubstring(`"No such step"`)))
+		})
+	})
+
+	stepNames := func(job map[string]any) []any {
+		var names []any
+		for _, step := range job["steps"].([]any) {
+			names = append(names, step.(map[string]any)["name"])
+		}
+		return names
+	}
+
+	Describe("ClearSteps", func() {
+		It("leaves the attempt's job of that id no steps, leaving the run given unchanged", func() {
+			pass, flaky := run.JobIDs(1, "pass")[0], run.JobIDs(1, "flaky")[0]
+			cleared := scenario.ClearSteps(run, 1, pass)
+
+			Expect(jobOf(cleared, "attempt-1", pass)).To(HaveKeyWithValue("steps", BeEmpty()))
+			Expect(jobOf(cleared, "attempt-1", flaky)["steps"]).NotTo(BeEmpty())
+			Expect(jobOf(run, "attempt-1", pass)["steps"]).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("ReverseSteps", func() {
+		It("lists the steps of the attempt's job of that id in reverse, leaving the run given unchanged", func() {
+			pass := run.JobIDs(1, "pass")[0]
+			reversed := scenario.ReverseSteps(run, 1, pass)
+
+			names := stepNames(jobOf(run, "attempt-1", pass))
+			Expect(len(names)).To(BeNumerically(">", 1))
+			backward := slices.Clone(names)
+			slices.Reverse(backward)
+			Expect(stepNames(jobOf(reversed, "attempt-1", pass))).To(Equal(backward))
+			Expect(stepNames(jobOf(run, "attempt-1", pass))).To(Equal(names))
+		})
+	})
+})
+
+var _ = Describe("AddRerunAttempt", Label("flakes"), func() {
+	var run scenario.Run
+
+	BeforeEach(func() {
+		run = scenario.Clone(scenario.Recorded(runID, "after-attempt-1"), 7)
+	})
+
+	attemptOf := func(r scenario.Run, n int) (model.Run, []model.Job) {
+		GinkgoHelper()
+		var attempt model.Run
+		var listing struct{ Jobs []model.Job }
+		Expect(json.Unmarshal(r.Files[fmt.Sprintf("attempt-%d/attempt.json", n)].Data, &attempt)).To(Succeed())
+		Expect(json.Unmarshal(r.Files[fmt.Sprintf("attempt-%d/jobs.json", n)].Data, &listing)).To(Succeed())
+		return attempt, listing.Jobs
+	}
+
+	kinds := func(r scenario.Run, n int) map[string][]model.JobKind {
+		GinkgoHelper()
+		attempt, jobs := attemptOf(r, n)
+		byName := map[string][]model.JobKind{}
+		for _, job := range jobs {
+			byName[job.Name] = append(byName[job.Name], model.Classify(job, attempt.RunStartedAt))
+		}
+		return byName
+	}
+
+	It("adds a completed attempt, after the latest, that re-runs the jobs named and carries the others forward under new ids", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		first, _ := attemptOf(rerun, 1)
+		second, jobs := attemptOf(rerun, 2)
+		Expect(second.RunAttempt).To(Equal(2))
+		Expect(second.Status).To(Equal("completed"))
+		Expect(second.RunStartedAt).To(BeTemporally(">", first.UpdatedAt))
+		Expect(second.UpdatedAt).To(BeTemporally(">", second.RunStartedAt))
+		Expect(field(rerun, "run.json", "run_attempt")).To(BeEquivalentTo(2))
+		Expect(field(rerun, "run.json", "run_started_at")).To(Equal(second.RunStartedAt.Format(time.RFC3339)))
+
+		Expect(kinds(rerun, 2)).To(SatisfyAll(
+			HaveKeyWithValue("flaky", []model.JobKind{model.Ran}),
+			HaveKeyWithValue("pass", []model.JobKind{model.CarriedForward}),
+			HaveKeyWithValue("same name", []model.JobKind{model.CarriedForward, model.CarriedForward}),
+		))
+		_, firstJobs := attemptOf(rerun, 1)
+		var ids []int64
+		for i, job := range jobs {
+			Expect(job.Name).To(Equal(firstJobs[i].Name))
+			Expect(job.ID).NotTo(BeElementOf(run.JobIDs(1, job.Name)))
+			ids = append(ids, job.ID)
+		}
+		Expect(slices.Compact(slices.Sorted(slices.Values(ids)))).To(HaveLen(len(ids)))
+		Expect(run.Files).NotTo(HaveKey("attempt-2/jobs.json"))
+	})
+
+	It("gives the new attempt, and each of its jobs, its own attempt number and URLs", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		attempts := "https://api.github.com/repos/rosenhouse/Lg/actions/runs/7/attempts/"
+		for _, file := range []string{"attempt-2/attempt.json", "run.json"} {
+			Expect(field(rerun, file, "previous_attempt_url")).To(Equal(attempts+"1"), file)
+		}
+		Expect(field(rerun, "attempt-2/attempt.json", "jobs_url")).To(Equal(attempts + "2/jobs"))
+		Expect(field(rerun, "attempt-2/attempt.json", "logs_url")).To(Equal(attempts + "2/logs"))
+		for _, job := range jobs(rerun, "attempt-2") {
+			id := fmt.Sprint(int64(job["id"].(float64)))
+			Expect(job).To(SatisfyAll(
+				HaveKeyWithValue("run_attempt", BeEquivalentTo(2)),
+				HaveKeyWithValue("url", HaveSuffix("/jobs/"+id)),
+				HaveKeyWithValue("html_url", HaveSuffix("/runs/7/job/"+id)),
+				HaveKeyWithValue("check_run_url", HaveSuffix("/check-runs/"+id)),
+			))
+		}
+	})
+
+	It("concludes the re-run jobs and their steps success, keeping the carried ones' conclusions", func() {
+		rerun := scenario.AddRerunAttempt(scenario.SetJobConclusion(run, 1, run.JobIDs(1, "pass")[0], "failure"), "flaky")
+
+		_, jobs := attemptOf(rerun, 2)
+		for _, job := range jobs {
+			switch job.Name {
+			case "flaky":
+				Expect(job.Conclusion).To(Equal("success"))
+				Expect(job.Steps).To(HaveEach(HaveField("Conclusion", "success")))
+			case "pass":
+				Expect(job.Conclusion).To(Equal("failure"))
+			}
+		}
+		Expect(field(rerun, "attempt-2/attempt.json", "conclusion")).To(Equal("failure"))
+		Expect(field(scenario.AddRerunAttempt(run, "flaky", "timeout"), "attempt-2/attempt.json", "conclusion")).To(Equal("success"))
+	})
+
+	It("serves each new job's log as the job of the latest attempt it copies", func() {
+		rerun := scenario.AddRerunAttempt(run, "flaky")
+
+		_, before := attemptOf(rerun, 1)
+		_, after := attemptOf(rerun, 2)
+		status := string(rerun.Files["status.txt"].Data)
+		for i, job := range after {
+			old := before[i].ID
+			Expect(rerun.Files[fmt.Sprintf("attempt-2/logs/%d.txt", job.ID)].Data).To(Equal(run.Files[fmt.Sprintf("attempt-1/logs/%d.txt", old)].Data))
+			oldLine := regexp.MustCompile(fmt.Sprintf(`(?m)^(\S+) jobs/%d/logs$`, old)).FindStringSubmatch(status)
+			Expect(status).To(ContainSubstring(fmt.Sprintf("\n%s jobs/%d/logs\n", oldLine[1], job.ID)))
+		}
+	})
+
+	It("re-runs, in attempt 3, a job attempt 2 carried forward", func() {
+		twice := scenario.AddRerunAttempt(scenario.AddRerunAttempt(run, "flaky"), "pass")
+
+		Expect(field(twice, "run.json", "run_attempt")).To(BeEquivalentTo(3))
+		Expect(kinds(twice, 3)).To(SatisfyAll(
+			HaveKeyWithValue("flaky", []model.JobKind{model.CarriedForward}),
+			HaveKeyWithValue("pass", []model.JobKind{model.Ran}),
+		))
+		_, jobs := attemptOf(twice, 3)
+		Expect(twice.Files).To(HaveKey(fmt.Sprintf("attempt-3/logs/%d.txt", jobs[0].ID)))
+	})
+
+	It("panics when the latest attempt has no job of a name given", func() {
+		Expect(func() { scenario.AddRerunAttempt(run, "none") }).To(PanicWith(ContainSubstring(`"none"`)))
 	})
 })
