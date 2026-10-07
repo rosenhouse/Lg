@@ -39,22 +39,22 @@ func newNode() *node {
 
 type entry struct {
 	name string
-	kind kind
+	kind entryKind
 	node *node
 }
 
-type kind int
+type entryKind int
 
 const (
-	file kind = iota
-	dir
-	// expansion is the dir that a nested archive expands into.
-	expansion
+	kindFile entryKind = iota
+	kindDir
+	// kindExpansion is the dir that a nested archive expands into.
+	kindExpansion
 )
 
 func newNamer() *namer {
 	root := newNode()
-	root.entries[fold(layout.ExtractManifest)] = &entry{name: layout.ExtractManifest, kind: file}
+	root.entries[fold(layout.ExtractManifest)] = &entry{name: layout.ExtractManifest, kind: kindFile}
 	return &namer{root: root}
 }
 
@@ -76,9 +76,9 @@ func (n *namer) file(base []string, name string) (string, string) {
 	parent := n.at(base)
 	placed := append([]string(nil), base...)
 	for i, part := range parts {
-		k := dir
+		k := kindDir
 		if i == len(parts)-1 {
-			k = file
+			k = kindFile
 		}
 		actual, child, renamed := parent.place(part, k)
 		if renamed {
@@ -127,7 +127,7 @@ func (n *namer) dir(rel string) ([]string, string) {
 	if len(name)+len(".d") > maxComponent {
 		name, reason = truncate(name, maxComponent-len(".d")), "too_long"
 	}
-	actual, _, renamed := parent.place(name+".d", expansion)
+	actual, _, renamed := parent.place(name+".d", kindExpansion)
 	if renamed {
 		reason = first(reason, "collision")
 	}
@@ -145,9 +145,9 @@ func (n *namer) at(names []string) *node {
 
 // place names a child of kind in the dir, reusing a dir of that name, else
 // suffixing ~N to a name that is taken.
-func (d *node) place(name string, k kind) (string, *node, bool) {
-	if k == dir {
-		if e, ok := d.entries[fold(name)]; ok && e.kind == dir && e.name == name {
+func (d *node) place(name string, k entryKind) (string, *node, bool) {
+	if k == kindDir {
+		if e, ok := d.entries[fold(name)]; ok && e.kind == kindDir && e.name == name {
 			return name, e.node, false
 		}
 		if e, ok := d.renamed[name]; ok {
@@ -168,11 +168,11 @@ func (d *node) place(name string, k kind) (string, *node, bool) {
 		d.next[key] = i
 	}
 	e := &entry{name: actual, kind: k}
-	if k != file {
+	if k != kindFile {
 		e.node = newNode()
 	}
 	d.entries[fold(actual)] = e
-	if k == dir && actual != name {
+	if k == kindDir && actual != name {
 		d.renamed[name] = e
 	}
 	return actual, e.node, actual != name

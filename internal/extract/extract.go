@@ -110,11 +110,11 @@ func (x *extraction) expandZip(f *os.File, archive string, dir []string, level i
 		return corrupt{err}
 	}
 	var members []member
-	for _, file := range r.File {
-		mode := file.Mode()
-		m := member{name: file.Name, skip: skipped(mode), setuid: mode&(fs.ModeSetuid|fs.ModeSetgid) != 0, open: file.Open}
+	for _, zf := range r.File {
+		mode := zf.Mode()
+		m := member{name: zf.Name, skip: skipped(mode), setuid: mode&(fs.ModeSetuid|fs.ModeSetgid) != 0, open: zf.Open}
 		if mode.IsDir() {
-			if file.UncompressedSize64 == 0 {
+			if zf.UncompressedSize64 == 0 {
 				continue
 			}
 			m.skip = "dir_with_data"
@@ -286,8 +286,8 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	kind, err := sniff(f)
-	if kind == "" || err != nil {
+	format, err := sniff(f)
+	if format == "" || err != nil {
 		return err
 	}
 	notExpanded := func(reason string) error {
@@ -309,7 +309,7 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		x.manifest.Renamed = append(x.manifest.Renamed, record{Archive: archive, Name: name + ".d", Path: strings.Join(dir, "/"), Reason: reason})
 	}
 	files := x.files
-	switch kind {
+	switch format {
 	case "zip":
 		err = x.expandZip(f, rel, dir, level)
 	case "tar.gz":
@@ -327,8 +327,8 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 		why = err.Error()
 	case errors.As(err, &bad):
 		why = bad.Error()
-		if !strings.HasPrefix(why, kind+": ") {
-			why = kind + ": " + why
+		if !strings.HasPrefix(why, format+": ") {
+			why = format + ": " + why
 		}
 	default:
 		return err
@@ -339,7 +339,7 @@ func (x *extraction) expandNested(rel, archive, name string, level int) error {
 	return notExpanded(why)
 }
 
-// sniff names the kind of archive f holds, by its first bytes, and rewinds f.
+// sniff names the format of the archive f holds, by its first bytes, and rewinds f.
 func sniff(f *os.File) (string, error) {
 	head := make([]byte, 512)
 	n, err := io.ReadFull(f, head)
@@ -347,12 +347,12 @@ func sniff(f *os.File) (string, error) {
 		return "", err
 	}
 	head = head[:n]
-	kind := ""
+	format := ""
 	switch {
 	case bytes.HasPrefix(head, zipMagic):
-		kind = "zip"
+		format = "zip"
 	case isTar(head):
-		kind = "tar"
+		format = "tar"
 	case bytes.HasPrefix(head, gzipMagic):
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			return "", err
@@ -361,12 +361,12 @@ func sniff(f *os.File) (string, error) {
 			inner := make([]byte, 512)
 			n, _ := io.ReadFull(gz, inner)
 			if isTar(inner[:n]) {
-				kind = "tar.gz"
+				format = "tar.gz"
 			}
 		}
 	}
 	_, err = f.Seek(0, io.SeekStart)
-	return kind, err
+	return format, err
 }
 
 // isTar reports whether block begins with a ustar header.
