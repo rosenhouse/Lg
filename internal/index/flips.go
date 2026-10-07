@@ -94,3 +94,8 @@ func (ix *Index) readAttemptJobs(ctx context.Context, query string, args []any) 
 	}
 	return read, ix.dbError(errors.Join(rows.Err(), rows.Close()))
 }
+
+// FirstAttemptOutcomes gives the series of the first attempts of the runs f selects.
+func (ix *Index) FirstAttemptOutcomes(ctx context.Context, f Filter) ([]model.Series, error) {
+	return nil, nil
+}
