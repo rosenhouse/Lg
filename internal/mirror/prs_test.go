@@ -142,12 +142,15 @@ var _ = Describe("the commit lookup", Label("prs"), func() {
 	}, cycleTimeout)
 
 	It("records commit_pr_numbers' source in fetch.json: the URL, status and pages", func(ctx SpecContext) {
+		Expect(env.Fake.AddRun(scenario.WithCommitPulls(rerun, scenario.CommitPull{Number: pr, HeadRef: branch, HeadRepoID: scenario.RepoID}, scenario.CommitPull{Number: pr + 1, HeadRef: branch, HeadRepoID: scenario.RepoID}))).To(Succeed())
+		env.Fake.SetPageCap(1)
+
 		Expect(env.Sync(ctx)).To(Succeed())
 
 		Expect(fetchOf(attemptDir(env, 23, 1))).To(HaveKeyWithValue("sources", HaveKeyWithValue("commit_pr_numbers", Equal(map[string]any{
 			"url":    env.Fake.URL() + "/repos/rosenhouse/lg/commits/" + sha + "/pulls?per_page=100",
 			"status": 200.0,
-			"pages":  1.0,
+			"pages":  2.0,
 		}))))
 	}, cycleTimeout)
 })
