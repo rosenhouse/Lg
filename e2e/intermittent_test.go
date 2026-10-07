@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -154,5 +155,17 @@ var _ = Describe("lg flakes --kind intermittent with run filters", Label("flakes
 			To(ConsistOf(isolated("integration", "", 3)))
 		Expect(flakes(env, "--kind", "intermittent", "--conclusion", "failure")).
 			To(ConsistOf(isolated("integration", "", 3), isolated("suite", "unit", 4)))
+	})
+})
+
+var _ = Describe("lg flakes --kind intermittent with a pull_request run from the repository", Label("flakes"), func() {
+	It("ignores the run, though its head branch is main", func() {
+		pr := scenario.CloneAt(9, "after-attempt-1", time.Date(2026, 9, 30, 18, 0, 0, 0, time.UTC))
+		pr = scenario.RenameJob(scenario.WithEvent(scenario.OnBranch(pr, "main"), "pull_request"), 1, "build (ubuntu-latest, 1.22)", "steady")
+		pr = scenario.SetJobConclusion(pr, 1, pr.JobIDs(1, "steady")[0], "failure")
+		env := harness.New(lgPath)
+		syncFrom(env, serve(append(scenario.Intermittent().All(), pr)...))
+
+		Expect(flakes(env, "--kind", "intermittent")).To(ConsistOf(isolated("integration", "", 3), isolated("suite", "unit", 4)))
 	})
 })
