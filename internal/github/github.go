@@ -171,8 +171,6 @@ var (
 	ErrGone        = errors.New("gone")
 	// ErrUnauthorized marks a Blocked caused by the API's 401.
 	ErrUnauthorized = errors.New("unauthorized")
-	// ErrUnknownCommit is GitHub's 422 to the first page of a commit's pulls.
-	ErrUnknownCommit = errors.New("unknown commit")
 )
 
 type unauthorized struct{ failure.Blocked }
@@ -711,16 +709,18 @@ type CommitPull struct {
 	HeadRepoID int64
 }
 
+type pullJSON struct {
+	Number int `json:"number"`
+	Head   struct {
+		Ref  string `json:"ref"`
+		Repo *struct {
+			ID int64 `json:"id"`
+		} `json:"repo"`
+	} `json:"head"`
+}
+
 func (p *CommitPull) UnmarshalJSON(raw []byte) error {
-	var pr struct {
-		Number int `json:"number"`
-		Head   struct {
-			Ref  string `json:"ref"`
-			Repo *struct {
-				ID int64 `json:"id"`
-			} `json:"repo"`
-		} `json:"head"`
-	}
+	var pr pullJSON
 	if err := json.Unmarshal(raw, &pr); err != nil {
 		return err
 	}
@@ -731,6 +731,9 @@ func (p *CommitPull) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// ErrUnknownCommit is GitHub's 422 to the first page of a commit's pulls.
+var ErrUnknownCommit = errors.New("unknown commit")
+
 // CommitPulls lists the pull requests that hold the commit sha. It gives
 // ErrUnknownCommit, with the listing's source, for a commit GitHub does not know.
 func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Source, error) {
@@ -739,11 +742,17 @@ func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Sourc
 	read := 0
 	pages, _, err := h.paginate(ctx, listURL, func(resp *http.Response) (bool, error) {
 		read++
-		var page []CommitPull
+		var page []json.RawMessage
 		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 			return false, &MalformedError{Err: err}
 		}
-		pulls = append(pulls, page...)
+		for _, raw := range page {
+			var pull CommitPull
+			if err := json.Unmarshal(raw, &pull); err != nil {
+				return false, &MalformedError{Err: fmt.Errorf("pull %d: %w", len(pulls), err)}
+			}
+			pulls = append(pulls, pull)
+		}
 		return false, nil
 	})
 	var statusErr *StatusError

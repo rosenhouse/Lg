@@ -2,6 +2,7 @@ package github_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 
@@ -67,6 +68,20 @@ var _ = Describe("CommitPulls", Label("prs"), func() {
 			Expect(err).To(MatchError(ContainSubstring("422")))
 			Expect(err).NotTo(MatchError(github.ErrUnknownCommit))
 		})
+	})
+
+	It("calls a page whose element is not a pull request a MalformedError naming the element, not a Go type", func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`[{"number": 1, "head": {"ref": "b"}}, 2]`))
+		}))
+		DeferCleanup(server.Close)
+
+		_, _, err := github.NewHTTP(http.DefaultTransport, mustParse(server.URL), "o/r", "lg-test-token", clock.Real{}).CommitPulls(context.Background(), sha)
+
+		var malformed *github.MalformedError
+		Expect(errors.As(err, &malformed)).To(BeTrue())
+		Expect(err).To(MatchError(ContainSubstring("pull 1:")))
+		Expect(err.Error()).NotTo(ContainSubstring("struct"))
 	})
 
 	It("refuses a Link next that is not on the API host", func() {
