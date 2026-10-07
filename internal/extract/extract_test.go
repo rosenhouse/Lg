@@ -142,7 +142,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 		})).To(Succeed())
 	})
 
-	It("caps path components at 200 bytes and depth at 32, cutting offending names short of their extension and recording the originals", func() {
+	It("path components are capped at 200 bytes and depth at 32; offending names are slugified and the originals recorded", func() {
 		long := strings.Repeat("a", 196) + ".log"
 		longest := strings.Repeat("b", 197) + ".log"
 		wide := strings.Repeat("テ", 86) + ".log"
@@ -157,24 +157,23 @@ var _ = Describe("Extract", Label("extract"), func() {
 		))
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
-		cut := strings.Repeat("b", 196) + ".log"
-		wideCut := strings.Repeat("テ", 65) + ".log"
+		slugged := strings.Repeat("b", 60)
 		flattened := strings.Repeat("e/", 31) + "e-deeper.log"
 		Expect(f.files()).To(SatisfyAll(
 			HaveKeyWithValue(long, "200 bytes\n"),
-			HaveKeyWithValue(cut, "201 bytes\n"),
-			HaveKeyWithValue(wideCut, "262 bytes\n"),
+			HaveKeyWithValue(slugged, "201 bytes\n"),
+			HaveKeyWithValue("log", "262 bytes\n"),
 			HaveKeyWithValue(deep, "32 deep\n"),
 			HaveKeyWithValue(flattened, "33 deep\n"),
 		))
 		Expect(f.manifest()["renamed"]).To(ConsistOf(
-			record("archive", "artifact.zip", "name", longest, "path", cut, "reason", "too_long"),
-			record("archive", "artifact.zip", "name", wide, "path", wideCut, "reason", "too_long"),
+			record("archive", "artifact.zip", "name", longest, "path", slugged, "reason", "too_long"),
+			record("archive", "artifact.zip", "name", wide, "path", "log", "reason", "too_long"),
 			record("archive", "artifact.zip", "name", deeper, "path", flattened, "reason", "too_deep"),
 		))
 	})
 
-	It("caps a member's path below extracted/ at 512 bytes, joining the rest of it into one name that keeps its extension", func() {
+	It("caps a member's path below extracted/ at 512 bytes, collapsing the rest of it into one slug", func() {
 		var dirs []string
 		for i := range 20 {
 			dirs = append(dirs, fmt.Sprintf("d%02d", i)+strings.Repeat("x", 197))
@@ -183,7 +182,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 		f := newFixture(archives.Zip(archives.Entry{Name: "ok.log", Body: "ok\n"}, archives.Entry{Name: long, Body: "deep\n"}))
 
 		Expect(f.extract(extract.Defaults())).To(Succeed())
-		collapsed := dirs[0] + "/" + dirs[1] + "/d02" + strings.Repeat("x", 103) + ".log"
+		collapsed := dirs[0] + "/" + dirs[1] + "/d02" + strings.Repeat("x", 57)
 		Expect(f.files()).To(SatisfyAll(HaveLen(3), HaveKeyWithValue("ok.log", "ok\n"), HaveKeyWithValue(collapsed, "deep\n")))
 		Expect(f.manifest()["renamed"]).To(ConsistOf(record("archive", "artifact.zip", "name", long, "path", collapsed, "reason", "too_long")))
 	})
