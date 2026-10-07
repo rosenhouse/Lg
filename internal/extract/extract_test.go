@@ -602,7 +602,7 @@ var _ = Describe("Extract", Label("extract"), func() {
 		Expect(f.extract(limits)).To(Succeed())
 	})
 
-	It("expands nested archives only while the members met, skipped ones included, stay within MaxFiles, and records the rest as not expanded", func() {
+	It("expands nested archives only while the members met, skipped ones included, stay within MaxFiles, records the rest as not expanded, and reserves no <archive>.d for them", func() {
 		f := newFixture(archives.Zip(
 			archives.Entry{Name: "a.log", Body: "a\n"},
 			archives.Entry{Name: "b.tar", Body: string(archives.Tar(
@@ -611,15 +611,17 @@ var _ = Describe("Extract", Label("extract"), func() {
 				archives.Entry{Name: "b2.log", Body: "b2\n"},
 			))},
 			archives.Entry{Name: "c.zip", Body: string(archives.Zip(archives.Entry{Name: "c.log", Body: "c\n"}))},
+			archives.Entry{Name: "c.zip.d/x.log", Body: "x\n"},
 			archives.Entry{Name: "d.log", Body: "d\n"},
 		))
 		limits := extract.Defaults()
-		limits.MaxFiles = 6
+		limits.MaxFiles = 7
 
 		Expect(f.extract(limits)).To(Succeed())
 		Expect(f.files()).To(SatisfyAll(
-			HaveLen(6), HaveKey("a.log"), HaveKey("b.tar"), HaveKeyWithValue("b.tar.d/b1.log", "b1\n"), HaveKey("c.zip"), HaveKey("d.log"),
+			HaveLen(7), HaveKey("a.log"), HaveKey("b.tar"), HaveKeyWithValue("b.tar.d/b1.log", "b1\n"), HaveKey("c.zip"), HaveKey("c.zip.d/x.log"), HaveKey("d.log"),
 		))
+		Expect(f.manifest()["renamed"]).To(BeEmpty())
 		Expect(f.manifest()["not_expanded"]).To(ConsistOf(
 			record("archive", "artifact.zip", "name", "b.tar", "path", "b.tar", "reason", "partial: too_many_files"),
 			record("archive", "artifact.zip", "name", "c.zip", "path", "c.zip", "reason", "too_many_files"),
