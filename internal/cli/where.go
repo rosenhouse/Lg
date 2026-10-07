@@ -29,7 +29,7 @@ type whereCmd struct {
 func (whereCmd) Help() string {
 	return "Prints one JSON object per input: run, attempt, job or artifact, workflow, branch, SHA, PRs, conclusions and the GitHub URL, plus line and text for a hit. " +
 		"A hit is a line that rg -Hn or grep -Hn prints, path:line:text. " +
-		"For example: rg -Hn 'foo bar' | lg where | jq -c 'del(.path)'. " +
+		"For example: lg paths -0 | xargs -0 -r rg -Hn 'foo bar' | lg where | jq -c 'del(.path)'. " +
 		"It reads the mirrored files only."
 }
 

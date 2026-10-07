@@ -99,7 +99,7 @@ It prints only files that exist, never tombstones.
 - `--pr` finds the runs of open and merged pull requests from this repository, even after GitHub drops them from `pull_requests`; it may miss fork runs and runs of pull requests closed without merging, which `lg paths --event pull_request` or `lg paths --sha 1a51097` find.
 
 `lg paths` has no run filter.
-Select one run with `--sha`, or with `lg paths | grep /37129390741_`.
+`--sha` narrows to one commit's runs; `lg paths | grep /37129390741_` selects one run.
 
 | Unit | Prints |
 |---|---|
@@ -141,12 +141,12 @@ lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg w
 `lg flakes` reports flakes per job name and per (job name, step name).
 `lg flakes --kind rerun` finds a job or step that failed in one attempt of a run and passed in another, on the same SHA.
 An attempt that carries forward a failed job or step gives its name no success.
-`lg flakes --kind intermittent` finds an attempt 1 on the default branch that failed while the runs before and after it passed.
+`lg flakes --kind intermittent` finds an attempt 1 on the default branch that failed while attempt 1 of the runs before and after it succeeded.
 It leaves out `pull_request` and `pull_request_target` runs, and runs whose first or latest attempt was cancelled, so use `--kind rerun` for pull requests.
 A run whose attempt 1 is not on disk yet leaves no failure next to it alone.
 `lg flakes --branch release-3` replaces the default branch, and lg exits 1 asking for `--branch` when it does not know the default.
 `--job` selects job names. The other filters select runs: `--since` and `--until` match the start of any attempt, and `--conclusion` the latest attempt.
-For `--kind intermittent`, `--branch`, `--workflow` and `--event` pick the runs of each series, while `--sha`, `--pr`, `--conclusion`, `--since` and `--until` pick only which failures are reported.
+For `--kind intermittent`, `--branch`, `--workflow` and `--event` pick the runs that intermittent failures compare, while `--sha`, `--pr`, `--conclusion`, `--since` and `--until` pick only which failures are reported.
 Failing means `failure`, `cancelled` or `timed_out`, and only jobs that ran count.
 A step can flip while its job does not.
 A `continue-on-error` step that fails still reports success, so lg flakes never sees it; grep its log for `##[error]`.

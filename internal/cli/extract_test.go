@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -73,7 +74,7 @@ var _ = DescribeTable("lg extract exits 2", Label("extract"),
 )
 
 var _ = Describe("lg extract --help", Label("extract"), func() {
-	It("names the member cap", func() {
+	It("names the member cap, for the zip and for nested archives", func() {
 		var stdout bytes.Buffer
 		code := cli.Main([]string{"extract", "--help"}, cli.Deps{
 			Env:    map[string]string{"LG_HOME": GinkgoT().TempDir()},
@@ -82,7 +83,8 @@ var _ = Describe("lg extract --help", Label("extract"), func() {
 			Clock:  clock.Real{},
 		})
 		Expect(code).To(Equal(0))
-		Expect(stdout.String()).To(ContainSubstring("more than 100000 members"))
+		Expect(strings.Join(strings.Fields(stdout.String()), " ")).To(ContainSubstring(
+			"An artifact.zip of more than 100000 members is not extracted, and nested archives past that many members stay unexpanded."))
 	})
 })
 

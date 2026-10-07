@@ -34,7 +34,7 @@ func (extractCmd) Help() string {
 		"Nested zip, tar and tar.gz archives expand beside themselves as <archive>.d/. " +
 		"lg extract prints each extracted/ dir it writes, and says on stderr when it has nothing to extract. " +
 		"It skips an artifact already extracted, or whose zip is a tombstone. " +
-		fmt.Sprintf("An artifact.zip of more than %d members is not extracted. ", extract.Defaults().MaxFiles) +
+		fmt.Sprintf("An artifact.zip of more than %d members is not extracted, and nested archives past that many members stay unexpanded. ", extract.Defaults().MaxFiles) +
 		"extracted/.lg-extract.json records each renamed or skipped member."
 }
 

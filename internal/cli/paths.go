@@ -24,7 +24,7 @@ func (pathsCmd) Help() string {
 		"--since, --until and --conclusion compare with the run's creation and latest attempt for run units, " +
 		"the attempt's start and conclusion for attempt units, the attempt's start and the job's conclusion for job and log units, " +
 		"and the artifact's creation and the latest attempt's conclusion for artifact and extracted units. " +
-		"There is no run filter; pick one run with --sha, or with lg paths | grep /<run_id>_. " +
+		"--sha narrows to one commit's runs; lg paths | grep /<run_id>_ selects one run. " +
 		"Artifacts of one name repeat across runs and attempts. " +
 		"No output may mean the mirror is behind; check lg status."
 }
