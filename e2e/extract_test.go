@@ -8,15 +8,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
-	"github.com/rosenhouse/lg/internal/clock"
-	"github.com/rosenhouse/lg/internal/lock"
 	"github.com/rosenhouse/lg/internal/testsupport/archives"
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 	"github.com/rosenhouse/lg/internal/testsupport/harness"
@@ -337,18 +334,20 @@ var _ = Describe("lg extract --max-bytes", Label("extract"), func() {
 var _ = Describe("lg extract while a cycle holds the write lock", Label("extract"), func() {
 	It("waits, then publishes", func() {
 		env := harness.New(lgPath)
-		env.WriteConfig(fakegithub.Start(fixtureRun, "after-attempt-1").URL())
-		Expect(env.Sync()).To(gexec.Exit(0))
-		held, err := lock.Wait(filepath.Join(env.State(), "write.lock"), time.Second, clock.Real{}, func(string) {})
-		Expect(err).NotTo(HaveOccurred())
+		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
+		env.WriteConfig(fake.URL())
+		release := fake.Hold("artifacts/11276272069/zip")
+		sync := env.Lg("sync")
+		Eventually(fake.Requests, harness.ExitTimeout).Should(ContainElement(HaveField("Path", HaveSuffix("artifacts/11276272069/zip"))))
 
 		session := env.Lg("extract", "--all")
 		Eventually(session.Err, harness.ExitTimeout).Should(gbytes.Say("lg: waiting for "))
-		Consistently(session, time.Second).ShouldNot(gexec.Exit())
 		Expect(extractedDirs(env)).To(BeEmpty())
 
-		Expect(held.Release()).To(Succeed())
+		release()
+		Eventually(sync, harness.ExitTimeout).Should(gexec.Exit(0))
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(filepath.Join(env.Data(), fixtureRunDir, "artifacts", "11276272069_pass-artifact", "extracted")).To(BeADirectory())
 		Expect(extractedDirs(env)).To(HaveLen(4))
 	})
 })
