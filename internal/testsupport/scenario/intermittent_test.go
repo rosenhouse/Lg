@@ -86,9 +86,10 @@ var _ = Describe("Intermittent", Label("flakes"), func() {
 		Expect(letters("attempt-1", "suite", "e2e")).To(Equal("SFF-FF"))
 	})
 
-	It("re-runs integration on commit 3, where it succeeds", func() {
+	It("re-runs integration and suite on commit 3, where they succeed", func() {
 		Expect(field(i.Main[2], "run.json", "run_attempt")).To(BeEquivalentTo(2))
 		Expect(conclusionOf(i.Main[2], "attempt-2", "integration", "")).To(Equal("S"))
+		Expect(conclusionOf(i.Main[2], "attempt-2", "suite", "")).To(Equal("S"))
 	})
 
 	It("adds a fork pull_request run on head main that fails steady, and a cancelled main run", func() {
