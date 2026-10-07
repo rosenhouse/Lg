@@ -97,6 +97,12 @@ var _ = Describe("lg flakes --kind intermittent", Ordered, ContinueOnFailure, La
 		)))
 	})
 
+	It("judges each failure among every run of the branch, so --sha, --since and --until select failures, not neighbours", func() {
+		unitOnly := ConsistOf(SatisfyAll(isolated("suite", "unit", 4), HaveKeyWithValue("runs", BeEquivalentTo(6))))
+		Expect(intermittent("--sha", "4")).To(unitOnly)
+		Expect(intermittent("--since", "2026-10-01", "--until", "2026-10-01T23:59:59Z")).To(unitOnly)
+	})
+
 	It("ignores fork pull_request runs whose head branch is main, and cancelled runs", func() {
 		Expect(intermittent()).To(ConsistOf(
 			SatisfyAll(isolated("integration", "", 3), HaveKeyWithValue("runs", BeEquivalentTo(6))),
@@ -131,5 +137,22 @@ var _ = Describe("lg flakes --kind intermittent with status.json missing", Label
 		session := env.Lg("flakes", "--kind", "intermittent")
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(1))
 		Expect(session.Err).To(gbytes.Say("--branch"))
+	})
+})
+
+var _ = Describe("lg flakes --kind intermittent with run filters", Label("flakes"), func() {
+	It("does not report a failure that is alone only among the runs --sha or --conclusion select", func() {
+		runs := scenario.Intermittent()
+		sixth := runs.Main[5]
+		runs.Main[5] = scenario.SetJobConclusion(sixth, 1, sixth.JobIDs(1, "broken")[0], "success")
+		runs.Main[4] = scenario.AddRerunAttempt(runs.Main[4], "broken", "suite", "flaky", "timeout")
+		env := harness.New(lgPath)
+		syncFrom(env, serve(runs.All()...))
+
+		Expect(flakes(env, "--kind", "intermittent")).To(ConsistOf(isolated("integration", "", 3), isolated("suite", "unit", 4)))
+		Expect(flakes(env, "--kind", "intermittent", "--sha", "1", "--sha", "2", "--sha", "3", "--sha", "5", "--sha", "6")).
+			To(ConsistOf(isolated("integration", "", 3)))
+		Expect(flakes(env, "--kind", "intermittent", "--conclusion", "failure")).
+			To(ConsistOf(isolated("integration", "", 3), isolated("suite", "unit", 4)))
 	})
 })

@@ -12,7 +12,6 @@ import (
 
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/index"
-	"github.com/rosenhouse/lg/internal/model"
 	"github.com/rosenhouse/lg/internal/status"
 )
 
@@ -68,7 +67,7 @@ func (f flakesCmd) Run(deps *Deps) error {
 			unread = append(unread, err)
 			for _, s := range series {
 				if failures := s.IsolatedFailures(); len(failures) > 0 {
-					if err := printIntermittent(deps.Stdout, s, failures); err != nil {
+					if err := printIntermittent(deps.Stdout, index.Intermittent{Series: s, Failures: failures}); err != nil {
 						return err
 					}
 				}
@@ -172,7 +171,7 @@ type failureJSON struct {
 	Conclusion string `json:"conclusion"`
 }
 
-func printIntermittentJSON(w io.Writer, s model.Series, failures []model.RunOutcome) error {
+func printIntermittentJSON(w io.Writer, s index.Intermittent) error {
 	out := intermittentJSON{
 		Kind: "intermittent", WorkflowID: s.WorkflowID, Workflow: s.Workflow, Branch: s.Branch, Job: s.Job,
 		Runs: len(s.Runs), Logs: []string{},
@@ -180,7 +179,7 @@ func printIntermittentJSON(w io.Writer, s model.Series, failures []model.RunOutc
 	if s.Step != "" {
 		out.Step = &s.Step
 	}
-	for _, f := range failures {
+	for _, f := range s.Failures {
 		out.Failures = append(out.Failures, failureJSON{RunID: f.RunID, HeadSHA: f.HeadSHA, Conclusion: f.Conclusion})
 		out.Logs = append(out.Logs, f.Logs...)
 	}
@@ -192,16 +191,16 @@ func printIntermittentJSON(w io.Writer, s model.Series, failures []model.RunOutc
 // printIntermittent prints a line such as
 //
 //	workflow "ci" on main: "test" / "unit": 1 of 6 runs failed alone: run 18234567890 (sha a1b2c3d) failure
-func printIntermittent(w io.Writer, s model.Series, failures []model.RunOutcome) error {
+func printIntermittent(w io.Writer, s index.Intermittent) error {
 	name := fmt.Sprintf("%q", s.Job)
 	if s.Step != "" {
 		name += fmt.Sprintf(" / %q", s.Step)
 	}
 	var runs []string
-	for _, f := range failures {
+	for _, f := range s.Failures {
 		runs = append(runs, fmt.Sprintf("run %d (sha %.7s) %s", f.RunID, f.HeadSHA, f.Conclusion))
 	}
 	_, err := fmt.Fprintf(w, "workflow %q on %s: %s: %d of %d runs failed alone: %s\n",
-		s.Workflow, s.Branch, name, len(failures), len(s.Runs), strings.Join(runs, ", "))
+		s.Workflow, s.Branch, name, len(s.Failures), len(s.Runs), strings.Join(runs, ", "))
 	return err
 }
