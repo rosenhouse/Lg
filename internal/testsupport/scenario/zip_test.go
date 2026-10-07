@@ -53,13 +53,14 @@ func tarGzFiles(data []byte) map[string][]byte {
 }
 
 var _ = Describe("BuildArtifactZip", Label("extract"), func() {
-	It("gives the same bytes each time: top.log, inner.zip holding zip/nested.log, and inner.tar.gz holding tgz/nested.log with the text", func() {
+	It("gives the same bytes each time: top.log, a hidden .pytest_cache/, inner.zip holding zip/nested.log, and inner.tar.gz holding tgz/nested.log with the text", func() {
 		built := scenario.BuildArtifactZip("foo bar")
 		Expect(scenario.BuildArtifactZip("foo bar")).To(Equal(built))
 
 		files := zipFiles(built)
-		Expect(files).To(HaveLen(3))
+		Expect(files).To(HaveLen(4))
 		Expect(files).To(HaveKey("top.log"))
+		Expect(files).To(HaveKey(".pytest_cache/v/cache/lastfailed"))
 		Expect(zipFiles(files["inner.zip"])).To(HaveKey("zip/nested.log"))
 		Expect(tarGzFiles(files["inner.tar.gz"])).To(Equal(map[string][]byte{"tgz/nested.log": []byte("foo bar\n")}))
 	})

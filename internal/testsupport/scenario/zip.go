@@ -9,10 +9,12 @@ import (
 	"github.com/rosenhouse/lg/internal/testsupport/archives"
 )
 
-// BuildArtifactZip gives a zip holding top.log, inner.zip holding
+// BuildArtifactZip gives a zip holding top.log, a hidden
+// .pytest_cache/v/cache/lastfailed naming test_retry, inner.zip holding
 // zip/nested.log, and inner.tar.gz holding tgz/nested.log, a line of text.
 func BuildArtifactZip(text string) []byte {
 	return archives.Zip(
+		archives.Entry{Name: ".pytest_cache/v/cache/lastfailed", Body: `{"tests/test_upload.py::test_retry": true}` + "\n"},
 		archives.Entry{Name: "inner.tar.gz", Body: string(archives.TarGz(archives.Entry{Name: "tgz/nested.log", Body: text + "\n"}))},
 		archives.Entry{Name: "inner.zip", Body: string(archives.Zip(archives.Entry{Name: "zip/nested.log", Body: "LG_MARKER artifact nested in zip\n"}))},
 		archives.Entry{Name: "top.log", Body: "LG_MARKER artifact top-level\n"},

@@ -31,7 +31,8 @@ lg sync --wait
 | 4 | timeout |
 
 `grep` and `rg` exit 1 when they find no match.
-`xargs` then exits 123 (1 with macOS xargs), which also means no match, not an error.
+`xargs` exits 123 (1 with macOS xargs) when any grep exits non-zero: no match, or an error that grep printed to stderr.
+Read stderr before you conclude there is no match.
 With many files, `xargs` runs grep in batches and fails if any batch found nothing, so judge by the output.
 Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths.
 
@@ -67,17 +68,21 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
     extracted/                  written by lg extract
 ```
 
+- `<owner>/<repo>` takes GitHub's spelling of the repository's name, whatever case the config uses, so take paths from `lg paths` or a glob rather than typing them.
 - The date dir is the UTC date the run was created. A rerun stays under that date.
 - Names keep `[A-Za-z0-9.-]`, so branch `feat/retry upload` becomes `feat-retry-upload`. The id before the first `_` is exact.
 - A dir that exists is complete, and files never change. Expiry and eviction remove whole dirs.
-- JSON files hold GitHub's API bodies, re-indented with two spaces, so `jq` paths match the GitHub REST docs and `rg '"head_sha": "1a51097'` finds a commit.
+- JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
+- `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
 - Each `log.txt` starts with a UTF-8 BOM, and every line starts with GitHub's timestamp prefix and a space, as in `2026-10-03T14:22:57.6677717Z ##[error]...`. Anchor patterns after it with `^[^ ]+ `, and drop it with `cut -d' ' -f2-`.
 
-When rg walks the store, pass `-u` so that ignore files above it do not hide files.
+When rg walks the store, pass `-uu`, so that it searches hidden files and no ignore file hides any.
+Assign `lg root` on its own line, as below, so a script stops when lg fails instead of searching the current dir.
 
 ```sh
-cd "$(lg root)"
-rg -u -l '"head_sha": "1a51097' --glob attempt.json
+data=$(lg root)
+cd "$data"
+rg -uu -l '"head_sha": "1a51097' --glob attempt.json
 lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -f2- | sort | uniq -c | sort -rn
 ```
 
@@ -88,13 +93,13 @@ It prints only files that exist, never tombstones.
 
 - `lg paths --branch main --branch release-3 --sha 1a51097 --pr 42 --workflow lg-fixture --job 'build*' --event push --conclusion failure` shows every filter. `--sha` takes a prefix and `--job` a glob.
 - Filters may repeat. Repeats of one flag match any value, and different flags must all match.
-- `--since` and `--until` take `30d`, `12h`, `2026-09-01` (UTC) or RFC 3339, as in `lg paths --since 30d --until 2026-10-01`.
+- `--since` and `--until` take `30d`, `12h`, `2026-09-01` (UTC) or RFC 3339, as in `lg paths --since 30d --until 2026-10-01`. A date means its 00:00 UTC, so `--until 2026-10-01` stops at the start of October 1.
 - `--branch` skips runs from forks.
 - `--pr` misses fork pull_request runs, because GitHub lists no pull requests for them; find those with `lg paths --event pull_request` or `lg paths --sha 1a51097`.
 
 | Unit | Prints |
 |---|---|
-| `lg paths` | `log.txt` files and the files under `extracted/` |
+| `lg paths` | `log.txt` files and what `--unit extracted` prints |
 | `lg paths --unit run` | every `.json` under the run dir, outside `extracted/` |
 | `lg paths --unit attempt` | `attempt.json`, `jobs.json`, `artifacts.json` and `fetch.json` |
 | `lg paths --unit job` | `job.json` |
@@ -129,10 +134,13 @@ lg paths --branch release-3 -0 | xargs -0 -r rg -Hn 'foo bar' | lg where \
 
 `lg flakes` reports flakes per job name and per (job name, step name).
 `lg flakes --kind rerun` finds a job or step that failed in one attempt of a run and passed in another, on the same SHA.
+An attempt that carries forward a failed job or step gives its name no success.
 `lg flakes --kind intermittent` finds an attempt 1 on the default branch that failed while the runs before and after it passed.
 It leaves out `pull_request` and `pull_request_target` runs, and runs whose first or latest attempt was cancelled, so use `--kind rerun` for pull requests.
+A run whose attempt 1 is not on disk yet leaves no failure next to it alone.
 `lg flakes --branch release-3` replaces the default branch, and lg exits 1 asking for `--branch` when it does not know the default.
-`--branch`, `--workflow` and `--event` pick the runs of each series, while `--sha`, `--pr`, `--conclusion`, `--since` and `--until` pick only which failures are reported.
+`--job` selects job names. The other filters select runs: `--since` and `--until` match the start of any attempt, and `--conclusion` the latest attempt.
+For `--kind intermittent`, `--branch`, `--workflow` and `--event` pick the runs of each series, while `--sha`, `--pr`, `--conclusion`, `--since` and `--until` pick only which failures are reported.
 Failing means `failure`, `cancelled` or `timed_out`, and only jobs that ran count.
 A step can flip while its job does not.
 A `continue-on-error` step that fails still reports success, so lg flakes never sees it; grep its log for `##[error]`.
@@ -147,6 +155,7 @@ lg flakes --kind intermittent --branch main --since 30d
 
 ```sh
 lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .conclusion, .run_started_at] | @tsv'
+lg paths --sha 1a51097 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/jobs.json")) | .[] | select(.conclusion == "failure") | [.run_id, .run_attempt, .name] | @tsv'
 lg paths --pr 42 --unit attempt -0 | xargs -0 -r jq -r 'select(input_filename | endswith("/attempt.json")) | [.id, .run_attempt, .event, .conclusion] | @tsv'
 lg paths --pr 42 --unit job -0 | xargs -0 -r jq -r '[.run_attempt, .name, .conclusion] | @tsv'
 ```
@@ -173,11 +182,15 @@ A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`, so rg may re
 `lg where` on an extracted file adds `inner_path`, its path below `extracted/`.
 A member named `.ignore`, `.rgignore` or `.gitignore` is renamed `<name>~lg`, so rg still searches its tree.
 `extracted/.lg-extract.json` records every renamed or skipped member.
+Artifacts often hold hidden dirs such as `.pytest_cache/`, which rg walks only with `-uu`.
 
 ```sh
 lg extract --branch release-3
 lg paths --unit extracted -0 | xargs -0 -r grep -lI 'nested in tar.gz' | lg where \
   | jq -r '[.run_id, .artifact_id, .artifact, .inner_path] | @tsv'
+data=$(lg root)
+cd "$data"
+rg -uu -l 'test_retry'
 ```
 
 ## Gaps
@@ -189,8 +202,9 @@ Its `reason` is `expired`, `deleted`, `not_applicable` or `too_large`.
 A unit that failed for a transient reason, such as a GitHub outage, is pending: `lg status` lists it, and the next sync retries it.
 
 ```sh
-cd "$(lg root)"
-rg -u -l '"reason": "deleted"' --glob '*.tombstone'
+data=$(lg root)
+cd "$data"
+rg -uu -l '"reason": "deleted"' --glob '*.tombstone'
 ```
 
 ## Expiry and eviction

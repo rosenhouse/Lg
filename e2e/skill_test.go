@@ -143,6 +143,8 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 			ContainSubstring("2026-08-20 run 1\n"),
 			ContainSubstring("flaky\tFail on first attempt only\tfailure success success\n"),
 			ContainSubstring("pass-artifact\tinner.tar.gz.d/tgz/nested.log\n"),
+			ContainSubstring("37129390741\t1\tflaky\n"),
+			ContainSubstring("/extracted/.pytest_cache/v/cache/lastfailed\n"),
 			MatchRegexp(`(?m)^[^\t\n]+\t[^\t\n]+/log\.txt$`),
 			MatchRegexp(`on main: "flaky": [^\n]* run 10 `),
 		), printed.String())
