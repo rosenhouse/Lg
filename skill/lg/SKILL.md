@@ -72,7 +72,7 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 
 - `<owner>/<repo>` takes GitHub's spelling of the repository's name, whatever case the config uses, so take paths from `lg paths` or a glob rather than typing them.
 - The date dir is the UTC date the run was created. A rerun stays under that date.
-- Names keep `[A-Za-z0-9.-]`, so branch `feat/retry upload` becomes `feat-retry-upload`. The id before the first `_` is exact.
+- Names keep `[A-Za-z0-9.-]`, so branch `feat/retry upload` becomes `feat-retry-upload`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
 - A dir that exists is complete, and files never change. Expiry and eviction remove whole dirs.
 - JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg --no-config '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
 - `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
