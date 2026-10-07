@@ -67,3 +67,9 @@ func Parse(args []string) (err error) {
 	_, err = newParser(io.Discard, io.Discard).Parse(args)
 	return err
 }
+
+var PrintFlip = printFlip
+
+type FlipJSON = flipJSON
+
+type IntermittentJSON = intermittentJSON
