@@ -240,7 +240,7 @@ func Next(prev *Status, c Cycle) Status {
 		st.Cycle = prev.Cycle + 1
 		st.LastSyncOKAt = prev.LastSyncOKAt
 		st.ServedRequest = max(st.ServedRequest, prev.ServedRequest)
-		last = repoIn(prev.Repos, c.Repo)
+		last = RepoIn(prev.Repos, c.Repo)
 	}
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = last.DefaultBranch
@@ -257,24 +257,34 @@ func Next(prev *Status, c Cycle) Status {
 	return st
 }
 
-// repoIn gives the repo in repos named name in any case, as Measure matches
+// RepoIn gives the repo in repos named name in any case, as Measure matches
 // it.
-func repoIn(repos map[string]Repo, name string) Repo {
-	for key, r := range repos {
-		if strings.EqualFold(key, name) {
-			return r
-		}
-	}
-	return Repo{}
+func RepoIn(repos map[string]Repo, name string) Repo {
+	key, _ := keyIn(repos, name)
+	return repos[key]
 }
 
-// Remeasured is st with repo's disk fields from d, retention and diskCap,
-// and its lag as at st's last sync.
+// keyIn gives the key of repos that names name in any case.
+func keyIn(repos map[string]Repo, name string) (string, bool) {
+	for key := range repos {
+		if strings.EqualFold(key, name) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// Remeasured is st with the disk fields of repo, named in any case, from d,
+// retention and diskCap, and its lag as at st's last sync. It adds no repo.
 func Remeasured(st Status, repo string, d Disk, retention time.Duration, diskCap int64) Status {
+	key, ok := keyIn(st.Repos, repo)
+	if !ok {
+		return st
+	}
 	st.Repos = maps.Clone(st.Repos)
-	r := st.Repos[repo]
+	r := st.Repos[key]
 	r.setDisk(d, st.LastSyncFinishedAt, retention, diskCap)
-	st.Repos[repo] = r
+	st.Repos[key] = r
 	return st
 }
 
