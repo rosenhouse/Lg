@@ -112,6 +112,20 @@ var _ = Describe("lg flakes", Label("flakes"), func() {
 		Expect(c.Stderr.String()).To(ContainSubstring("pass --branch"))
 	})
 
+	It("takes the default branch of the configured repository, in any case, when status.json records others", func() {
+		c := harness.NewCLI()
+		for _, r := range scenario.Intermittent().All() {
+			Expect(c.Fake.AddRun(r)).To(Succeed())
+		}
+		Expect(c.Main("sync")).To(Equal(0), c.Stderr.String())
+		c.WriteStatus(`{"repos": {"github.com/o/unknown": {}, "github.com/RosenHouse/LG": {"default_branch": "main"}, "github.com/o/released": {"default_branch": "release-3"}}}`)
+
+		for range 20 {
+			Expect(c.Main("flakes", "--kind", "intermittent")).To(Equal(0), c.Stderr.String())
+			Expect(c.Stdout.String()).To(ContainSubstring(`"integration": 1 of 6 runs failed alone`))
+		}
+	})
+
 	It("prints an intermittent failure with no logs with an empty list in --json", func() {
 		var out bytes.Buffer
 		failures := []model.RunOutcome{{RunID: 2, Conclusion: "failure"}}
