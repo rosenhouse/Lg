@@ -27,13 +27,13 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 
 	// untouched is a job that Intermittent leaves as recorded, so it succeeds in each of its runs.
 	const untouched = "build (ubuntu-latest, 1.23)"
-	// onMain is a run on main triggered by the event, a little after Intermittent's run after.
-	onMain := func(id int64, event string, after int) scenario.Run {
-		r := scenario.CloneAt(id, "after-attempt-1", time.Date(2026, 9, 27+after, 18, 0, 0, 0, time.UTC))
+	// onMain is a run on main triggered by event, six hours after run afterRun of Intermittent.
+	onMain := func(id int64, event string, afterRun int) scenario.Run {
+		r := scenario.CloneAt(id, "after-attempt-1", time.Date(2026, 9, 27+afterRun, 18, 0, 0, 0, time.UTC))
 		return scenario.WithEvent(scenario.OnBranch(r, "main"), event)
 	}
-	failingUntouched := func(id int64, event string, after int) scenario.Run {
-		r := onMain(id, event, after)
+	failingUntouched := func(id int64, event string, afterRun int) scenario.Run {
+		r := onMain(id, event, afterRun)
 		return scenario.SetJobConclusion(r, 1, r.JobIDs(1, untouched)[0], "failure")
 	}
 
