@@ -29,7 +29,7 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 	const untouched = "build (ubuntu-latest, 1.23)"
 	// onMain is a run on main triggered by the event, a little after Intermittent's run after.
 	onMain := func(id int64, event string, after int) scenario.Run {
-		r := scenario.CloneAt(id, "after-attempt-1", time.Date(2026, 9, 28+after, 18, 0, 0, 0, time.UTC))
+		r := scenario.CloneAt(id, "after-attempt-1", time.Date(2026, 9, 27+after, 18, 0, 0, 0, time.UTC))
 		return scenario.WithEvent(scenario.OnBranch(r, "main"), event)
 	}
 	failingUntouched := func(id int64, event string, after int) scenario.Run {
@@ -40,7 +40,7 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 	BeforeEach(func(ctx SpecContext) {
 		env = harness.InProcess()
 		intermittent = scenario.Intermittent()
-		runs := append(intermittent.All(), failingUntouched(9, "pull_request", 1), failingUntouched(10, "pull_request_target", 4))
+		runs := append(intermittent.All(), failingUntouched(9, "pull_request", 2), failingUntouched(10, "pull_request_target", 5))
 		for _, r := range runs {
 			Expect(env.Fake.AddRun(r)).To(Succeed())
 		}
@@ -113,7 +113,7 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 	})
 
 	It("orders each series by the start of the first attempt, not by run id", func(ctx SpecContext) {
-		addRuns(ctx, failingUntouched(20, "push", 0))
+		addRuns(ctx, failingUntouched(20, "push", 1))
 
 		Expect(failures(ctx, main)).To(ContainElement(SatisfyAll(failedAlone(untouched, "", 20), runIDs(1, 20, 2, 3, 4, 5, 6))))
 	})
@@ -138,21 +138,21 @@ var _ = Describe("index.IntermittentFailures", Label("flakes"), func() {
 	})
 
 	It("counts a run whose first attempt failed and whose later attempt was cancelled", func(ctx SpecContext) {
-		r := scenario.AddRerunAttempt(failingUntouched(12, "push", 2), untouched)
+		r := scenario.AddRerunAttempt(failingUntouched(12, "push", 3), untouched)
 		addRuns(ctx, scenario.Cancel(r, 2))
 
 		Expect(failures(ctx, main)).To(ContainElement(failedAlone(untouched, "", 12)))
 	})
 
 	It("ignores attempts after the first, so a job that failed only in a re-run did not fail alone", func(ctx SpecContext) {
-		r := scenario.AddRerunAttempt(onMain(13, "push", 2), untouched)
+		r := scenario.AddRerunAttempt(onMain(13, "push", 3), untouched)
 		addRuns(ctx, scenario.SetJobConclusion(r, 2, r.JobIDs(2, untouched)[0], "failure"))
 
 		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
 	})
 
 	It("leaves out runs from forks when given Filter.Branches", func(ctx SpecContext) {
-		addRuns(ctx, scenario.FromFork(failingUntouched(11, "push", 2), "someone/Lg"))
+		addRuns(ctx, scenario.FromFork(failingUntouched(11, "push", 3), "someone/Lg"))
 
 		Expect(failures(ctx, main)).To(ConsistOf(integration, unit))
 	})
