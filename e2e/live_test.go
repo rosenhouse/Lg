@@ -239,6 +239,14 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		)))
 	})
 
+	It("lists the attempt dirs of run 37627152137, and none of run 37628001480, for lg paths --pr 58 --unit attempt", func() {
+		// PR 58 merged as f2d6840 before lg first synced either run.
+		const prRun, squashRun = 37627152137, 37628001480
+		listed := lines(env, "paths", "--pr", "58", "--unit", "attempt")
+		Expect(listed).To(ContainElement(under(filepath.Join(runDir(env, prRun), "attempt-1"))))
+		Expect(listed).NotTo(ContainElement(under(runDir(env, squashRun))))
+	})
+
 	It("handles the expires-in-1-day artifacts the way R1 recorded", func() {
 		By("finding them delisted")
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {

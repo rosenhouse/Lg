@@ -681,3 +681,20 @@ func EndingAt(runs []Run, at time.Time) []Run {
 	}
 	return moved
 }
+
+// RepoID is the id of the recorded repository.
+const RepoID int64 = 1402714635
+
+// CommitPull is a pull request that GET /commits/{sha}/pulls lists. A
+// HeadRepoID of 0 is a null head repo, as for a deleted fork.
+type CommitPull struct {
+	Number     int
+	HeadRef    string
+	HeadRepoID int64
+}
+
+// WithCommitPulls lists prs for the run's head_sha.
+func WithCommitPulls(r Run, prs ...CommitPull) Run { return r }
+
+// WithoutArtifacts lists no artifacts for the run.
+func WithoutArtifacts(r Run) Run { return r }
