@@ -72,6 +72,20 @@ var _ = DescribeTable("FromStatus", Label("blocked"),
 	Entry("403 with 'Secondary rate limit' in its message", 403, headers("X-RateLimit-Remaining", "4321"), "Secondary rate limit exceeded", failure.RateLimit, now.Add(time.Minute)),
 )
 
+var _ = Describe("FromStatus", Label("prs"), func() {
+	It("names the permissions in X-Accepted-GitHub-Permissions in the detail of a 403 that blocks as auth", func() {
+		blocked, ok := failure.FromStatus(403, headers("X-Accepted-GitHub-Permissions", "pull_requests=read"), "Resource not accessible by integration", "GET /x: 403", now)
+		Expect(ok).To(BeTrue())
+		Expect(blocked).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "GET /x: 403; the token needs pull_requests=read"}))
+	})
+
+	It("leaves the detail of a 401 as it is, since GitHub sends X-Accepted-GitHub-Permissions on every response", func() {
+		blocked, ok := failure.FromStatus(401, headers("X-Accepted-GitHub-Permissions", "actions=read"), "Bad credentials", "GET /x: 401", now)
+		Expect(ok).To(BeTrue())
+		Expect(blocked).To(Equal(failure.Blocked{Kind: failure.Auth, Detail: "GET /x: 401"}))
+	})
+})
+
 var _ = DescribeTable("FromStatus of a status that refuses neither credentials nor rate", Label("blocked"),
 	func(status int) {
 		_, ok := failure.FromStatus(status, headers("Retry-After", "30", "X-RateLimit-Remaining", "0"), "secondary rate limit", "", now)

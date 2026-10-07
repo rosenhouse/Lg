@@ -17,7 +17,7 @@ import (
 type filters struct {
 	Branch     []string `sep:"none" help:"Only runs on this branch, and not from a fork."`
 	SHA        []string `sep:"none" name:"sha" help:"Only runs whose head SHA starts with this."`
-	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request. Runs from a fork list none."`
+	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request, open or merged. It may miss fork runs and runs of pull requests closed without merging."`
 	Workflow   []string `sep:"none" help:"Only runs of the workflow that has, or had, this name."`
 	Job        []string `sep:"none" help:"Only jobs whose name matches this glob."`
 	Event      []string `sep:"none" help:"Only runs triggered by this event."`

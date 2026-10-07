@@ -96,7 +96,7 @@ It prints only files that exist, never tombstones.
 - Filters may repeat. Repeats of one flag match any value, and different flags must all match.
 - `--since` and `--until` take `30d`, `12h`, `2026-09-01` (UTC) or RFC 3339, as in `lg paths --since 30d --until 2026-10-01`. A date means its 00:00 UTC, so `--until 2026-10-01` stops at the start of October 1.
 - `--branch` skips runs from forks.
-- `--pr` misses fork pull_request runs, because GitHub lists no pull requests for them; find those with `lg paths --event pull_request` or `lg paths --sha 1a51097`.
+- `--pr` finds the runs of open and merged pull requests from this repository, even after GitHub drops them from `pull_requests`; it may miss fork runs and runs of pull requests closed without merging, which `lg paths --event pull_request` or `lg paths --sha 1a51097` find.
 
 | Unit | Prints |
 |---|---|

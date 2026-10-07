@@ -301,3 +301,13 @@ var _ = Describe("lg paths", Label("paths"), func() {
 		Expect(strings.Split(c.Stdout.String(), "\x00")).To(ConsistOf(plain, split, ""))
 	})
 })
+
+var _ = Describe("lg paths --help", Label("prs"), func() {
+	It("says --pr finds open and merged pull requests, and may miss fork runs and pull requests closed without merging", func() {
+		c := harness.NewCLI()
+
+		Expect(c.Main("paths", "--help")).To(Equal(0))
+		Expect(strings.Join(strings.Fields(c.Stdout.String()), " ")).To(ContainSubstring(
+			"Only runs of this pull request, open or merged. It may miss fork runs and runs of pull requests closed without merging."))
+	})
+})

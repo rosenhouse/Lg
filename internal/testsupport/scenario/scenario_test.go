@@ -334,6 +334,30 @@ var _ = Describe("mutations", Label("attempts"), func() {
 			Expect(field(run, "run.json", "pull_requests")).To(BeEmpty())
 		})
 	})
+
+	Describe("WithCommitPulls", Label("prs"), func() {
+		It("lists the pull requests, with a null head repo for HeadRepoID 0, in CommitPullsFile", func() {
+			listed := scenario.WithCommitPulls(run,
+				scenario.CommitPull{Number: 42, HeadRef: "fix", HeadRepoID: scenario.RepoID},
+				scenario.CommitPull{Number: 7, HeadRef: "main"})
+
+			var pulls []map[string]any
+			Expect(json.Unmarshal(listed.Files[scenario.CommitPullsFile].Data, &pulls)).To(Succeed())
+			Expect(pulls).To(Equal([]map[string]any{
+				{"number": 42.0, "head": map[string]any{"ref": "fix", "repo": map[string]any{"id": float64(scenario.RepoID)}}},
+				{"number": 7.0, "head": map[string]any{"ref": "main", "repo": nil}},
+			}))
+			Expect(run.Files).NotTo(HaveKey(scenario.CommitPullsFile))
+		})
+	})
+
+	Describe("WithoutArtifacts", Label("prs"), func() {
+		It("lists no artifacts", func() {
+			Expect(field(scenario.WithoutArtifacts(run), "artifacts.json", "artifacts")).To(BeEmpty())
+			Expect(field(scenario.WithoutArtifacts(run), "artifacts.json", "total_count")).To(BeEquivalentTo(0))
+			Expect(field(run, "artifacts.json", "artifacts")).NotTo(BeEmpty())
+		})
+	})
 })
 
 var _ = Describe("CreatedAt", Label("discovery"), func() {

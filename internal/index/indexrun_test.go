@@ -70,6 +70,19 @@ var _ = Describe("IndexRun", Label("index"), func() {
 		}))
 	})
 
+	It("gives the run row pr_numbers the union of every attempt's pull_requests and commit_pr_numbers and every artifact's pr_numbers", Label("prs"), func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
+		writeAttempt(dir, 1, "first", 1)
+		Expect(os.WriteFile(filepath.Join(layout.AttemptDir(dir, 1), "fetch.json"), []byte(attemptFetch(1, `"commit_pr_numbers":[4,1],`)), 0o644)).To(Succeed())
+		// Attempt 2's fetch.json, written before lg looked PRs up, has no commit_pr_numbers.
+		writeAttempt(dir, 2, "second", 2)
+		writeArtifact(dir, 1, attemptStart(1).Format(time.RFC3339), `"pr_numbers":[5,2]`, nil)
+
+		rows, err := index.IndexRun(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows.Run.PRNumbers).To(Equal([]int{1, 2, 4, 5}))
+	})
+
 	It("attributes an artifact created after attempt 1 started, fetched during attempt 2, to attempt 1 only once attempt 2 is on disk", func() {
 		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
 		writeAttempt(dir, 1, "first")
@@ -172,12 +185,17 @@ func writeAttempt(runDir string, n int, label string, prs ...int) {
 			"run_attempt":%[2]d,"repository":{"full_name":"o/r"}}`, label, n, prsJSON, attemptStart(n).Format(time.RFC3339)),
 		"jobs.json":      `[]`,
 		"artifacts.json": `[]`,
-		"fetch.json": fmt.Sprintf(`{"lg_format":1,"host":"example.com","repo":"o/r","run_id":5,"run_created_at":"2026-09-30T23:59:59Z",
-			"run_attempt_at_fetch":%d,"run_status_at_fetch":"completed","attempt":%d,"sources":{},"carried_forward_jobs":[]}`, n, n),
+		"fetch.json":     attemptFetch(n, ""),
 	}
 	for name, content := range files {
 		Expect(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)).To(Succeed())
 	}
+}
+
+// attemptFetch is attempt n's fetch.json, with extra fields first.
+func attemptFetch(n int, extra string) string {
+	return fmt.Sprintf(`{%s"lg_format":1,"host":"example.com","repo":"o/r","run_id":5,"run_created_at":"2026-09-30T23:59:59Z",
+		"run_attempt_at_fetch":%d,"run_status_at_fetch":"completed","attempt":%d,"sources":{},"carried_forward_jobs":[]}`, extra, n, n)
 }
 
 func attemptStart(n int) time.Time { return time.Date(2026, 10, 2, n, 0, 0, 0, time.UTC) }

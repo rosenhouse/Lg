@@ -69,6 +69,7 @@ type Client interface {
 	ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error)
 	DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) error
 	ArtifactZipURL(artifactID int64) string
+	CommitPulls(ctx context.Context, sha string) ([]CommitPull, Source, error)
 }
 
 // BaseURL is the REST API root for host: api.github.com for github.com and
@@ -459,42 +460,60 @@ type listing struct {
 // after a page whose total_count reaches limit, when limit is set.
 func (h *HTTP) list(ctx context.Context, firstURL, field string, limit int) (listing, error) {
 	var l listing
+	var err error
+	l.pages, l.more, err = h.paginate(ctx, firstURL, func(resp *http.Response) (bool, error) {
+		var page map[string]json.RawMessage
+		var items []json.RawMessage
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			return false, &MalformedError{Err: err}
+		}
+		if err := unmarshalField(page, "total_count", &l.total); err != nil {
+			return false, err
+		}
+		if err := unmarshalField(page, field, &items); err != nil {
+			return false, err
+		}
+		l.elements = append(l.elements, items...)
+		return limit > 0 && l.total >= limit, nil
+	})
+	if err != nil {
+		return listing{}, err
+	}
+	return l, nil
+}
+
+// paginate GETs firstURL and every page its Link next URLs lead to, reading
+// each with read until read says to stop. It gives how many pages it read,
+// and whether it left a Link next unread.
+func (h *HTTP) paginate(ctx context.Context, firstURL string, read func(*http.Response) (stop bool, err error)) (pages int, more bool, err error) {
 	followed := map[string]bool{}
 	for pageURL := firstURL; pageURL != ""; {
 		followed[pageURL] = true
-		var page map[string]json.RawMessage
-		var items []json.RawMessage
 		var next string
+		var stop bool
 		err := h.get(ctx, pageURL, func(resp *http.Response) error {
 			next = nextLink(resp.Header.Get("Link"))
-			if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-				return &MalformedError{Err: err}
-			}
-			if err := unmarshalField(page, "total_count", &l.total); err != nil {
-				return err
-			}
-			return unmarshalField(page, field, &items)
+			var err error
+			stop, err = read(resp)
+			return err
 		})
 		if err != nil {
-			return listing{}, err
+			return 0, false, err
 		}
 		if next != "" {
 			if u, err := url.Parse(next); err != nil || !h.onAPIHost(u) {
-				return listing{}, malformed(pageURL, "Link next %s is not on the API host", next)
+				return 0, false, malformed(pageURL, "Link next %s is not on the API host", next)
 			}
 			if followed[next] {
-				return listing{}, malformed(pageURL, "Link next %s repeats an earlier page", next)
+				return 0, false, malformed(pageURL, "Link next %s repeats an earlier page", next)
 			}
 		}
-		l.elements = append(l.elements, items...)
-		pageURL = next
-		if limit > 0 && l.total >= limit {
-			l.more = next != ""
-			break
+		if stop {
+			return len(followed), next != "", nil
 		}
+		pageURL = next
 	}
-	l.pages = len(followed)
-	return l, nil
+	return len(followed), false, nil
 }
 
 func unmarshalField(object map[string]json.RawMessage, field string, v any) error {
@@ -680,4 +699,68 @@ func (r *readErrors) Read(p []byte) (int, error) {
 		r.err = err
 	}
 	return n, err
+}
+
+// CommitPull is a pull request that holds a commit. HeadRepoID is 0 when
+// GitHub gives no head repo, as for a deleted fork.
+type CommitPull struct {
+	Number     int
+	HeadRef    string
+	HeadRepoID int64
+}
+
+type pullJSON struct {
+	Number int `json:"number"`
+	Head   struct {
+		Ref  string `json:"ref"`
+		Repo *struct {
+			ID int64 `json:"id"`
+		} `json:"repo"`
+	} `json:"head"`
+}
+
+func (p *CommitPull) UnmarshalJSON(raw []byte) error {
+	var pr pullJSON
+	if err := json.Unmarshal(raw, &pr); err != nil {
+		return err
+	}
+	*p = CommitPull{Number: pr.Number, HeadRef: pr.Head.Ref}
+	if pr.Head.Repo != nil {
+		p.HeadRepoID = pr.Head.Repo.ID
+	}
+	return nil
+}
+
+// ErrUnknownCommit is GitHub's 422 to the first page of a commit's pulls.
+var ErrUnknownCommit = errors.New("unknown commit")
+
+// CommitPulls lists the pull requests that hold the commit sha. It gives
+// ErrUnknownCommit, with the listing's source, for a commit GitHub does not know.
+func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Source, error) {
+	listURL := h.repoURL + "/commits/" + url.PathEscape(sha) + "/pulls?per_page=100"
+	var pulls []CommitPull
+	read := 0
+	pages, _, err := h.paginate(ctx, listURL, func(resp *http.Response) (bool, error) {
+		read++
+		var page []json.RawMessage
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			return false, &MalformedError{Err: err}
+		}
+		for _, raw := range page {
+			var pull CommitPull
+			if err := json.Unmarshal(raw, &pull); err != nil {
+				return false, &MalformedError{Err: fmt.Errorf("pull %d: %w", len(pulls), err)}
+			}
+			pulls = append(pulls, pull)
+		}
+		return false, nil
+	})
+	var statusErr *StatusError
+	if read == 0 && errors.As(err, &statusErr) && statusErr.Status == http.StatusUnprocessableEntity {
+		return nil, Source{URL: listURL, Pages: 1}, ErrUnknownCommit
+	}
+	if err != nil {
+		return nil, Source{}, err
+	}
+	return pulls, Source{URL: listURL, Pages: pages}, nil
 }
