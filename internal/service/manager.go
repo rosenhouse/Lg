@@ -221,7 +221,7 @@ func (systemd) render(u Unit) ([]byte, error) { return RenderSystemd(u) }
 func (s systemd) prepare(ctx context.Context, _ Unit) (bool, error) {
 	out, err := s.output(ctx, "show", "-p", "UnitPath", "--value")
 	if err != nil {
-		return false, fmt.Errorf("no systemd user manager is reachable: %w", err)
+		return false, fmt.Errorf("no systemd user manager is reachable: %w; run lg daemon run under your own supervisor instead", err)
 	}
 	if !slices.ContainsFunc(splitQuoted(out), func(dir string) bool { return sameFile(dir, s.dir) }) {
 		return false, fmt.Errorf("the systemd user manager does not load units from %s; give lg the XDG_CONFIG_HOME the manager has", s.dir)
