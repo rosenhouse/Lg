@@ -3,18 +3,19 @@
 lg mirrors one GitHub repository's Actions runs, attempts, job logs and artifacts into plain files.
 You and your coding agents then answer CI questions from disk with `rg`, `grep` and `jq`, such as when an error first appeared or which jobs are flaky.
 A daemon keeps the mirror up to date.
-lg runs on Linux and macOS against github.com. GitHub Enterprise Server is tested only against a fake; see [#3 §13](https://github.com/rosenhouse/lg/issues/3).
+lg runs on Linux and macOS against github.com.
+GitHub Enterprise Server is tested only against a fake ([#3 §13](https://github.com/rosenhouse/lg/issues/3)); to try it, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
 
 ## Install
 
-lg needs Go 1.21 or later, [gh](https://cli.github.com), [rg](https://github.com/BurntSushi/ripgrep) and [jq](https://jqlang.org).
+lg needs Go 1.21 or later and [gh](https://cli.github.com). The examples below use [rg](https://github.com/BurntSushi/ripgrep) and [jq](https://jqlang.org).
+Go 1.21 to 1.24 first download Go 1.25.0, which needs network access; `GOTOOLCHAIN` controls this.
 
 ```sh
 go install github.com/rosenhouse/lg/cmd/lg@latest
 ```
 
 From a clone, run `go install ./cmd/lg`.
-Go before 1.25 first downloads a newer Go, which needs network access; `GOTOOLCHAIN` controls this.
 go install puts lg in `$GOBIN`, or in `$(go env GOPATH)/bin` when GOBIN is unset; add that dir to PATH.
 
 ## Quick start
@@ -25,32 +26,30 @@ lg takes its token from `gh auth token`, so log in to gh first.
 gh auth login
 lg init --repo OWNER/NAME
 lg sync
-lg daemon install
 lg status
 ```
 
 `lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to `~/.config/lg/config.yaml`; it must not exceed `retention`.
-Each sync lists only the runs created within `backfill`, so lg never fetches a run created during a pause in syncing longer than that.
-Raise `backfill` before you sync to cover the pause.
+After a pause in syncing longer than `backfill`, lg does not fetch the runs created more than `backfill` before the next sync; raise `backfill` to cover them.
 The first `lg sync` can take several minutes. It warns that lg never synced, then prints nothing more unless it fails.
 `lg status` shows the last sync, the lag, pending units and why syncs are blocked.
-To try GitHub Enterprise Server, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
+A unit is a run, attempt, job, log, artifact or `extracted/` dir.
+The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run.
 
 ## Daemon
 
-`lg daemon install` is optional. It runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
+`lg daemon install` runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
 Without a systemd user manager or launchd, as in a container, run `lg daemon run` under your own supervisor.
-Without the daemon, every command warns once the last successful sync is older than twice `sync_interval`, and a successful `lg sync` clears it.
+Every command warns while the last successful sync is older than twice `sync_interval`; `lg status --help` says when else it warns.
 With the daemon running, `lg sync` only asks for a sync; `lg sync --wait` also waits for it.
-If `lg status` shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
-`lg status` names the fix, usually `gh auth login --insecure-storage`.
+If `lg status` shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring, and `gh auth login --insecure-storage` usually fixes it.
 The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
 On a headless Linux machine, run `loginctl enable-linger` so the unit outlives your login.
 `lg daemon uninstall` removes the service.
 
 ## Search
 
-Search the logs and extracted artifacts of main from the last 7 days, and decode each hit:
+Search the logs of main from the last 7 days, and decode each hit:
 
 ```sh
 lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
@@ -66,16 +65,12 @@ Find flaky jobs and steps:
 lg flakes
 ```
 
-lg flakes judges a job and each of its steps on their own, so one flip often gives a line for the job and a line for the step.
-
 Search inside artifacts, after expanding their zips:
 
 ```sh
 lg extract --branch main
 lg paths --unit extracted -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
 ```
-
-lg extract says "nothing to extract" when no artifact.zip matches its filters, or when each one is extracted already or its zip was gone or too large to fetch.
 
 Teach Claude Code to do all this:
 
@@ -94,12 +89,24 @@ lg skill install
 
 `LG_HOME` does not move the config.
 
-`lg root` prints the store's `data/` dir, which holds each run at `<host>/<owner>/<repo>/runs/<date>/<run_id>_<workflow>_<branch>/`.
-`<owner>/<repo>` is spelled as GitHub spells the repository's full name, while config.yaml and `lg status` keep the spelling given to `lg init --repo OWNER/NAME`.
+`lg root` prints the store's `data/` dir, which holds each run like this:
+
+```text
+<host>/<owner>/<repo>/runs/<date>/<run_id>_<workflow>_<branch>/
+  attempt-N/
+    attempt.json  jobs.json
+    jobs/<job_id>_<job>/
+      job.json  log.txt
+  artifacts/<artifact_id>_<artifact>/
+    artifact.json  artifact.zip
+    extracted/
+```
+
+`<owner>/<repo>` uses GitHub's spelling, which may differ in case from config.yaml.
 `<date>` is the run's UTC creation date.
-`<workflow>` and `<branch>` are slugs, so branch `feat/x` becomes `feat-x`.
+`<workflow>`, `<branch>`, `<job>` and `<artifact>` are slugs, so branch `feat/x` becomes `feat-x`.
+A `<file>.tombstone`, such as `log.txt.tombstone`, replaces a file that lg will never have.
 Each `attempt-N/` and `extracted/` dir is complete once it appears, and files never change.
-A run dir gains attempts and artifacts as they finish, and an artifact dir gains `extracted/` when lg extract expands it.
 lg removes runs older than `retention`, 90d by default.
 While `data/` exceeds `disk_cap`, 50GB by default, lg removes `extracted/` trees first, then the oldest runs.
 

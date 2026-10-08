@@ -224,8 +224,7 @@ Its `reason` is `expired`, `deleted`, `not_applicable` or `too_large`.
 `not_applicable` marks a job that produces no log, such as a skipped one.
 `too_large` marks a zip over `artifact_max_bytes` (500MB by default). Raising the limit later does not fetch it.
 A unit that failed for a transient reason, such as a GitHub outage, is pending: `lg status` lists it, and the next sync retries it.
-A sync lists only the runs created within `backfill` (7 days by default), so a pause in syncing longer than `backfill` leaves runs that lg never fetches, with no tombstone.
-Compare the date dirs with the dates you expect before you conclude there is no match.
+After a pause in syncing longer than `backfill` (7 days by default), lg does not fetch the runs created more than `backfill` before the next sync, and leaves no tombstone for them.
 
 ```sh
 data=$(lg root) && cd "$data" && rg --no-config -uu -l '"reason": "deleted"' --glob '*.tombstone'
