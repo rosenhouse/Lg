@@ -6,6 +6,7 @@ import (
 	"io/fs"
 
 	"github.com/rosenhouse/lg/internal/daemon"
+	"github.com/rosenhouse/lg/internal/grep"
 )
 
 // RunDaemonCycle runs one cycle as a daemon started with deps would.
@@ -75,3 +76,13 @@ type FlipJSON = flipJSON
 type IntermittentJSON = intermittentJSON
 
 var PrintIntermittent = printIntermittent
+
+// GrepFiles searches paths as lg grep does, opening each with open.
+func GrepFiles(stdout, stderr io.Writer, open func(path string) (io.ReadCloser, error), pattern string, paths ...string) error {
+	m, err := grep.Compile(pattern)
+	if err != nil {
+		return err
+	}
+	s := &searcher{matcher: m, open: open, print: textHits(stdout), stderr: stderr}
+	return s.search(paths)
+}

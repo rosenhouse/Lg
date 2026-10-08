@@ -6,7 +6,7 @@ description: Search a local mirror of one GitHub repository's Actions runs, atte
 # lg
 
 `lg` mirrors one repository's GitHub Actions runs, attempts, jobs, logs and artifacts into plain files.
-Answer from those files with `lg paths`, `lg where`, `lg flakes`, `rg`, `grep` and `jq`.
+Answer from those files with `lg grep PATTERN`, `lg paths`, `lg where`, `lg flakes`, `rg`, `grep` and `jq`.
 Do not call the GitHub API for data that lg mirrors.
 
 ## Check freshness first
@@ -33,7 +33,9 @@ lg sync --wait --timeout 90s
 | 2 | usage or config error |
 | 3 | blocked: auth, rate limit, unreachable or local I/O; `lg status` says why |
 | 4 | timeout |
+| 5 | no match: lg grep found no line that matches |
 
+lg grep exits 5 when no line matches, and says on stderr how many files it searched.
 `grep` and `rg` exit 1 when they find no match.
 `xargs` exits 123 (1 with macOS xargs) when any grep exits non-zero: no match, or an error that grep printed to stderr.
 Read stderr before you conclude there is no match.
@@ -90,6 +92,22 @@ data=$(lg root) && cd "$data" && rg --no-config -uu -l '"head_sha": "1a51097' --
 lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -f2- | sort | uniq -c | sort -rn
 ```
 
+## lg grep
+
+lg grep searches the files that `lg paths` prints, with the same filters and `--unit`, and prints each matching line as `path:line:text`, oldest first.
+Its pattern is a Go regular expression, in RE2 syntax.
+`-i` ignores case, `-F` matches a literal string, and `-l` prints only the paths of matching files.
+`--json` prints each hit as `lg where` does: run, attempt, job, SHA, PRs, conclusions and the GitHub URL.
+It skips binary files, such as zips.
+
+```sh
+lg grep --branch main --since 30d 'foo bar'
+lg grep --branch main --since 30d -i --json 'FOO BAR' | jq -c 'del(.path)'
+lg grep --unit log -F -l '##[error]'
+```
+
+For rg's other features, such as context lines, pipe `lg paths -0` to `xargs -0 -r rg --no-config -Hn`.
+
 ## lg paths
 
 `lg paths` prints the mirrored files that match its filters, one per line, or NUL-separated with `-0`.
@@ -123,21 +141,20 @@ When did `foo bar` first appear on main or release-3?
 The run's date and id are in each path.
 
 ```sh
-lg paths --branch main --branch release-3 -0 | xargs -0 -r rg --no-config -l 'foo bar' \
-  | sed -E 's#.*/runs/([0-9-]+)/([0-9]+)_.*#\1 run \2#' | sort -u
-lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
+lg grep --branch main --branch release-3 -l 'foo bar' | sed -E 's#.*/runs/([0-9-]+)/([0-9]+)_.*#\1 run \2#' | sort -u
+lg grep --branch main --branch release-3 --since 30d 'foo bar'
 ```
 
 A rerun's hits sit under the run's creation date; the timestamp prefix on the hit line, or `run_started_at` in the attempt's `attempt.json`, says when it ran.
-Pass `-H` to rg or grep, so a batch of one file still prints its path.
-`lg where` decodes a path or an `rg -Hn` hit into JSON: run, attempt, job, SHA, PRs, conclusions and the GitHub URL.
-`jq -c 'del(.path)'` prints each object on one line, without the long path.
+With `--json`, `jq -c 'del(.path)'` prints each hit on one line, without the long path.
 
 ```sh
-lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where \
-  | jq -r '[.run_id, .attempt, .job, .artifact, .sha[0:7], .html_url] | @tsv'
-lg paths --branch release-3 -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'
+lg grep --branch release-3 --json 'foo bar' | jq -r '[.run_id, .attempt, .job, .artifact, .sha[0:7], .html_url] | @tsv'
+lg grep --branch release-3 --json 'foo bar' | jq -c 'del(.path)'
 ```
+
+`lg where` decodes a path or an `rg -Hn` hit into the same JSON.
+Pass `-H` to rg or grep, so a batch of one file still prints its path.
 
 ## Flakes
 
@@ -204,7 +221,9 @@ Each attempt's `artifacts.json` is a snapshot of the run's listing when lg fetch
 Zips are not searched until lg extract expands them into `extracted/` beside each zip.
 Give it filters, paths, or `lg extract --all`.
 It prints each `extracted/` dir it writes, and says on stderr when it has nothing to extract.
-A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`, so rg may report "binary file matches" for the archive, and `lg where` skips that line. Read the `.d/` text instead, and pass `-I` to grep to skip binary files.
+A nested zip, tar or tar.gz stays beside its expansion `<name>.d/`.
+lg grep skips the archive and searches the `.d/` text.
+rg may report "binary file matches" for the archive, and `lg where` skips that line; pass `-I` to grep to skip binary files.
 `lg where` on an extracted file adds `inner_path`, its path below `extracted/`.
 A member named `.ignore`, `.rgignore` or `.gitignore` is renamed `<name>~lg`, so rg still searches its tree.
 `extracted/.lg-extract.json` records every renamed or skipped member.
@@ -212,8 +231,7 @@ Artifacts often hold hidden dirs such as `.pytest_cache/`, which rg walks only w
 
 ```sh
 lg extract --branch release-3
-lg paths --unit extracted -0 | xargs -0 -r grep -lI 'nested in tar.gz' | lg where \
-  | jq -r '[.run_id, .artifact_id, .artifact, .inner_path] | @tsv'
+lg grep --unit extracted -l --json 'nested in tar.gz' | jq -r '[.run_id, .artifact_id, .artifact, .inner_path] | @tsv'
 data=$(lg root) && cd "$data" && rg --no-config -uu -l 'test_retry'
 ```
 

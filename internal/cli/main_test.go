@@ -78,7 +78,7 @@ var _ = Describe("Main", Label("cli"), func() {
 			ContainSubstring("gh auth token"),
 			ContainSubstring("LG_HOME moves the store"),
 			ContainSubstring("LG_CONFIG moves the config"),
-			ContainSubstring("Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout."),
+			ContainSubstring("Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout; 5 no match (lg grep)."),
 		))
 	})
 

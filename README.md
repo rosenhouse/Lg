@@ -49,10 +49,19 @@ On a headless Linux machine, run `loginctl enable-linger` so the unit outlives y
 
 ## Search
 
-Search the logs of main from the last 7 days, and decode each hit:
+Search the logs of main from the last 7 days, and decode each hit into JSON:
 
 ```sh
-lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
+lg grep --branch main --since 7d 'foo bar'
+lg grep --branch main --since 7d --json 'foo bar' | jq -c 'del(.path)'
+```
+
+The pattern is a Go regular expression, and `lg grep --help` lists the flags.
+lg grep exits 5 when no line matches.
+For rg's other features, such as context lines, pipe `lg paths` to rg, and decode its hits with `lg where`:
+
+```sh
+lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn -C2 'foo bar'
 lg paths --branch main --since 7d -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'
 ```
 
@@ -69,7 +78,7 @@ Search inside artifacts, after expanding their zips:
 
 ```sh
 lg extract --branch main
-lg paths --unit extracted -0 | xargs -0 -r rg --no-config -Hn 'foo bar'
+lg grep --unit extracted 'foo bar'
 ```
 
 Teach Claude Code to do all this:
