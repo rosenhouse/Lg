@@ -129,15 +129,19 @@ var _ = Describe("lg grep", Label("grep"), func() {
 		Entry("-0 with --json", []string{"-l", "-0", "--json", "foo"}, "-0 needs -l, without --json"),
 	)
 
-	It("says once that it cannot write stdout", func() {
-		var stderr bytes.Buffer
-		code := cli.Main([]string{"grep", "LG_MARKER"}, cli.Deps{
-			Env:    map[string]string{"LG_HOME": c.Home, "LG_CONFIG": c.Config, "LG_TEST_NOW": harness.DefaultNow().Format(time.RFC3339)},
-			Stdout: failingWriter{errDiskFull}, Stderr: &stderr, Clock: clock.Real{},
-		})
-		Expect(code).To(Equal(1))
-		Expect(stderr.String()).To(Equal("lg: disk full\n"))
-	})
+	DescribeTable("says once that it cannot write stdout, with",
+		func(pattern string) {
+			var stderr bytes.Buffer
+			code := cli.Main([]string{"grep", pattern}, cli.Deps{
+				Env:    map[string]string{"LG_HOME": c.Home, "LG_CONFIG": c.Config, "LG_TEST_NOW": harness.DefaultNow().Format(time.RFC3339)},
+				Stdout: failingWriter{errDiskFull}, Stderr: &stderr, Clock: clock.Real{},
+			})
+			Expect(code).To(Equal(1))
+			Expect(stderr.String()).To(Equal("lg: disk full\n"))
+		},
+		Entry("more hits than its buffer holds", "LG_MARKER"),
+		Entry("one hit", "LG_MARKER flaky failure attempt=1"),
+	)
 })
 
 var _ = Describe("lg grep", Label("grep"), func() {
@@ -169,6 +173,21 @@ var _ = Describe("lg grep", Label("grep"), func() {
 		Expect(errors.As(err, new(cli.Warned))).To(BeTrue(), "already printed")
 		Expect(stdout.String()).To(Equal("/a:1:foo\n/b:1:foo 2\n/d:2:foo 4\n"))
 		Expect(stderr.String()).To(Equal("lg: read /b: input/output error\nlg: open /c: permission denied\n"))
+	})
+})
+
+var _ = Describe("lg grep", Label("grep"), func() {
+	It("opens no more files once it cannot print", func() {
+		var opened []string
+		open := func(path string) (io.ReadCloser, error) {
+			opened = append(opened, path)
+			return io.NopCloser(strings.NewReader("foo\n")), nil
+		}
+
+		err := cli.GrepFiles(failingWriter{errDiskFull}, GinkgoWriter, open, "foo", "/a", "/b")
+
+		Expect(err).To(MatchError(errDiskFull))
+		Expect(opened).To(HaveExactElements("/a"))
 	})
 })
 
