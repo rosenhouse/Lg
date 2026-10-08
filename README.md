@@ -7,14 +7,14 @@ lg runs on Linux and macOS against github.com. GitHub Enterprise Server is teste
 
 ## Install
 
-lg needs Go 1.25 or later, [gh](https://cli.github.com), [rg](https://github.com/BurntSushi/ripgrep) and [jq](https://jqlang.org).
+lg needs Go 1.21 or later, [gh](https://cli.github.com), [rg](https://github.com/BurntSushi/ripgrep) and [jq](https://jqlang.org).
 
 ```sh
 go install github.com/rosenhouse/lg/cmd/lg@latest
 ```
 
 From a clone, run `go install ./cmd/lg`.
-Go 1.21 to 1.24 download Go 1.25 first, which needs network access; `GOTOOLCHAIN` controls this.
+Go before 1.25 first downloads a newer Go, which needs network access; `GOTOOLCHAIN` controls this.
 go install puts lg in `$GOBIN`, or in `$(go env GOPATH)/bin` when GOBIN is unset; add that dir to PATH.
 
 ## Quick start
@@ -30,18 +30,25 @@ lg status
 ```
 
 `lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to `~/.config/lg/config.yaml`; it must not exceed `retention`.
+Each sync lists only the runs created within `backfill`, so lg never fetches a run created during a pause in syncing longer than that.
+Raise `backfill` before you sync to cover the pause.
 The first `lg sync` can take several minutes. It warns that lg never synced, then prints nothing more unless it fails.
+`lg status` shows the last sync, the lag, pending units and why syncs are blocked.
+To try GitHub Enterprise Server, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
+
+## Daemon
+
 `lg daemon install` is optional. It runs a systemd user unit or launchd agent that syncs every `sync_interval`, 10m by default.
+Without a systemd user manager or launchd, as in a container, run `lg daemon run` under your own supervisor.
 Without the daemon, every command warns once the last successful sync is older than twice `sync_interval`, and a successful `lg sync` clears it.
 With the daemon running, `lg sync` only asks for a sync; `lg sync --wait` also waits for it.
-`lg status` shows the last sync, the lag, pending units and why syncs are blocked.
-The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run.
-If it shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
+If `lg status` shows syncs blocked by `auth` after `lg daemon install`, the service may not reach gh's keyring.
 `lg status` names the fix, usually `gh auth login --insecure-storage`.
-`lg daemon uninstall` removes the service.
 The daemon logs to `journalctl --user -u lg` on Linux and to the store's `state/daemon.log` on macOS.
 On a headless Linux machine, run `loginctl enable-linger` so the unit outlives your login.
-To try GitHub Enterprise Server, run `gh auth login --hostname HOST` and `lg init --repo OWNER/NAME --host HOST`.
+`lg daemon uninstall` removes the service.
+
+## Search
 
 Search the logs and extracted artifacts of main from the last 7 days, and decode each hit:
 
@@ -58,6 +65,8 @@ Find flaky jobs and steps:
 ```sh
 lg flakes
 ```
+
+lg flakes judges a job and each of its steps on their own, so one flip often gives a line for the job and a line for the step.
 
 Search inside artifacts, after expanding their zips:
 
