@@ -1,7 +1,7 @@
 package grep
 
-// RequiredLiterals gives the literals that Compile finds that pattern's every
-// match holds one of.
+// RequiredLiterals gives the literals Compile finds in pattern, one of which
+// every match holds.
 func RequiredLiterals(pattern string) (literals []string, fold bool) {
 	m, err := Compile(pattern)
 	if err != nil {

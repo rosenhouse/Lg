@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/grep"
@@ -20,14 +21,16 @@ type grepCmd struct {
 	filters          `embed:""`
 	Unit             []string `sep:"none" enum:"run,attempt,job,log,extracted" help:"Search the files of this unit (${enum}) instead of logs and extracted files."`
 	IgnoreCase       bool     `short:"i" help:"Match case-insensitively."`
-	FixedStrings     bool     `short:"F" help:"Match PATTERN as a literal string."`
+	FixedStrings     bool     `short:"F" help:"Match the pattern literally."`
 	FilesWithMatches bool     `short:"l" help:"Print the path of each file that matches, instead of its hits."`
+	Null             bool     `short:"0" help:"Separate the paths of -l with NUL instead of newline."`
 	JSON             bool     `name:"json" help:"Print each hit, or with -l each file, as lg where prints it."`
 }
 
 func (grepCmd) Help() string {
 	return "Searches the files lg paths prints for the same filters and --unit, oldest first, and prints each matching line as path:line:text, as rg -Hn does. " +
 		"It strips a UTF-8 BOM from line 1 and skips binary files: those with a NUL byte in their first 8 KiB. " +
+		"Put -- before a pattern that starts with -, as in lg grep -- '--- FAIL'. " +
 		"It exits 5, saying how many files it searched, when no line matches. " +
 		"Search with rg's other features through lg paths -0 | xargs -0 -r rg --no-config -Hn."
 }
@@ -36,6 +39,9 @@ func (g grepCmd) Validate() error {
 	if len(g.Unit) > 1 {
 		return errors.New("--unit must not be given more than once")
 	}
+	if g.Null && (!g.FilesWithMatches || g.JSON) {
+		return errors.New("-0 needs -l, without --json")
+	}
 	if _, err := g.matcher(); err != nil {
 		return err
 	}
@@ -43,14 +49,14 @@ func (g grepCmd) Validate() error {
 }
 
 func (g grepCmd) matcher() (*grep.Matcher, error) {
-	pattern := g.Pattern
-	if g.FixedStrings {
-		pattern = regexp.QuoteMeta(pattern)
-	}
+	var flags []grep.Flag
 	if g.IgnoreCase {
-		pattern = "(?i)" + pattern
+		flags = append(flags, grep.IgnoreCase)
 	}
-	return grep.Compile(pattern)
+	if g.FixedStrings {
+		flags = append(flags, grep.Literal)
+	}
+	return grep.Compile(g.Pattern, flags...)
 }
 
 func (g grepCmd) Run(deps *Deps) error {
@@ -66,7 +72,7 @@ func (g grepCmd) Run(deps *Deps) error {
 	s := &searcher{matcher: m, open: openReader, stderr: deps.Stderr, filesOnly: g.FilesWithMatches}
 	err = query(deps, func(ctx context.Context, ix *index.Index, roots config.Roots) error {
 		paths, unread := ix.Paths(ctx, g.filter(deps.Clock.Now()), unit)
-		s.print = textHits(out)
+		s.print = textHits(out, g.Null)
 		if g.JSON {
 			finder := newPlaceFinder(roots.Data)
 			defer finder.close()
@@ -74,13 +80,10 @@ func (g grepCmd) Run(deps *Deps) error {
 		}
 		return errors.Join(unread, s.search(paths))
 	})
-	if err = errors.Join(err, out.Flush()); err != nil {
-		return err
+	if flushErr := out.Flush(); !errors.Is(err, flushErr) {
+		err = errors.Join(err, flushErr)
 	}
-	if s.hits == 0 {
-		return noMatch{files: s.files}
-	}
-	return nil
+	return s.outcome(err)
 }
 
 // noMatch is lg grep's error when it found no hit in the files it searched.
@@ -99,18 +102,23 @@ func openReader(path string) (io.ReadCloser, error) { return os.Open(path) }
 type searcher struct {
 	matcher *grep.Matcher
 	open    func(path string) (io.ReadCloser, error)
-	// print prints a hit, or a file when line is 0.
+	// print prints a hit, or a file when line is 0. It fails with skipFile
+	// to skip the rest of the file.
 	print     func(path string, line int, text []byte) error
 	filesOnly bool
 	stderr    io.Writer
-	// files counts the files searched, and hits the hits printed.
+	// files counts the files searched, and hits the hits found.
 	files, hits int
+	// failed is the error of the last file that failed, already printed.
+	failed error
 }
 
+// skipFile is print's error for a file whose hits it cannot print.
+type skipFile struct{ error }
+
 // search prints the hits in each file of paths. It notes on stderr each file
-// it cannot read, and then fails with warned.
+// it cannot search, and fails only when it cannot print.
 func (s *searcher) search(paths []string) error {
-	var failed error
 	for _, path := range paths {
 		s.files++
 		var printErr error
@@ -122,15 +130,32 @@ func (s *searcher) search(paths []string) error {
 			printErr = s.print(path, line, text)
 			return printErr == nil && !s.filesOnly
 		})
-		if printErr != nil {
+		var skip skipFile
+		switch {
+		case errors.As(printErr, &skip):
+			err = skip.error
+		case printErr != nil:
 			return printErr
 		}
 		if err != nil {
 			printError(s.stderr, err)
-			failed = warned{err}
+			s.failed = warned{err}
 		}
 	}
-	return failed
+	return nil
+}
+
+// outcome gives lg grep's error, given the error of searching.
+func (s *searcher) outcome(err error) error {
+	switch {
+	case err != nil:
+		return err
+	case s.failed != nil:
+		return s.failed
+	case s.hits == 0:
+		return noMatch{files: s.files}
+	}
+	return nil
 }
 
 func (s *searcher) searchFile(path string, hit func(line int, text []byte) bool) error {
@@ -142,14 +167,22 @@ func (s *searcher) searchFile(path string, hit func(line int, text []byte) bool)
 	return s.matcher.Lines(f, hit)
 }
 
-// textHits prints a hit as path:line:text, and a file as its path.
-func textHits(w io.Writer) func(path string, line int, text []byte) error {
+// textHits prints a hit as path:line:text, and a file as its path, followed
+// by NUL when null.
+func textHits(w io.Writer, null bool) func(path string, line int, text []byte) error {
 	return func(path string, line int, text []byte) error {
-		if line == 0 {
-			_, err := fmt.Fprintln(w, path)
-			return err
+		if !null && strings.Contains(path, "\n") {
+			return skipFile{fmt.Errorf("%s holds a newline; use --json, or -l -0", strconv.Quote(path))}
 		}
-		_, err := fmt.Fprintf(w, "%s:%d:%s\n", path, line, text)
+		var err error
+		switch {
+		case line > 0:
+			_, err = fmt.Fprintf(w, "%s:%d:%s\n", path, line, text)
+		case null:
+			_, err = fmt.Fprint(w, path, "\x00")
+		default:
+			_, err = fmt.Fprintln(w, path)
+		}
 		return err
 	}
 }
@@ -158,10 +191,15 @@ func textHits(w io.Writer) func(path string, line int, text []byte) error {
 func jsonHits(w io.Writer, finder *placeFinder) func(path string, line int, text []byte) error {
 	out := json.NewEncoder(w)
 	out.SetEscapeHTML(false)
+	var described string
+	var p place
 	return func(path string, line int, text []byte) error {
-		p, err := finder.at(path)
-		if err != nil {
-			return err
+		if path != described {
+			var err error
+			if p, err = finder.describePath(path); err != nil {
+				return skipFile{err}
+			}
+			described = path
 		}
 		p.Line, p.Text = line, string(text)
 		return out.Encode(p)

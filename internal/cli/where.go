@@ -245,8 +245,8 @@ func (f *placeFinder) find(hit string) (place, error) {
 	return p, err
 }
 
-// at describes the file at path.
-func (f *placeFinder) at(path string) (place, error) {
+// describePath describes the file at path.
+func (f *placeFinder) describePath(path string) (place, error) {
 	loc, err := f.locate(path)
 	if err != nil {
 		return place{}, err
@@ -267,6 +267,7 @@ func (f *placeFinder) locate(path string) (layout.Location, error) {
 	return loc, nil
 }
 
+// describeFile describes the file at path, which is at loc.
 func (f *placeFinder) describeFile(path string, loc layout.Location) (place, error) {
 	p, err := f.describe(loc)
 	if err == nil && (loc.File == "log.txt.tombstone" || loc.File == "artifact.zip.tombstone") {

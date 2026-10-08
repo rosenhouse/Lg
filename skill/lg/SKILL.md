@@ -95,10 +95,11 @@ lg paths --unit log -0 | xargs -0 -r grep -hE '^[^ ]+ ##\[error\]' | cut -d' ' -
 ## lg grep
 
 lg grep searches the files that `lg paths` prints, with the same filters and `--unit`, and prints each matching line as `path:line:text`, oldest first.
-Its pattern is a Go regular expression, in RE2 syntax.
+It refuses `--unit artifact`, since zips are binary, and skips other binary files, such as the archives nested in `extracted/`.
+Its pattern is a Go regular expression, in RE2 syntax, and matches each line on its own.
+Put `--` before a pattern that starts with `-`, as in `lg grep -- '--- FAIL'`.
 `-i` ignores case, `-F` matches a literal string, and `-l` prints only the paths of matching files.
 `--json` prints each hit as `lg where` does: run, attempt, job, SHA, PRs, conclusions and the GitHub URL.
-It skips binary files, such as zips.
 
 ```sh
 lg grep --branch main --since 30d 'foo bar'

@@ -83,6 +83,8 @@ func GrepFiles(stdout, stderr io.Writer, open func(path string) (io.ReadCloser, 
 	if err != nil {
 		return err
 	}
-	s := &searcher{matcher: m, open: open, print: textHits(stdout), stderr: stderr}
-	return s.search(paths)
+	s := &searcher{matcher: m, open: open, print: textHits(stdout, false), stderr: stderr}
+	return s.outcome(s.search(paths))
 }
+
+type Warned = warned
