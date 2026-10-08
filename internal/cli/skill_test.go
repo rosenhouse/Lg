@@ -129,6 +129,7 @@ var _ = Describe("Parse", Label("skill"), func() {
 		Entry(nil, "gc --dry-run --timeout 1m"),
 		Entry(nil, "index rebuild"),
 		Entry(nil, "paths --branch B --branch C --sha S --pr 1 --workflow W --job J --event E --conclusion C --since 30d --until 2026-09-01 --unit attempt -0"),
+		Entry(nil, "grep --branch B --unit log -i -F -l --json PATTERN"),
 		Entry(nil, "where PATH HIT"),
 		Entry(nil, "flakes --kind rerun --sha S --json"),
 		Entry(nil, "extract --branch B --max-bytes 1GB --timeout 1m"),

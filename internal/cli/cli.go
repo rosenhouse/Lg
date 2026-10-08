@@ -53,6 +53,7 @@ type commands struct {
 	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 	Status  statusCmd  `cmd:"" help:"Print the last sync, the lag, pending units, whether the daemon runs, and why syncs are blocked."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
+	Grep    grepCmd    `cmd:"" help:"Print the lines of mirrored files that match a regular expression."`
 	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another, or failed alone on the default branch."`
 	Extract extractCmd `cmd:"" help:"Expand artifact zips into extracted/ beside each zip, for grep or rg."`
@@ -67,7 +68,7 @@ var description = `lg mirrors one GitHub repository's Actions runs, attempts, jo
 
 Start with lg init --repo OWNER/NAME, then lg sync, or lg daemon install to sync every sync_interval, ` + config.Defaults().SyncInterval.String() + ` by default. lg takes its token from gh auth token. LG_HOME moves the store from ~/.local/share/lg, and LG_CONFIG moves the config from ~/.config/lg/config.yaml.
 
-Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout.`
+Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout; 5 no match (lg grep).`
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.
 type kongExit int
@@ -139,6 +140,8 @@ func Main(args []string, deps Deps) (code int) {
 			return 3
 		case errors.Is(err, lock.ErrTimeout):
 			return 4
+		case errors.As(err, new(noMatch)):
+			return 5
 		}
 		return 1
 	}

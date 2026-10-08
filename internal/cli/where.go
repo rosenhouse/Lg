@@ -222,13 +222,9 @@ func (f *placeFinder) find(hit string) (place, error) {
 		}
 		return place{}, fmt.Errorf("%q names no file", hit)
 	}
-	rel, err := relToData(f.real, f.data, path)
+	loc, err := f.locate(path)
 	if err != nil {
 		return place{}, err
-	}
-	loc, err := layout.Parse(rel)
-	if err != nil {
-		return place{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if h.Line > 0 {
 		text, held := f.holding(path, h.Line, h.Text)
@@ -244,11 +240,40 @@ func (f *placeFinder) find(hit string) (place, error) {
 		}
 		h.Text = text
 	}
+	p, err := f.describeFile(path, loc)
+	p.Line, p.Text = h.Line, h.Text
+	return p, err
+}
+
+// describePath describes the file at path.
+func (f *placeFinder) describePath(path string) (place, error) {
+	loc, err := f.locate(path)
+	if err != nil {
+		return place{}, err
+	}
+	return f.describeFile(path, loc)
+}
+
+// locate gives where in the store path is.
+func (f *placeFinder) locate(path string) (layout.Location, error) {
+	rel, err := relToData(f.real, f.data, path)
+	if err != nil {
+		return layout.Location{}, err
+	}
+	loc, err := layout.Parse(rel)
+	if err != nil {
+		return layout.Location{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return loc, nil
+}
+
+// describeFile describes the file at path, which is at loc.
+func (f *placeFinder) describeFile(path string, loc layout.Location) (place, error) {
 	p, err := f.describe(loc)
 	if err == nil && (loc.File == "log.txt.tombstone" || loc.File == "artifact.zip.tombstone") {
 		p.tombstonePlace, err = tombstoneOf(path)
 	}
-	p.Path, p.Line, p.Text = path, h.Line, h.Text
+	p.Path = path
 	return p, err
 }
 
