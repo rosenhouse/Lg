@@ -75,7 +75,7 @@ Always pass `-r` to `xargs`, so grep does not read stdin when lg prints no paths
 
 - `<owner>/<repo>` takes GitHub's spelling of the repository's name, whatever case the config uses, so take paths from `lg paths` or a glob rather than typing them.
 - The date dir is the UTC date the run was created. A rerun stays under that date.
-- Names keep `[A-Za-z0-9.-]`, so branch `feat/retry_upload` becomes `feat-retry-upload`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
+- Names keep `[A-Za-z0-9.-]`. Every other byte becomes `-` and runs of `-` collapse, so branch `feat/retry_upload` becomes `feat-retry-upload` and job `build (ubuntu, 1.22)` becomes `build-ubuntu-1.22`. Each name is also trimmed of leading and trailing `-` and `.`, cut to 60 bytes, and `none` when nothing is left, so match a long name with a glob on its start. The id before the first `_` is exact.
 - Each `attempt-<N>/` and `extracted/` dir is complete once it appears, and files never change. A run dir gains attempts and artifacts, and an artifact dir gains `extracted/`. Expiry and eviction remove whole dirs.
 - JSON files hold GitHub's API bodies, re-indented with two spaces, so `rg --no-config '"head_sha": "1a51097'` finds a commit. Objects keep GitHub's shape, so their `jq` paths match the GitHub REST docs.
 - `jobs.json` and `artifacts.json` hold one array of every page's elements, without GitHub's `total_count` wrapper, so use `jq '.[]'`.
@@ -224,6 +224,8 @@ Its `reason` is `expired`, `deleted`, `not_applicable` or `too_large`.
 `not_applicable` marks a job that produces no log, such as a skipped one.
 `too_large` marks a zip over `artifact_max_bytes` (500MB by default). Raising the limit later does not fetch it.
 A unit that failed for a transient reason, such as a GitHub outage, is pending: `lg status` lists it, and the next sync retries it.
+A sync lists only the runs created within `backfill` (7 days by default), so a pause in syncing longer than `backfill` leaves runs that lg never fetches, with no tombstone.
+Compare the date dirs with the dates you expect before you conclude there is no match.
 
 ```sh
 data=$(lg root) && cd "$data" && rg --no-config -uu -l '"reason": "deleted"' --glob '*.tombstone'
