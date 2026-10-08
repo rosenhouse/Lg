@@ -24,15 +24,18 @@ import (
 type extractCmd struct {
 	filters  `embed:""`
 	All      bool          `help:"Extract every artifact."`
-	MaxBytes size          `default:"${extract_max_bytes}" help:"Extract no artifact whose files, nested archives expanded, exceed this."`
+	MaxBytes size          `default:"${extract_max_bytes}" help:"Extract no artifact whose files, nested archives expanded, exceed this size, such as 500MB or 2GB."`
 	Timeout  time.Duration `default:"${write_lock_wait}" help:"How long to wait for another lg writing the store."`
-	Paths    []string      `arg:"" optional:"" name:"path" help:"An artifact dir, or a file in one."`
+	Paths    []string      `arg:"" optional:"" name:"path" help:"An artifact dir, or a file in one, relative to the working directory."`
 }
 
 func (extractCmd) Help() string {
-	return "Expands each selected artifact.zip, and the zip, tar and tar.gz archives nested in it, into extracted/ beside it. " +
-		"An artifact already extracted, or whose zip is a tombstone, is skipped. extracted/.lg-extract.json records what was renamed or skipped. " +
-		fmt.Sprintf("An artifact.zip of more than %d members is not extracted, and nested archives past that many stay unexpanded.", extract.Defaults().MaxFiles)
+	return "Give filters, PATHs or --all. Filters select artifacts as lg paths --unit artifact does. " +
+		"Nested zip, tar and tar.gz archives expand beside themselves as <archive>.d/. " +
+		"lg extract prints each extracted/ dir it writes, and says on stderr when it has nothing to extract. " +
+		"It skips an artifact already extracted, or whose zip is a tombstone. " +
+		fmt.Sprintf("An artifact.zip of more than %d members is not extracted, and nested archives past that many members stay unexpanded. ", extract.Defaults().MaxFiles) +
+		"extracted/.lg-extract.json records each renamed or skipped member."
 }
 
 // size is a --max-bytes.
@@ -107,10 +110,17 @@ func (c extractCmd) Run(deps *Deps) error {
 		}
 	}
 	w.done()
-	if anyExtracted {
+	err = errors.Join(append(errs, printErr)...)
+	switch {
+	case anyExtracted:
 		warnPastDiskCap(deps)
+	case err != nil:
+	case len(dirs) == 0:
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: no artifact.zip matches")
+	default:
+		_, _ = fmt.Fprintln(deps.Stderr, "lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone")
 	}
-	return errors.Join(append(errs, printErr)...)
+	return err
 }
 
 // lg extract lets go of state/write.lock between artifacts once it has held it

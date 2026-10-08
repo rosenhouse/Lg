@@ -14,8 +14,20 @@ import (
 )
 
 type initCmd struct {
-	Repo string `required:"" help:"Repository as owner/name."`
-	Host string `default:"github.com" help:"GitHub host."`
+	Repo string `required:"" placeholder:"OWNER/NAME" help:"Repository as owner/name."`
+	Host string `default:"github.com" placeholder:"HOST" help:"GitHub host: github.com, or a GitHub Enterprise Server host."`
+}
+
+func (initCmd) Help() string {
+	d := config.Defaults()
+	return "Writes host and repo to $LG_CONFIG, default ${XDG_CONFIG_HOME:-~/.config}/lg/config.yaml, " +
+		"and creates the store at $LG_HOME, default ${XDG_DATA_HOME:-~/.local/share}/lg. " +
+		"It refuses to overwrite an existing config.yaml. " +
+		fmt.Sprintf("Edit that file to set sync_interval (%s), backfill (%s), retention (%s), disk_cap (%s), artifact_max_bytes (%s) or log_grace (%s). ",
+			d.SyncInterval, d.Backfill, d.Retention, d.DiskCap, d.ArtifactMaxBytes, d.LogGrace) +
+		"log_grace is how long lg retries a log or zip that GitHub answers with 404 before it writes a tombstone. " +
+		"api_url replaces the API URL that lg derives from host. " +
+		"lg reads its token from gh auth token --hostname HOST, so run gh auth login first."
 }
 
 // Run writes config.yaml, holding only host and repo, and initializes the
@@ -51,5 +63,9 @@ func (c initCmd) Run(deps *Deps) error {
 	}
 	release()
 	_, err = fmt.Fprintf(f, "host: %s\nrepo: %s\n", cfg.Host, cfg.Repo)
-	return errors.Join(err, f.Close())
+	if err = errors.Join(err, f.Close()); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(deps.Stdout, "wrote %s; run `lg sync` next\n", file)
+	return err
 }

@@ -19,7 +19,15 @@ import (
 )
 
 type statusCmd struct {
-	JSON bool `name:"json" help:"Print state/status.json as it is."`
+	JSON bool `name:"json" help:"Print $LG_HOME/state/status.json as it is. It fails before the first sync."`
+}
+
+func (statusCmd) Help() string {
+	return "The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run. " +
+		"When disk_cap evicts runs, the horizon rises to the newest one's creation time, and lg never fetches a run created at or before the horizon again. " +
+		"Every lg command warns on stderr while syncs are blocked. " +
+		"It also warns while the last successful sync, or a pending unit, is older than twice sync_interval. " +
+		"That sync_interval is the one the last sync used, not the one config.yaml now sets."
 }
 
 func (c statusCmd) Run(deps *Deps) error {
@@ -86,7 +94,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 		lines = append(lines,
 			name+":",
 			"  default branch: "+cmp.Or(r.DefaultBranch, "unknown"),
-			fmt.Sprintf("  newest completed run: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
+			fmt.Sprintf("  newest completed run created: %s, lag: %s", orNone(r.NewestCompletedRunCreatedAt, "none"), lag),
 			fmt.Sprintf("  runs: %d, attempts: %d, bytes: %d", r.Runs, r.Attempts, r.BytesData),
 			fmt.Sprintf("  pending units: %d", r.PendingUnits))
 		for _, pending := range r.Pending {
@@ -94,7 +102,7 @@ func statusLines(st *status.Status, daemon bool) []string {
 		}
 		lines = append(lines,
 			"  horizon: "+orNone(r.Horizon, "none"),
-			fmt.Sprintf("  retention: %d days, disk_cap: %d bytes", r.RetentionDays, r.DiskCapBytes))
+			fmt.Sprintf("  retention: %d days, disk_cap: %s", r.RetentionDays, config.Bytes(r.DiskCapBytes)))
 	}
 	return lines
 }

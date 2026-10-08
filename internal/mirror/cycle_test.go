@@ -42,7 +42,7 @@ func (s *staticTokens) Token(_ context.Context, host string) (string, error) {
 	return s.token, s.err
 }
 
-var _ = Describe("Cycle", Label("sync"), func() {
+var _ = Describe("mirror.Cycle", Label("sync"), func() {
 	var (
 		root      string
 		recording string

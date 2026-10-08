@@ -49,19 +49,25 @@ func RealDeps() Deps {
 
 type commands struct {
 	Init    initCmd    `cmd:"" help:"Write config.yaml for one repository and initialize the store."`
-	Root    rootCmd    `cmd:"" help:"Print the data directory."`
-	Version versionCmd `cmd:"" help:"Print lg's version."`
-	Status  statusCmd  `cmd:"" help:"Print when lg last synced, how far behind it is, and why it is blocked."`
 	Sync    syncCmd    `cmd:"" help:"Mirror the repository's Actions runs into the data directory."`
-	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, and the oldest data while over disk_cap."`
+	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
+	Status  statusCmd  `cmd:"" help:"Print the last sync, the lag, pending units, whether the daemon runs, and why syncs are blocked."`
 	Paths   pathsCmd   `cmd:"" help:"Print the paths of mirrored files, for grep or rg."`
 	Where   whereCmd   `cmd:"" help:"Decode a path or an rg hit into JSON."`
 	Flakes  flakesCmd  `cmd:"" help:"Report jobs and steps that failed in one attempt of a run and passed in another, or failed alone on the default branch."`
-	Extract extractCmd `cmd:"" help:"Expand artifacts' zips, and the archives in them, into extracted/ beside each zip, for grep or rg."`
+	Extract extractCmd `cmd:"" help:"Expand artifact zips into extracted/ beside each zip, for grep or rg."`
+	Root    rootCmd    `cmd:"" help:"Print the data directory."`
+	Gc      gcCmd      `cmd:"" help:"Remove runs older than retention, then extracted/ trees and runs, oldest first, while data/ exceeds disk_cap."`
 	Index   indexCmd   `cmd:"" help:"Maintain the SQLite index of data/."`
-	Daemon  daemonCmd  `cmd:"" help:"Run the daemon that keeps the store fresh."`
 	Skill   skillCmd   `cmd:"" help:"Teach Claude Code to search the store."`
+	Version versionCmd `cmd:"" help:"Print lg's version."`
 }
+
+var description = `lg mirrors one GitHub repository's Actions runs, attempts, job logs and artifacts into plain files for rg, grep and jq.
+
+Start with lg init --repo OWNER/NAME, then lg sync, or lg daemon install to sync every sync_interval, ` + config.Defaults().SyncInterval.String() + ` by default. lg takes its token from gh auth token. LG_HOME moves the store from ~/.local/share/lg, and LG_CONFIG moves the config from ~/.config/lg/config.yaml.
+
+Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout.`
 
 // kongExit carries Kong's exit code, as after --help, out of Parse.
 type kongExit int
@@ -111,8 +117,10 @@ func Main(args []string, deps Deps) (code int) {
 	if err != nil {
 		err = config.Error(err.Error())
 	}
-	if err == nil {
+	if err == nil && ctx.Command() != "init" {
 		warn(&deps, ctx.Command())
+	}
+	if err == nil {
 		err = checkStore(ctx.Command(), deps.Env)
 	}
 	if err == nil {
@@ -140,6 +148,7 @@ func Main(args []string, deps Deps) (code int) {
 func newParser(stdout, stderr io.Writer) *kong.Kong {
 	return kong.Must(&commands{},
 		kong.Name("lg"),
+		kong.Description(description),
 		kong.Vars{
 			"write_lock_wait":   writeLockWait.String(),
 			"cycle_wait":        cycleWait.String(),
@@ -148,6 +157,9 @@ func newParser(stdout, stderr io.Writer) *kong.Kong {
 		kong.Writers(stdout, stderr),
 		kong.Exit(func(c int) { panic(kongExit(c)) }))
 }
+
+// hintArgs completes a hint that needs arguments.
+var hintArgs = map[string]string{"init": " --repo OWNER/NAME"}
 
 // warn prints the line status.Warning gives for the store's status.json, if
 // any, with its hint unless command already runs it.
@@ -162,16 +174,18 @@ func warn(deps *Deps, command string) {
 		return
 	}
 	warning, hint := status.Warning(deps.Clock.Now(), st)
+	if file, err := config.File(deps.Env); hint == "sync" && err == nil && !exists(file) {
+		hint = "init"
+	}
 	runsHint := command == hint || hint == "sync" && command == "daemon run"
 	if hint != "" && !runsHint {
-		warning += "; run `lg " + hint + "`"
+		warning += "; run `lg " + hint + hintArgs[hint] + "`"
 	}
 	if warning != "" {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: warning: %s\n", warning)
 	}
 }
 
-// printError prints each line of err after "lg: ".
 func printError(stderr io.Writer, err error) {
 	_, _ = fmt.Fprintf(stderr, "lg: %s\n", strings.ReplaceAll(err.Error(), "\n", "\nlg: "))
 }

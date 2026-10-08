@@ -36,7 +36,6 @@ var _ = Describe("lg where", Label("where"), func() {
 		job = filepath.Join(attempt, "jobs", "111221289888_flaky")
 	})
 
-	// setHTMLURL rewrites the html_url of a JSON file under data/.
 	setHTMLURL := func(path, url string) {
 		GinkgoHelper()
 		raw, err := os.ReadFile(path)
@@ -562,7 +561,7 @@ func (c countingFile) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// onRead is a reader that calls f on its first read, and is empty.
+// onRead is an empty reader that calls f when read.
 type onRead func()
 
 func (f onRead) Read([]byte) (int, error) {

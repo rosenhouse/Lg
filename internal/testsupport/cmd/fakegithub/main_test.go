@@ -31,6 +31,7 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		return session
 	}
 
+	// fetch GETs url, whatever its status.
 	fetch := func(url string) (int, http.Header, string) {
 		GinkgoHelper()
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
@@ -148,7 +149,6 @@ var _ = Describe("the fakegithub dev server", Label("transport"), func() {
 		}
 	})
 
-	// fetch GETs url, whatever its status.
 	It("sets the rate limit from -rate-limit and the clock from -now", Label("blocked"), func() {
 		now := time.Date(2027, 1, 2, 3, 4, 5, 0, time.UTC)
 		session := start("-run", "37129390741=after-attempt-1", "-addr", "127.0.0.1:0", "-rate-limit", "100,12", "-now", now.Format(time.RFC3339))

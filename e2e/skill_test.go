@@ -74,7 +74,7 @@ var _ = Describe("lg skill install", Label("skill"), func() {
 		env := harness.New(lgPath)
 		session := env.Lg("skill", "install")
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
-		Expect(string(session.Err.Contents())).To(Equal("lg: warning: never synced; run `lg sync`\n"))
+		Expect(string(session.Err.Contents())).To(Equal("lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"))
 	})
 
 	DescribeTable("installs, printing no error, whatever state the store is in",
@@ -153,12 +153,15 @@ var _ = Describe("SKILL.md", Ordered, ContinueOnFailure, Label("skill"), func() 
 
 		Expect(printed.String()).To(And(
 			ContainSubstring("2026-08-20 run 1\n"),
-			ContainSubstring("flaky\t\tfailure success success\n"+
-				"flaky\tFail on first attempt only\tfailure success success\n"+
-				"timeout\t\tcancelled success success\n"+
-				"timeout\tTime out on first attempt only\tcancelled success success\n"),
+			ContainSubstring("flaky\t\t1 2 3\tfailure success success\n"+
+				"flaky\tFail on first attempt only\t1 2 3\tfailure success success\n"+
+				"timeout\t\t1 2 3\tcancelled success success\n"+
+				"timeout\tTime out on first attempt only\t1 2 3\tcancelled success success\n"),
+			ContainSubstring(`{"host":"github.com","repo":"rosenhouse/Lg",`),
 			ContainSubstring("pass-artifact\tinner.tar.gz.d/tgz/nested.log\n"),
 			ContainSubstring("37129390741\t1\tflaky\n"),
+			ContainSubstring("37129390741\t1\ttimeout\n"),
+			ContainSubstring(`run 37129390741 (sha 1a51097): "flaky": 1:failure 2:success 3:success; failing steps: "Fail on first attempt only"`+"\n"),
 			ContainSubstring("/extracted/.pytest_cache/v/cache/lastfailed\n"),
 			MatchRegexp(`(?m)^[^\t\n]+\t[^\t\n]+/log\.txt$`),
 			MatchRegexp(`on main: "flaky": [^\n]* run 10 `),

@@ -20,7 +20,6 @@ func RunDaemonCycle(ctx context.Context, deps Deps, serving func() int64) (daemo
 
 type LineReader = lineReader
 
-// NewLineReader gives a LineReader that opens files with open.
 func NewLineReader(open func(path string) (io.ReadSeekCloser, error)) *LineReader {
 	return newLineReader(open)
 }
@@ -31,7 +30,6 @@ func (l *LineReader) Close() { l.close() }
 
 type DirCache = dirCache
 
-// NewDirCache gives a DirCache that lists dirs with readDir.
 func NewDirCache(readDir func(dir string) ([]fs.DirEntry, error)) *DirCache {
 	return newDirCache(readDir)
 }
@@ -55,8 +53,25 @@ var PrintFlipJSON = printFlipJSON
 
 var PrintIntermittentJSON = printIntermittentJSON
 
-// Parse parses args as Main does, without running the command.
-func Parse(args []string) error {
-	_, err := newParser(io.Discard, io.Discard).Parse(args)
+// Parse parses args as Main does, without running the command. --help
+// parses as success.
+func Parse(args []string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if r != kongExit(0) {
+				panic(r)
+			}
+			err = nil
+		}
+	}()
+	_, err = newParser(io.Discard, io.Discard).Parse(args)
 	return err
 }
+
+var PrintFlip = printFlip
+
+type FlipJSON = flipJSON
+
+type IntermittentJSON = intermittentJSON
+
+var PrintIntermittent = printIntermittent

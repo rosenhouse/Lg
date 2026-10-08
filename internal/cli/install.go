@@ -14,6 +14,14 @@ type daemonInstallCmd struct {
 	Name string `hidden:"" default:"lg" help:"Name the unit and label after this."`
 }
 
+func (daemonInstallCmd) Help() string {
+	return "Writes ${XDG_CONFIG_HOME:-~/.config}/systemd/user/lg.service on Linux or ~/Library/LaunchAgents/com.github.rosenhouse.lg.plist on macOS. " +
+		"It bakes in lg's path, gh's dir, and whichever of LG_HOME, LG_CONFIG, LG_GH, the XDG dirs, GH_CONFIG_DIR, SSL_CERT_FILE and the proxy variables are set, " +
+		"so run it again after changing any of them; " +
+		"reinstalling rewrites the unit and restarts it. " +
+		"Logs go to the journal (journalctl --user -u lg) on Linux and to the store's state/daemon.log on macOS."
+}
+
 func (c daemonInstallCmd) Run(deps *Deps) error {
 	exe, file, err := deps.Executable()
 	if err != nil {

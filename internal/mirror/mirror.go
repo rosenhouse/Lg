@@ -179,7 +179,7 @@ func (m *Mirror) saveWatch(w *watch, runs []listedRun) error {
 
 // listedRun is a listed run with its dir, the attempts that Plan gives for
 // it, this cycle's listing of its artifacts, which is nil when
-// ListArtifacts failed, and whether an attempt of it answered 404.
+// ListArtifacts failed, and whether an attempt or its jobs answered 404.
 type listedRun struct {
 	github.Run
 	dir       string
@@ -283,8 +283,8 @@ func (m *Mirror) getRepo(ctx context.Context, gh github.Client) (github.Repo, er
 	return repo, err
 }
 
-// runScoped reports whether err leaves other runs worth trying: GitHub
-// failed this run, not lg's store, credentials or rate limit. A joined
+// runScoped reports whether err leaves other runs worth trying, unlike an
+// error of the store as a whole, the credentials or the rate limit. A joined
 // error must be run-scoped in every part.
 func runScoped(err error) bool {
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {

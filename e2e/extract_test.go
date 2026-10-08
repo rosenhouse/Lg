@@ -401,7 +401,7 @@ var _ = Describe("lg extract while a cycle holds the write lock", Label("extract
 	})
 })
 
-// zerosZip gives a zip of one member of size zero bytes.
+// zerosZip gives a zip whose one member, name, holds size zero bytes.
 func zerosZip(name string, size int) []byte {
 	GinkgoHelper()
 	var buf bytes.Buffer

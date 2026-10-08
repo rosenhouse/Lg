@@ -24,8 +24,15 @@ import (
 const cycleWait = 15 * time.Minute
 
 type syncCmd struct {
-	Wait    bool           `help:"With a daemon running, wait for a cycle that starts after this request, and exit as that cycle did."`
-	Timeout *time.Duration `help:"How long to wait for another lg writing the store (default ${write_lock_wait}), or with --wait for the daemon's cycle (default ${cycle_wait})."`
+	Wait    bool           `help:"With a daemon running, wait for the cycle this request starts, and exit with that cycle's exit code."`
+	Timeout *time.Duration `placeholder:"DURATION" help:"How long to wait for another lg writing the store (default ${write_lock_wait}), or with --wait for the daemon's cycle (default ${cycle_wait})."`
+}
+
+func (syncCmd) Help() string {
+	return "Without a daemon, lg sync runs one cycle and exits with that cycle's exit code. --timeout does not limit the cycle. " +
+		"With a daemon running, it asks the daemon for a cycle and exits at once, or, with --wait, when that cycle ends. " +
+		fmt.Sprintf("The first sync fetches the runs created within backfill, %s unless config.yaml sets it. ", config.Defaults().Backfill) +
+		"It exits 1 while units stay pending; lg status lists them."
 }
 
 func (c syncCmd) Run(deps *Deps) error {
@@ -154,7 +161,7 @@ func pending(units []mirror.UnitError) []status.Pending {
 // state/status.json. Callers hold state/write.lock.
 func writeStatus(fsys store.FS, roots config.Roots, cfg config.Config, c status.Cycle) error {
 	path := filepath.Join(roots.State, "status.json")
-	// Main already warned about an unparsable status.json; Next starts over without it.
+	// Next starts over when status.json is unparsable.
 	prev, _ := status.Read(path)
 	c.Repo = repoKey(cfg)
 	c.SyncInterval, c.Retention, c.DiskCap = time.Duration(cfg.SyncInterval), time.Duration(cfg.Retention), int64(cfg.DiskCap)

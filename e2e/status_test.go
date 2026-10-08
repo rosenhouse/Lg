@@ -18,7 +18,7 @@ import (
 )
 
 var _ = Describe("lg sync", Label("status"), func() {
-	It("writes state/status.json with lg_format, cycle, last_sync_started_at, last_sync_finished_at, last_sync_ok_at, next_sync_at, sync_interval_seconds, blocked null, daemon_pid, daemon_version, and per repo default_branch, newest_completed_run_created_at, lag_seconds, runs, attempts, bytes_data, pending_units, retention_days, disk_cap_bytes and horizon", func() {
+	It("writes state/status.json describing the cycle and, per repo, the store's contents and limits", func() {
 		env := harness.New(lgPath)
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())
@@ -172,12 +172,12 @@ blocked: rate_limit since 2026-10-03T17:55:00Z, retry_at 2026-10-03T18:01:00Z: 4
 daemon: running
 github.com/rosenhouse/lg:
   default branch: main
-  newest completed run: 2026-10-03T14:22:54Z, lag: 3h37m6s
+  newest completed run created: 2026-10-03T14:22:54Z, lag: 3h37m6s
   runs: 3, attempts: 4, bytes: 123456
   pending units: 1
     run 37129390741 attempt 2: 502 Bad Gateway
   horizon: 2026-09-01T00:00:00Z
-  retention: 90 days, disk_cap: 50000000000 bytes
+  retention: 90 days, disk_cap: 50GB
 `))
 
 		jsonOut := env.Lg("status", "--json")

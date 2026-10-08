@@ -49,7 +49,7 @@ var _ = Describe("lg sync against run-37129390741/after-attempt-1", Label("sync"
 		Expect(attempt1).To(BeADirectory())
 	})
 
-	It("leaves tmp/ empty", func() {
+	It("leaves nothing in tmp/ but an empty trash/", func() {
 		Expect(env.Tmp()).To(matchers.BeSwept())
 	})
 

@@ -16,6 +16,7 @@ var _ = Describe("Slug", Label("sync"), func() {
 		},
 		Entry(nil, "build (ubuntu-latest, 1.22)", "build-ubuntu-latest-1.22"),
 		Entry(nil, "feat/retry upload", "feat-retry-upload"),
+		Entry(nil, "feat/retry_upload", "feat-retry-upload"),
 		Entry(nil, "Release/3.x", "Release-3.x"),
 		Entry(nil, "", "none"),
 		Entry(nil, "--a__b..", "a-b"),

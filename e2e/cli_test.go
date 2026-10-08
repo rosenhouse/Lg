@@ -1,6 +1,8 @@
 package e2e_test
 
 import (
+	"debug/buildinfo"
+	"os/exec"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,6 +55,23 @@ var _ = Describe("lg version", Label("cli"), func() {
 
 		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
 		Expect(string(session.Out.Contents())).To(Equal("test\n"))
+	})
+
+	It("prints the module version that go build stamps without -ldflags", func() {
+		path := filepath.Join(GinkgoT().TempDir(), "lg")
+		out, err := exec.Command("go", "build", "-o", path, "github.com/rosenhouse/lg/cmd/lg").CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(out))
+		info, err := buildinfo.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		if info.Main.Version == "(devel)" {
+			Skip("go build stamped no VCS info, as without git or with -buildvcs=false")
+		}
+		Expect(info.Main.Version).To(MatchRegexp(`^v\d+\.\d+\.\d+`))
+
+		session := harness.New(path).Lg("version")
+
+		Eventually(session, harness.ExitTimeout).Should(gexec.Exit(0))
+		Expect(string(session.Out.Contents())).To(Equal(info.Main.Version + "\n"))
 	})
 })
 

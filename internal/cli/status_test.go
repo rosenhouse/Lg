@@ -128,7 +128,7 @@ var _ = Describe("lg status before any sync", Label("status"), func() {
 })
 
 var _ = Describe("lg status after a good sync", Label("status"), func() {
-	It("prints no blocked state, next sync, horizon or daemon", func() {
+	It("prints every field of a status.json with nothing blocked, scheduled or running", func() {
 		s := harness.NewCLI()
 		s.WriteStatus(goodStatus)
 
@@ -140,11 +140,11 @@ blocked: no
 daemon: not running
 github.com/rosenhouse/lg:
   default branch: main
-  newest completed run: none, lag: none
+  newest completed run created: none, lag: none
   runs: 0, attempts: 0, bytes: 0
   pending units: 0
   horizon: none
-  retention: 30 days, disk_cap: 1000000 bytes
+  retention: 30 days, disk_cap: 1MB
 `))
 	})
 })
@@ -215,6 +215,36 @@ var _ = DescribeTable("cli.Main on a store that never synced", Label("status"),
 	Entry("tells to run lg sync", "paths", "lg: warning: never synced; run `lg sync`\n"),
 	Entry("does not tell lg sync to run itself", "sync", "lg: warning: never synced\n"),
 )
+
+var _ = DescribeTable("cli.Main before lg init", Label("status"),
+	func(args []string, warning string) {
+		s := harness.NewCLI()
+		Expect(os.Remove(s.Config)).To(Succeed())
+
+		s.Main(args...)
+		Expect(s.Stderr.String()).To(HavePrefix(warning))
+	},
+	Entry("tells to run lg init", []string{"version"}, "lg: warning: never synced; run `lg init --repo OWNER/NAME`\n"),
+)
+
+var _ = Describe("lg init", Label("status"), func() {
+	It("names the config it wrote and tells to run lg sync next, without a warning", func() {
+		s := harness.NewCLI()
+		Expect(os.Remove(s.Config)).To(Succeed())
+
+		Expect(s.Main("init", "--repo", "o/r")).To(Equal(0))
+		Expect(s.Stdout.String()).To(Equal("wrote " + s.Config + "; run `lg sync` next\n"))
+		Expect(s.Stderr.String()).To(BeEmpty())
+	})
+
+	It("prints only its error when it fails", func() {
+		s := harness.NewCLI()
+
+		Expect(s.Main("init", "--repo", "o/r")).To(Equal(2))
+		Expect(s.Stdout.String()).To(BeEmpty())
+		Expect(s.Stderr.String()).To(Equal("lg: " + s.Config + " already exists\n"))
+	})
+})
 
 var _ = Describe("lg sync with a pending unit", Label("status"), func() {
 	It("records the unit with its error in status.json, and the sync as ok", func() {

@@ -110,7 +110,7 @@ func NewTransport(t Timeouts) http.RoundTripper {
 	return &idleTransport{base: base, timeouts: t}
 }
 
-// proxyConnectError is a proxy's refusal to tunnel to the API host.
+// proxyConnectError is a proxy's refusal to tunnel to a host.
 type proxyConnectError struct{ proxy, target, status string }
 
 func (e *proxyConnectError) Error() string {
@@ -164,7 +164,7 @@ func (b *idleBody) Close() error {
 	return b.ReadCloser.Close()
 }
 
-// A failed download says which hop failed: the API, or the blob storage it redirects to.
+// A failed request says which hop failed: the API, or the blob storage it redirects to.
 var (
 	ErrNotFound    = errors.New("not found")
 	ErrBlobMissing = errors.New("blob missing")
@@ -301,12 +301,10 @@ func (q RunQuery) Narrowable() bool {
 // ListingCap is the most results GitHub serves for a filtered run listing.
 const ListingCap = 1000
 
-// RunListing is a run listing: its runs newest first, GitHub's total_count,
-// and whether GitHub serves fewer runs than Total. Total reaches ListingCap
-// on a capped listing and the pages read were cut short: by ListRuns at the
-// first page when the query is Narrowable, or by GitHub at ListingCap runs.
-// A listing whose last page has no Link next is complete whatever its
-// total_count says.
+// RunListing is a run listing: its runs newest first and GitHub's total_count.
+// Capped says GitHub serves fewer runs than Total: Total reaches ListingCap,
+// and ListRuns stopped at the first page of a Narrowable query or GitHub
+// stopped at ListingCap runs.
 type RunListing struct {
 	Runs   []Run
 	Total  int

@@ -18,12 +18,17 @@ type pathsCmd struct {
 }
 
 func (pathsCmd) Help() string {
-	return "A unit must match every flag given, and any value of a flag given more than once. " +
+	return "Prints absolute paths, oldest first. " +
+		"A unit must match every flag given, and any value of a flag given more than once. " +
 		"--job also selects the attempts holding a matching job, and the runs, artifacts and extracted files of runs holding one. " +
-		"--conclusion is of the job, the attempt, or else the run's latest attempt. --since and --until bound each unit's time."
+		"--since, --until and --conclusion compare with the run's creation and latest attempt for run units, " +
+		"the attempt's start and conclusion for attempt units, the attempt's start and the job's conclusion for job and log units, " +
+		"and the artifact's creation and the latest attempt's conclusion for artifact and extracted units. " +
+		"--sha narrows to one commit's runs; lg paths | grep /<run_id>_ selects one run. " +
+		"Artifacts of one name repeat across runs and attempts. " +
+		"No output may mean the mirror is behind; check lg status."
 }
 
-// Validate refuses more than one --unit.
 func (p pathsCmd) Validate() error {
 	if len(p.Unit) > 1 {
 		return errors.New("--unit must not be given more than once")

@@ -54,7 +54,7 @@ var _ = Describe("lg sync when log 111221289888 returns 500", Label("store"), fu
 		return wait()
 	}
 
-	It("exits 1, publishes no attempt-1, and BeAppendOnlyFrom holds", func() {
+	It("exits 1, publishes no attempt-1, and changes no earlier file under data/", func() {
 		Expect(store.Init(env.Store())).To(Succeed())
 		earlier := filepath.Join(env.Data(), "github.com/rosenhouse/Lg/runs/2026-10-02/1_x_main/attempt-1/log.txt")
 		Expect(os.MkdirAll(filepath.Dir(earlier), 0o755)).To(Succeed())

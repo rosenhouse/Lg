@@ -1,5 +1,5 @@
 // Package scenario derives runs from the recordings, as files that
-// fakegithub serves. Every function returns a new Run and changes none it is given.
+// fakegithub serves. No function changes a Run it is given.
 package scenario
 
 import (
@@ -287,8 +287,8 @@ func WithDisplayTitle(r Run, title string) Run {
 // forkID is the repository id of every fork.
 const forkID = 1
 
-// FromFork gives the run, every attempt and the artifacts' workflow_run the
-// head repository fullName, which is not the repository.
+// FromFork gives the run and every attempt the head repository fullName,
+// and the artifacts' workflow_run its id, which is not the repository's.
 func FromFork(r Run, fullName string) Run {
 	out := r.editRuns(func(run map[string]any) {
 		run["head_repository"] = map[string]any{"id": forkID, "full_name": fullName}

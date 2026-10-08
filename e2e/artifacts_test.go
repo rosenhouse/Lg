@@ -18,7 +18,7 @@ import (
 )
 
 var _ = Describe("lg sync at after-attempt-1", Label("artifacts"), func() {
-	It("publishes the 4 artifacts as artifacts/<id>_<slug>/ with artifact.json, an artifact.zip byte-identical to the recording, and a fetch.json recording run_created_at, run_attempt_at_fetch, run_status_at_fetch, and the run's workflow_id, workflow name, event, PR numbers and display_title", func() {
+	It("publishes the 4 artifacts as artifacts/<id>_<slug>/ with artifact.json, an artifact.zip byte-identical to the recording, and a fetch.json describing the run and the download", func() {
 		env := harness.New(lgPath)
 		fake := fakegithub.Start(fixtureRun, "after-attempt-1")
 		env.WriteConfig(fake.URL())

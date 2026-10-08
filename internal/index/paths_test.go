@@ -201,14 +201,14 @@ var _ = Describe("Index.Paths", Label("paths"), Ordered, ContinueOnFailure, func
 		}),
 		Entry("--job is case-sensitive", index.Filter{Jobs: []string{"Matrix*"}}, func() []string { return nil }),
 		Entry("--pr matches any of the run's pull requests", index.Filter{PRs: []int{41, 42}}, func() []string { return logsOf(env, a.PR42.ID) }),
-		Entry("--workflow", index.Filter{Workflows: []string{"ci"}}, func() []string { return nil }),
+		Entry("--workflow matches nothing when no workflow had the name", index.Filter{Workflows: []string{"ci"}}, func() []string { return nil }),
 		Entry("--workflow matches the runs of a workflow that has the name", index.Filter{Workflows: []string{"renamed"}, SHAs: []string{"3"}}, func() []string {
 			return logsOf(env, a.Release3.ID)
 		}),
 		Entry("--workflow matches the runs of a workflow that had the name", index.Filter{Workflows: []string{"lg-fixture"}, SHAs: []string{"a"}}, func() []string {
 			return logsOf(env, renamed)
 		}),
-		Entry("--event", index.Filter{Events: []string{"pull_request"}}, func() []string { return logsOf(env, a.Fork.ID, a.PR42.ID) }),
+		Entry("--event matches the run's event", index.Filter{Events: []string{"pull_request"}}, func() []string { return logsOf(env, a.Fork.ID, a.PR42.ID) }),
 		Entry("--conclusion of a job", index.Filter{Conclusions: []string{"failure"}, SHAs: []string{"8"}}, func() []string {
 			return under(env, "attempt-1/jobs/*_flaky/log.txt", a.Rerun.ID)
 		}),

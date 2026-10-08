@@ -18,6 +18,10 @@ type indexCmd struct {
 
 type indexRebuildCmd struct{}
 
+func (indexRebuildCmd) Help() string {
+	return "lg keeps lg.db up to date on its own. Rebuild only if lg.db is damaged."
+}
+
 func (indexRebuildCmd) Run(deps *Deps) error {
 	roots, err := config.Locations(deps.Env)
 	if err != nil {

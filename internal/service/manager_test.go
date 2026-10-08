@@ -141,13 +141,14 @@ var _ = Describe("Manager", Label("install"), func() {
 			Expect(manager("linux").Install(context.Background(), unit)).To(Equal(filepath.Join(systemd, "lg.service")))
 		})
 
-		DescribeTable("refuses, before writing the unit, when no systemd user manager is reachable",
+		DescribeTable("refuses, before writing the unit, when no systemd user manager is reachable, and names `lg daemon run` instead",
 			func(setup func()) {
 				setup()
 
 				_, err := manager("linux").Install(context.Background(), unit)
 
 				Expect(err).To(MatchError(ContainSubstring("no systemd user manager is reachable")))
+				Expect(err).To(MatchError(HaveSuffix("; run `lg daemon run` under your own supervisor instead")))
 				Expect(filepath.Join(systemd, "lg.service")).NotTo(BeAnExistingFile())
 				Expect(runner.Calls()).To(Equal([]string{unitPath}))
 			},

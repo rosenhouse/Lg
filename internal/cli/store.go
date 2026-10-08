@@ -13,7 +13,6 @@ import (
 	"github.com/rosenhouse/lg/internal/store"
 )
 
-// loadConfig resolves the store's roots and loads config.yaml from env.
 func loadConfig(env map[string]string) (config.Roots, config.Config, error) {
 	roots, err := config.Locations(env)
 	if err != nil {
@@ -33,9 +32,9 @@ func noStore(roots config.Roots) error {
 	return config.Error(fmt.Sprintf("%s holds no lg store; check LG_HOME", roots.Store))
 }
 
-// checkHasStore refuses a root without a store, since a command that only
-// changes one was likely given a mistyped LG_HOME, unless a writer holding
-// state/write.lock is making it.
+// checkHasStore refuses a root with neither FORMAT nor state/write.lock, since a
+// command that only changes a store was likely given a mistyped LG_HOME. A
+// write.lock may mean a writer is making the store.
 func checkHasStore(roots config.Roots) error {
 	if !exists(filepath.Join(roots.Store, "FORMAT")) && !exists(filepath.Join(roots.State, "write.lock")) {
 		return noStore(roots)

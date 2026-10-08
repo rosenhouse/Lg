@@ -20,12 +20,16 @@ import (
 )
 
 type daemonCmd struct {
-	Run       daemonRunCmd       `cmd:"" help:"Sync every sync_interval, and at each lg sync, until SIGTERM."`
-	Install   daemonInstallCmd   `cmd:"" help:"Run lg daemon run as a per-user systemd unit or launchd agent, restarting it if installed."`
+	Run       daemonRunCmd       `cmd:"" help:"Sync every sync_interval, and whenever lg sync asks, until SIGINT, SIGTERM or SIGHUP."`
+	Install   daemonInstallCmd   `cmd:"" help:"Install lg daemon run as a systemd user unit or launchd agent, and start it."`
 	Uninstall daemonUninstallCmd `cmd:"" help:"Stop and remove the service that lg daemon install set up."`
 }
 
 type daemonRunCmd struct{}
+
+func (daemonRunCmd) Help() string {
+	return "It logs one line per cycle to stderr. lg daemon install runs it as a service."
+}
 
 func (daemonRunCmd) Run(deps *Deps) error {
 	// Handling signals before locking lets a signal at any point end the daemon cleanly.
@@ -48,7 +52,7 @@ func (daemonRunCmd) Run(deps *Deps) error {
 		return err
 	}
 	defer func() { _ = instance.Release() }()
-	// A cycle inits and sweeps too, so a failure here only waits for it.
+	// A cycle inits and sweeps too, so a failure here is only logged.
 	if err := initOnStart(ctx, t.roots, deps); err != nil && ctx.Err() == nil {
 		_, _ = fmt.Fprintf(deps.Stderr, "lg: %s\n", err)
 	}

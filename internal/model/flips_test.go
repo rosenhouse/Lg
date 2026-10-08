@@ -42,7 +42,6 @@ var _ = Describe("RerunFlips", Label("flakes"), func() {
 			job(1, 2, 21, "test", "success", "go test", "success"),
 			// Run 2 never flips, though run 1 failed and run 2 passed.
 			job(2, 1, 12, "test", "success", "go test", "success"),
-			// Carried forward from attempt 1, and not applicable.
 			kind(job(1, 2, 22, "lint", "failure", "golangci-lint", "failure"), model.CarriedForward),
 			job(1, 1, 13, "lint", "failure", "golangci-lint", "failure"),
 			job(1, 3, 33, "lint", "success", "golangci-lint", "success"),

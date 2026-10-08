@@ -23,11 +23,14 @@ import (
 )
 
 type whereCmd struct {
-	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a line rg or grep printed. A relative path is resolved against the working directory, data/, or a repo dir. Without any, lg reads lines from stdin."`
+	Hits []string `arg:"" optional:"" name:"path|hit" help:"A path, or a hit. A relative path resolves against the working directory, data/ or a repo dir. With none, lg where reads paths or hits from stdin, one per line."`
 }
 
 func (whereCmd) Help() string {
-	return "Prints one JSON object per input. It reads files only, never lg.db."
+	return "Prints one JSON object per input: run, attempt, job or artifact, workflow, branch, SHA, PRs, conclusions and the GitHub URL, plus line and text for a hit. " +
+		"A hit is a line that rg -Hn or grep -Hn prints, path:line:text. " +
+		"For example: lg paths -0 | xargs -0 -r rg --no-config -Hn 'foo bar' | lg where | jq -c 'del(.path)'. " +
+		"It reads the mirrored files only."
 }
 
 func (w whereCmd) Run(deps *Deps) error {
@@ -288,7 +291,6 @@ func (f *placeFinder) holding(path string, n int, text string) (string, bool) {
 	return "", false
 }
 
-// anyHolding tells whether any line of path holds text.
 func (f *placeFinder) anyHolding(path, text string) bool {
 	for n := 1; ; n++ {
 		line, ok := f.lines.line(path, n)
@@ -391,7 +393,6 @@ func (f *placeFinder) close() {
 	f.lines.close()
 }
 
-// describeRun describes loc, in the run at facts.dir, from facts.
 func describeRun(data string, loc layout.Location, facts runFacts) (place, error) {
 	runDir := facts.dir
 	rows := facts.rows
@@ -531,7 +532,6 @@ type lineStarts struct {
 	starts []int64
 }
 
-// line gives line n of the file at path.
 func (l *lineReader) line(path string, n int) (string, bool) {
 	if l.file == nil || l.files[len(l.files)-1].path != path {
 		if !l.switchTo(path) {

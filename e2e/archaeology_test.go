@@ -119,7 +119,7 @@ var _ = Describe("lg paths over the synced Archaeology runs", Ordered, Label("pa
 	Describe("W1: foo bar on main or release-3 in the last 30 days", func() {
 		w1 := "lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r grep -l 'foo bar'"
 
-		It("`lg paths --branch main --branch release-3 --since 30d -0 | xargs -0 -r grep -l 'foo bar'` exits 0 listing the 2026-09-10 main log, the 2026-09-20 release-3 log and the file under the release-3 artifact's extracted/ tree", func() {
+		It("exits 0 listing the 2026-09-10 main log, the 2026-09-20 release-3 log and the file under the release-3 artifact's extracted/ tree", func() {
 			grep := env.Sh(w1)
 			Eventually(grep, harness.ExitTimeout).Should(gexec.Exit(0))
 			Expect(outputLines(grep)).To(ConsistOf(passLog(env, a.MainSeptember.ID), passLog(env, a.Release3.ID), e.file))

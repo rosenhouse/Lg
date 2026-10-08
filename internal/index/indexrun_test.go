@@ -74,7 +74,7 @@ var _ = Describe("IndexRun", Label("index"), func() {
 		dir := filepath.Join(GinkgoT().TempDir(), "5_ci_main")
 		writeAttempt(dir, 1, "first", 1)
 		Expect(os.WriteFile(filepath.Join(layout.AttemptDir(dir, 1), "fetch.json"), []byte(attemptFetch(1, `"commit_pr_numbers":[4,1],`)), 0o644)).To(Succeed())
-		// Attempt 2's fetch.json, written before lg looked PRs up, has no commit_pr_numbers.
+		// Attempt 2's fetch.json, as an older lg wrote it, has no commit_pr_numbers.
 		writeAttempt(dir, 2, "second", 2)
 		writeArtifact(dir, 1, attemptStart(1).Format(time.RFC3339), `"pr_numbers":[5,2]`, nil)
 

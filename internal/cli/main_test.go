@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rosenhouse/lg/internal/cli"
 	"github.com/rosenhouse/lg/internal/clock"
+	"github.com/rosenhouse/lg/internal/config"
 	"github.com/rosenhouse/lg/internal/failure"
 )
 
@@ -67,6 +69,19 @@ var _ = Describe("Main", Label("cli"), func() {
 		Expect(stdout.String()).To(HavePrefix("Usage: lg <command>"))
 	})
 
+	It("says in --help how to start, how often the daemon syncs, where the token comes from, which env vars move lg's files, and what each exit code means", func() {
+		Expect(run(map[string]string{}, "--help")).To(Equal(0))
+		help := strings.Join(strings.Fields(stdout.String()), " ")
+		Expect(help).To(And(
+			ContainSubstring("Start with lg init --repo OWNER/NAME"),
+			ContainSubstring("lg daemon install to sync every sync_interval, "+config.Defaults().SyncInterval.String()+" by default."),
+			ContainSubstring("gh auth token"),
+			ContainSubstring("LG_HOME moves the store"),
+			ContainSubstring("LG_CONFIG moves the config"),
+			ContainSubstring("Exit codes: 0 ok; 1 error or units still pending; 2 usage or config; 3 blocked (lg status says why); 4 timeout."),
+		))
+	})
+
 	It("exits 1 without usage when help cannot be written", func() {
 		code := cli.Main([]string{"--help"}, cli.Deps{Env: map[string]string{}, Stdout: failingWriter{errDiskFull}, Stderr: stderr, Clock: clock.Real{}})
 		Expect(code).To(Equal(1))
@@ -81,7 +96,7 @@ var _ = Describe("Main", Label("cli"), func() {
 
 	It("exits 2 when no command is given", func() {
 		Expect(run(map[string]string{})).To(Equal(2))
-		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"init\", \"root\", \"version\", \"status\", \"sync\", ...\nUsage: lg <command>"))
+		Expect(stderr.String()).To(HavePrefix("lg: expected one of \"init\", \"sync\", \"daemon\", \"status\", \"paths\", ...\nUsage: lg <command>"))
 	})
 })
 

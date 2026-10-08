@@ -80,7 +80,7 @@ func (s *Server) listedRuns() ([]listedRun, error) {
 }
 
 // servePage serves the page of elements that per_page, page and the page
-// cap select, with a Link to the next page. It wraps them in an object with
+// cap select, with Links to the other pages. It wraps them in an object with
 // total_count, or sends a bare array when field is "".
 func (s *Server) servePage(w http.ResponseWriter, r *http.Request, field string, total int, elements []json.RawMessage) {
 	size := min(intParam(r, "per_page", 30), 100)

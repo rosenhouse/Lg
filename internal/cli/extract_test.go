@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -73,7 +74,7 @@ var _ = DescribeTable("lg extract exits 2", Label("extract"),
 )
 
 var _ = Describe("lg extract --help", Label("extract"), func() {
-	It("names the member cap", func() {
+	It("names the member cap, for the zip and for nested archives", func() {
 		var stdout bytes.Buffer
 		code := cli.Main([]string{"extract", "--help"}, cli.Deps{
 			Env:    map[string]string{"LG_HOME": GinkgoT().TempDir()},
@@ -82,7 +83,8 @@ var _ = Describe("lg extract --help", Label("extract"), func() {
 			Clock:  clock.Real{},
 		})
 		Expect(code).To(Equal(0))
-		Expect(stdout.String()).To(ContainSubstring("more than 100000 members"))
+		Expect(strings.Join(strings.Fields(stdout.String()), " ")).To(ContainSubstring(
+			"An artifact.zip of more than 100000 members is not extracted, and nested archives past that many members stay unexpanded."))
 	})
 })
 
@@ -136,5 +138,35 @@ var _ = Describe("lg extract PATH", Label("extract"), func() {
 
 		Expect(c.Main("extract", filepath.Join(real, pass), filepath.Join(link, expiring))).To(Equal(0), c.Stderr.String())
 		Expect(c.Stdout.String()).To(Equal(filepath.Join(c.Home, pass, "extracted") + "\n" + filepath.Join(c.Home, expiring, "extracted") + "\n"))
+	})
+})
+
+var _ = Describe("lg extract with nothing to extract", Label("extract"), func() {
+	It("says so on stderr when no artifact.zip matches", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+
+		Expect(c.Main("extract", "--branch", "no-such-branch")).To(Equal(0))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: no artifact.zip matches\n"))
+	})
+
+	It("says so on stderr when every artifact it selects is extracted already", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+		Expect(c.Main("extract", "--all")).To(Equal(0))
+		Expect(c.Stderr.String()).To(BeEmpty())
+
+		Expect(c.Main("extract", "--all")).To(Equal(0))
+		Expect(c.Stdout.String()).To(BeEmpty())
+		Expect(c.Stderr.String()).To(Equal("lg: nothing to extract: every artifact selected is extracted already, or its zip is a tombstone\n"))
+	})
+
+	It("says only the error when it fails", func() {
+		c := harness.NewCLI()
+		Expect(c.Main("sync")).To(Equal(0))
+
+		Expect(c.Main("extract", "no-such-path")).To(Equal(1))
+		Expect(c.Stderr.String()).To(MatchRegexp(`^lg: [^\n]*no-such-path: no such file or directory\n$`))
 	})
 })

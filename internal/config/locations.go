@@ -1,4 +1,4 @@
-// Package config locates and loads lg's store and config file.
+// Package config locates lg's store, config file and skill, and loads the config file.
 package config
 
 import (
@@ -77,7 +77,7 @@ func resolve(env map[string]string, what string, sources ...source) (string, err
 	return "", Error(fmt.Sprintf("cannot locate %s: set %s or %s", what, strings.Join(names[:last], ", "), names[last]))
 }
 
-// SkillFile resolves lg's Claude Code skill as CLAUDE_CONFIG_DIR > HOME/.claude.
+// SkillFile resolves lg's skill as CLAUDE_CONFIG_DIR/skills/lg/SKILL.md > HOME/.claude/skills/lg/SKILL.md.
 func SkillFile(env map[string]string) (string, error) {
 	return resolve(env, "SKILL.md",
 		source{name: "CLAUDE_CONFIG_DIR", elems: []string{"skills", "lg", "SKILL.md"}},

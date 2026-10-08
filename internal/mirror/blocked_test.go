@@ -23,7 +23,7 @@ func blockedAs(kind failure.Kind, retryAt time.Time) types.GomegaMatcher {
 	return BeBlocked(kind, HaveField("RetryAt", BeTemporally("==", retryAt)))
 }
 
-// failAttempts answers every request for a run's attempt 1 with f.
+// failAttempts answers every request for any run's attempt 1 with f.
 func failAttempts(f fakegithub.Fault) func(*harness.InProcessEnv) {
 	return func(env *harness.InProcessEnv) { env.Fake.Fail("api", "/attempts/1", f) }
 }

@@ -150,7 +150,7 @@ var _ = Describe("HTTP errors", Label("failures"), func() {
 		Entry("422", http.StatusUnprocessableEntity, hopTimeout),
 	)
 
-	It("leaves a failed write to w neither Transient nor a gap", func(ctx SpecContext) {
+	It("leaves a failed write to w neither Transient nor malformed", func(ctx SpecContext) {
 		err := hops(nil, answer(http.StatusOK, "log")).DownloadJobLog(ctx, 1, failingWriter{syscall.ENOSPC})
 		Expect(err).To(MatchError(syscall.ENOSPC))
 		Expect(err).NotTo(BeTransient())

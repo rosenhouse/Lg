@@ -15,15 +15,15 @@ import (
 
 // filters' repeatable flags take commas literally, as names and globs may hold them.
 type filters struct {
-	Branch     []string `sep:"none" help:"Only runs on this branch, and not from a fork."`
+	Branch     []string `sep:"none" help:"Only runs on this branch, as GitHub names it, not its slug in a path. Fork runs never match."`
 	SHA        []string `sep:"none" name:"sha" help:"Only runs whose head SHA starts with this."`
 	PR         []int    `sep:"none" name:"pr" help:"Only runs of this pull request, open or merged. It may miss fork runs and runs of pull requests closed without merging."`
 	Workflow   []string `sep:"none" help:"Only runs of the workflow that has, or had, this name."`
-	Job        []string `sep:"none" help:"Only jobs whose name matches this glob."`
-	Event      []string `sep:"none" help:"Only runs triggered by this event."`
-	Conclusion []string `sep:"none" help:"Only this conclusion."`
+	Job        []string `sep:"none" help:"Only jobs whose whole name matches this case-sensitive glob, such as 'build*'."`
+	Event      []string `sep:"none" help:"Only runs triggered by this event, such as push, pull_request or schedule."`
+	Conclusion []string `sep:"none" help:"Only this conclusion, such as failure, success, cancelled or skipped."`
 	Since      moment   `placeholder:"TIME" help:"Only since this time: 30d, 12h, 2026-09-01 (UTC) or RFC 3339."`
-	Until      moment   `placeholder:"TIME" help:"Only until this time, inclusive. A date means its 00:00 UTC."`
+	Until      moment   `placeholder:"TIME" help:"Only until this time, inclusive, in the forms --since takes. A date means its 00:00 UTC, so --until 2026-10-03 stops at the start of that day."`
 }
 
 // validate refuses an empty value or a malformed --job glob, which a filter
@@ -45,7 +45,6 @@ func (p filters) validate() error {
 	return nil
 }
 
-// empty reports whether no filter is given.
 func (p filters) empty() bool {
 	return len(p.Branch)+len(p.SHA)+len(p.PR)+len(p.Workflow)+len(p.Job)+len(p.Event)+len(p.Conclusion) == 0 && !p.Since.set && !p.Until.set
 }

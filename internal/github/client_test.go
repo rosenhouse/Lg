@@ -61,7 +61,7 @@ var _ = Describe("HTTP client", Label("sync"), func() {
 		client = github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", "lg-test-token", clock.Real{})
 	})
 
-	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every request", Label("transport"),
+	DescribeTable("sends Accept, X-GitHub-Api-Version, User-Agent lg/<version> and Authorization: Bearer <token> on every API request", Label("transport"),
 		func(call func(context.Context, *github.HTTP) error) {
 			var headers http.Header
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -14,6 +14,10 @@ type skillCmd struct {
 
 type skillInstallCmd struct{}
 
+func (skillInstallCmd) Help() string {
+	return "Writes ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/lg/SKILL.md, replacing any earlier copy."
+}
+
 func (skillInstallCmd) Run(deps *Deps) error {
 	path, err := config.SkillFile(deps.Env)
 	if err != nil {

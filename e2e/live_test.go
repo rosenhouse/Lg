@@ -247,7 +247,7 @@ var _ = Describe("live", Label("live"), Ordered, ContinueOnFailure, func() {
 		Expect(listed).NotTo(ContainElement(under(runDir(env, squashRun))))
 	})
 
-	It("handles the expires-in-1-day artifacts the way R1 recorded", func() {
+	It("handles the expires-in-1-day artifacts as the after-expiry recordings show", func() {
 		By("finding them delisted")
 		for _, runID := range []int64{fixtureRun, logsDeletedRun, thirdFixtureRun} {
 			dir := runDir(env, runID)
