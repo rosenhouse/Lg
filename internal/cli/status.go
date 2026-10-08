@@ -24,6 +24,7 @@ type statusCmd struct {
 
 func (statusCmd) Help() string {
 	return "The lag is the time from the newest completed run's creation to the last sync's finish, so it grows with each sync that finds no newer run. " +
+		"When disk_cap evicts runs, the horizon rises to the newest one's creation time, and lg never fetches a run created at or before the horizon again. " +
 		"Every lg command warns on stderr while syncs are blocked. " +
 		"It also warns while the last successful sync, or a pending unit, is older than twice sync_interval. " +
 		"That sync_interval is the one the last sync used, not the one config.yaml now sets."
