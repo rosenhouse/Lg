@@ -59,9 +59,13 @@ var _ = Describe("lg version", Label("cli"), func() {
 
 	It("prints the module version that go build stamps without -ldflags", func() {
 		path := filepath.Join(GinkgoT().TempDir(), "lg")
-		Expect(exec.Command("go", "build", "-o", path, "github.com/rosenhouse/lg/cmd/lg").Run()).To(Succeed())
+		out, err := exec.Command("go", "build", "-o", path, "github.com/rosenhouse/lg/cmd/lg").CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(out))
 		info, err := buildinfo.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
+		if info.Main.Version == "(devel)" {
+			Skip("go build stamped no VCS info, as without git or with -buildvcs=false")
+		}
 		Expect(info.Main.Version).To(MatchRegexp(`^v\d+\.\d+\.\d+`))
 
 		session := harness.New(path).Lg("version")

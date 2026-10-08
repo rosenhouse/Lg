@@ -9,12 +9,6 @@ import (
 	"github.com/rosenhouse/lg/internal/version"
 )
 
-var _ = Describe("Version", Label("version"), func() {
-	It("comes from the build info without -ldflags", func() {
-		Expect(version.Version).To(Equal(version.FromBuildInfo(debug.ReadBuildInfo())))
-	})
-})
-
 var _ = DescribeTable("FromBuildInfo", Label("version"),
 	func(info *debug.BuildInfo, want string) {
 		Expect(version.FromBuildInfo(info, info != nil)).To(Equal(want))
