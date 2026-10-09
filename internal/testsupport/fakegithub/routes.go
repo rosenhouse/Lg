@@ -2,8 +2,10 @@ package fakegithub
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"path"
@@ -30,7 +32,7 @@ func (s *Server) routes() http.Handler {
 			}
 		}
 	}
-	handle("", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, []byte(repoBody)) })
+	handle("", func(w http.ResponseWriter, r *http.Request) { s.writeJSON(w, r, []byte(repoBody)) })
 	handle("/actions/runs", s.serveRuns)
 	handle("/actions/runs/{id}", s.ofRun(func(w http.ResponseWriter, r *http.Request, run *run) {
 		s.serveFile(w, r, run, "run.json")
@@ -91,7 +93,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, run *run, fil
 	if writeReadError(w, err) {
 		return
 	}
-	writeJSON(w, body)
+	s.writeJSON(w, r, body)
 }
 
 // serveListing serves a page of the array field of a recorded listing.
@@ -128,7 +130,7 @@ func (s *Server) serveArtifact(w http.ResponseWriter, r *http.Request) {
 		for _, a := range listing.Artifacts {
 			var meta struct{ ID json.Number }
 			if json.Unmarshal(a, &meta) == nil && meta.ID.String() == r.PathValue("id") {
-				writeJSON(w, a)
+				s.writeJSON(w, r, a)
 				return
 			}
 		}
@@ -273,7 +275,19 @@ func writeReadError(w http.ResponseWriter, err error) bool {
 	return err != nil
 }
 
-func writeJSON(w http.ResponseWriter, body []byte) {
+// writeJSON sends body with its SHA-256 as its ETag, as GitHub does. To an
+// If-None-Match naming that ETag, it sends a 304 with no body or Link.
+func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, body []byte) {
+	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.Header().Del("Link")
+		s.mu.Lock()
+		s.uncountRequest(w.Header())
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(body)
 }

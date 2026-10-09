@@ -33,6 +33,7 @@ type Request struct {
 	Status int
 
 	Authorization bool
+	IfNoneMatch   string
 }
 
 // Server is an API host on 127.0.0.1 that redirects downloads to a blob host
@@ -48,6 +49,8 @@ type Server struct {
 	clock     clock.Clock
 	limit     int
 	remaining int
+	// counted is how many requests countRequest counted since SetRateLimit.
+	counted   int
 	token     string
 	requests  []Request
 	faults    []*fault
@@ -264,16 +267,28 @@ func (s *Server) SetClock(c clock.Clock) {
 func (s *Server) SetRateLimit(limit, remaining int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.limit, s.remaining = limit, remaining
+	s.limit, s.remaining, s.counted = limit, remaining, 0
 }
 
 // countRequest counts an API request against the rate limit and sets the
 // headers GitHub sends about it. Callers hold mu.
 func (s *Server) countRequest(header http.Header) {
-	s.remaining = max(s.remaining-1, 0)
+	s.counted++
+	s.setRateLimit(header)
+}
+
+// uncountRequest takes back countRequest's count, as GitHub does not count
+// a 304. Callers hold mu.
+func (s *Server) uncountRequest(header http.Header) {
+	s.counted--
+	s.setRateLimit(header)
+}
+
+func (s *Server) setRateLimit(header http.Header) {
+	remaining := max(s.remaining-s.counted, 0)
 	header.Set("X-RateLimit-Limit", strconv.Itoa(s.limit))
-	header.Set("X-RateLimit-Remaining", strconv.Itoa(s.remaining))
-	header.Set("X-RateLimit-Used", strconv.Itoa(s.limit-s.remaining))
+	header.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	header.Set("X-RateLimit-Used", strconv.Itoa(s.limit-remaining))
 	header.Set("X-RateLimit-Reset", strconv.FormatInt(s.clock.Now().Add(ResetAfter).Unix(), 10))
 	header.Set("X-RateLimit-Resource", "core")
 }
@@ -364,6 +379,7 @@ func (s *Server) record(host string, h http.Handler) http.Handler {
 		s.requests = append(s.requests, Request{
 			Host: host, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery,
 			Authorization: r.Header.Get("Authorization") != "",
+			IfNoneMatch:   r.Header.Get("If-None-Match"),
 		})
 		holds := s.holdsOf(r.URL.Path)
 		f := s.takeFault(host, r.URL.Path)

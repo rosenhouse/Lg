@@ -107,10 +107,10 @@ func (s *Server) servePage(w http.ResponseWriter, r *http.Request, field string,
 	}
 	array.WriteByte(']')
 	if field == "" {
-		writeJSON(w, array.Bytes())
+		s.writeJSON(w, r, array.Bytes())
 		return
 	}
-	writeJSON(w, fmt.Appendf(nil, `{"total_count":%d,%q:%s}`, total, field, array.Bytes()))
+	s.writeJSON(w, r, fmt.Appendf(nil, `{"total_count":%d,%q:%s}`, total, field, array.Bytes()))
 }
 
 func intParam(r *http.Request, name string, fallback int) int {
