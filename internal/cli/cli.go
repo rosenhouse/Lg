@@ -31,7 +31,7 @@ type Deps struct {
 	Stdin     io.Reader
 	Clock     clock.Clock
 	Runner    execx.Runner
-	NewGitHub func(api *url.URL, repo, token string, clk clock.Clock) github.Client
+	NewGitHub func(api *url.URL, repo, token string, cache *github.Cache, clk clock.Clock) github.Client
 	StoreFS   store.FS
 	GOOS      string
 	// Executable gives the path lg was run by, and the file it resolves to.

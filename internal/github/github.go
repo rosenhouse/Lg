@@ -231,6 +231,7 @@ type HTTP struct {
 	api       url.URL
 	repoURL   string
 	token     string
+	cache     *Cache
 
 	mu sync.Mutex
 	// rateLimit holds the last API response's header, received at rateLimitAt.
@@ -243,8 +244,8 @@ func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk 
 }
 
 // NewDefault is the Client lg sync uses, with DefaultTimeouts.
-func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
-	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk)
+func NewDefault(api *url.URL, repo, token string, cache *Cache, clk clock.Clock) Client {
+	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk).WithCache(cache)
 }
 
 // Repo is a repository as GET /repos/{owner}/{repo} describes it.
@@ -255,7 +256,7 @@ type Repo struct {
 
 func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	var repo Repo
-	if err := h.getJSON(ctx, h.repoURL, &repo); err != nil {
+	if err := getJSON(ctx, h.revalidate, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}
 	if !layout.IsRepo(repo.FullName) {
@@ -276,7 +277,7 @@ type RunQuery struct {
 // Values encodes the query as GitHub reads it, leaving out what is unset.
 func (q RunQuery) Values() url.Values {
 	v := url.Values{}
-	if !q.From.IsZero() || !q.To.IsZero() {
+	if q.created() {
 		v.Set("created", q.From.UTC().Format(time.RFC3339)+".."+q.To.UTC().Format(time.RFC3339))
 	}
 	if q.Status != "" {
@@ -295,8 +296,10 @@ func (q RunQuery) Values() url.Values {
 // created range when it has none, and by halving one whose bounds are
 // different seconds, since GitHub filters created at whole seconds.
 func (q RunQuery) Narrowable() bool {
-	return q.From.IsZero() && q.To.IsZero() || q.To.After(q.From)
+	return !q.created() || q.To.After(q.From)
 }
+
+func (q RunQuery) created() bool { return !q.From.IsZero() || !q.To.IsZero() }
 
 // ListingCap is the most results GitHub serves for a filtered run listing.
 const ListingCap = 1000
@@ -314,7 +317,9 @@ type RunListing struct {
 // ListRuns lists the runs q selects. PerPage defaults to 100. A listing
 // whose total_count reaches ListingCap stops after its first page when q is
 // Narrowable, since GitHub serves no more of it and the caller narrows q;
-// otherwise it pages through what GitHub serves.
+// otherwise it pages through what GitHub serves. It revalidates a listing
+// without a created range. lg's created ranges end at now, so their URLs do
+// not repeat.
 func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 	if q.PerPage == 0 {
 		q.PerPage = 100
@@ -323,7 +328,11 @@ func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 	if q.Narrowable() {
 		limit = ListingCap
 	}
-	l, err := h.list(ctx, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", limit)
+	get := h.revalidate
+	if q.created() {
+		get = h.get
+	}
+	l, err := h.list(ctx, get, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", limit)
 	if err != nil {
 		return RunListing{}, err
 	}
@@ -339,14 +348,14 @@ func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 
 func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
 	var run Run
-	err := h.getJSON(ctx, h.repoURL+fmt.Sprintf("/actions/runs/%d", runID), &run)
+	err := getJSON(ctx, h.get, h.repoURL+fmt.Sprintf("/actions/runs/%d", runID), &run)
 	return run, err
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
 	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt)}
 	var run Run
-	if err := h.getJSON(ctx, source.URL, &run.Raw); err != nil {
+	if err := getJSON(ctx, h.get, source.URL, &run.Raw); err != nil {
 		return Run{}, Source{}, err
 	}
 	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
@@ -367,7 +376,7 @@ func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, S
 
 func (h *HTTP) ListAttemptJobs(ctx context.Context, runID int64, attempt int) ([]Job, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d/jobs?per_page=100", runID, attempt)
-	return listByID(ctx, h, listURL, "jobs", "job", func(raw json.RawMessage) (Job, int64, error) {
+	return listByID(ctx, h, h.get, listURL, "jobs", "job", func(raw json.RawMessage) (Job, int64, error) {
 		job := Job{Raw: raw}
 		err := json.Unmarshal(raw, &job.Job)
 		return job, job.ID, err
@@ -392,7 +401,7 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
-	artifacts, source, err := listByID(ctx, h, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
+	artifacts, source, err := listByID(ctx, h, h.get, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
 		var artifact Artifact
 		err := json.Unmarshal(raw, &artifact)
 		return artifact, artifact.ID, err
@@ -410,8 +419,8 @@ func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Sour
 
 // listByID lists the elements of field, which decode reads with their ids.
 // It refuses a listing short of its total_count or one that repeats an id.
-func listByID[T any](ctx context.Context, h *HTTP, listURL, field, noun string, decode func(json.RawMessage) (T, int64, error)) ([]T, Source, error) {
-	l, err := h.list(ctx, listURL, field, 0)
+func listByID[T any](ctx context.Context, h *HTTP, get getter, listURL, field, noun string, decode func(json.RawMessage) (T, int64, error)) ([]T, Source, error) {
+	l, err := h.list(ctx, get, listURL, field, 0)
 	if err != nil {
 		return nil, Source{}, err
 	}
@@ -456,10 +465,10 @@ type listing struct {
 
 // list GETs a listing and every page its Link next URLs lead to. It stops
 // after a page whose total_count reaches limit, when limit is set.
-func (h *HTTP) list(ctx context.Context, firstURL, field string, limit int) (listing, error) {
+func (h *HTTP) list(ctx context.Context, get getter, firstURL, field string, limit int) (listing, error) {
 	var l listing
 	var err error
-	l.pages, l.more, err = h.paginate(ctx, firstURL, func(resp *http.Response) (bool, error) {
+	l.pages, l.more, err = h.paginate(ctx, get, firstURL, func(resp *http.Response) (bool, error) {
 		var page map[string]json.RawMessage
 		var items []json.RawMessage
 		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
@@ -483,13 +492,13 @@ func (h *HTTP) list(ctx context.Context, firstURL, field string, limit int) (lis
 // paginate GETs firstURL and every page its Link next URLs lead to, reading
 // each with read until read says to stop. It gives how many pages it read,
 // and whether it left a Link next unread.
-func (h *HTTP) paginate(ctx context.Context, firstURL string, read func(*http.Response) (stop bool, err error)) (pages int, more bool, err error) {
+func (h *HTTP) paginate(ctx context.Context, get getter, firstURL string, read func(*http.Response) (stop bool, err error)) (pages int, more bool, err error) {
 	followed := map[string]bool{}
 	for pageURL := firstURL; pageURL != ""; {
 		followed[pageURL] = true
 		var next string
 		var stop bool
-		err := h.get(ctx, pageURL, func(resp *http.Response) error {
+		err := get(ctx, pageURL, func(resp *http.Response) error {
 			next = nextLink(resp.Header.Get("Link"))
 			var err error
 			stop, err = read(resp)
@@ -549,8 +558,8 @@ func port(u *url.URL) string {
 	}
 }
 
-func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
-	return h.get(ctx, rawURL, func(resp *http.Response) error {
+func getJSON(ctx context.Context, get getter, rawURL string, v any) error {
+	return get(ctx, rawURL, func(resp *http.Response) error {
 		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
 			return &MalformedError{Err: err}
 		}
@@ -558,14 +567,23 @@ func (h *HTTP) getJSON(ctx context.Context, rawURL string, v any) error {
 	})
 }
 
+// getter GETs rawURL and reads the answer.
+type getter func(ctx context.Context, rawURL string, read func(*http.Response) error) error
+
 func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response) error) error {
+	return h.getIfNoneMatch(ctx, rawURL, "", read)
+}
+
+// getIfNoneMatch GETs rawURL, sending etag as If-None-Match when it is set,
+// and reads a 200, or a 304 to etag.
+func (h *HTTP) getIfNoneMatch(ctx context.Context, rawURL, etag string, read func(*http.Response) error) error {
 	h.mu.Lock()
 	blocked, reserved := failure.Reserve(h.rateLimit, h.rateLimitAt, h.clock.Now())
 	h.mu.Unlock()
 	if reserved {
 		return blocked
 	}
-	resp, err := h.follow(ctx, rawURL)
+	resp, err := h.follow(ctx, rawURL, etag)
 	if err != nil {
 		err = fmt.Errorf("%s: %w", rawURL, err)
 		var opErr *net.OpError
@@ -579,7 +597,7 @@ func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response)
 		return failure.Transient{Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && (etag == "" || resp.StatusCode != http.StatusNotModified) {
 		return h.statusError(rawURL, resp)
 	}
 	body := &readErrors{ReadCloser: resp.Body}
@@ -596,13 +614,13 @@ func (h *HTTP) get(ctx context.Context, rawURL string, read func(*http.Response)
 
 // follow GETs rawURL and follows its redirects. Its errors never name a
 // redirect target, since a blob URL's query is a credential.
-func (h *HTTP) follow(ctx context.Context, rawURL string) (*http.Response, error) {
+func (h *HTTP) follow(ctx context.Context, rawURL, etag string) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
 	for range maxRequests {
-		resp, err := h.do(ctx, u)
+		resp, err := h.do(ctx, u, etag)
 		if err != nil {
 			return nil, err
 		}
@@ -633,7 +651,7 @@ func UserAgent() string { return "lg/" + version.Version }
 
 // do sends the token only to the API host. Go's own rule would send it to a
 // blob host that differs only by port or is a subdomain.
-func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
+func (h *HTTP) do(ctx context.Context, u *url.URL, etag string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return nil, err
@@ -641,6 +659,9 @@ func (h *HTTP) do(ctx context.Context, u *url.URL) (*http.Response, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", UserAgent())
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
 	if !h.onAPIHost(u) {
 		return h.transport.RoundTrip(req)
 	}
@@ -738,7 +759,7 @@ func (h *HTTP) CommitPulls(ctx context.Context, sha string) ([]CommitPull, Sourc
 	listURL := h.repoURL + "/commits/" + url.PathEscape(sha) + "/pulls?per_page=100"
 	var pulls []CommitPull
 	read := 0
-	pages, _, err := h.paginate(ctx, listURL, func(resp *http.Response) (bool, error) {
+	pages, _, err := h.paginate(ctx, h.get, listURL, func(resp *http.Response) (bool, error) {
 		read++
 		var page []json.RawMessage
 		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {

@@ -68,8 +68,8 @@ func (c *CLI) Main(args ...string) int {
 		Stderr: &c.Stderr,
 		Clock:  clock.Real{},
 		Runner: c.Runner,
-		NewGitHub: func(api *url.URL, repo, token string, clk clock.Clock) github.Client {
-			return github.NewHTTP(github.NewTransport(ShortTimeouts()), api, repo, token, clk)
+		NewGitHub: func(api *url.URL, repo, token string, cache *github.Cache, clk clock.Clock) github.Client {
+			return github.NewHTTP(github.NewTransport(ShortTimeouts()), api, repo, token, clk).WithCache(cache)
 		},
 		StoreFS: c.FS,
 	})

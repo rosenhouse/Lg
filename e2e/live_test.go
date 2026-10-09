@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -307,7 +308,41 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 			Expect(string(body)).To(Equal(compact.String()), base)
 		}
 	})
+
+	It("answers If-None-Match with a 304 that has no Link and costs no rate limit, as the fake does", Serial, func() {
+		fake := fakegithub.Start(fixtureRun, fixtureStage)
+		Expect(fake.Load(logsDeletedRun, logsDeletedStage)).To(Succeed())
+		token, err := exec.Command("gh", "auth", "token").Output()
+		Expect(err).NotTo(HaveOccurred())
+		for _, base := range []string{"https://api.github.com", fake.URL()} {
+			listing := base + "/repos/rosenhouse/Lg/actions/runs?status=completed&per_page=1"
+			status, header := getIfNoneMatch(listing, strings.TrimSpace(string(token)), "")
+			Expect(status).To(Equal(http.StatusOK), base)
+			Expect(header.Get("Link")).NotTo(BeEmpty(), base)
+
+			status, again := getIfNoneMatch(listing, strings.TrimSpace(string(token)), header.Get("ETag"))
+			Expect(status).To(Equal(http.StatusNotModified), base)
+			Expect(again).NotTo(HaveKey("Link"), base)
+			Expect(again.Get("X-RateLimit-Remaining")).To(Equal(header.Get("X-RateLimit-Remaining")), base)
+		}
+	})
 })
+
+// getIfNoneMatch GETs url with token, and with If-None-Match when etag is set.
+func getIfNoneMatch(url, token, etag string) (int, http.Header) {
+	GinkgoHelper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	Expect(err).NotTo(HaveOccurred())
+	req.Header.Set("User-Agent", github.UserAgent())
+	req.Header.Set("Authorization", "Bearer "+token)
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).NotTo(HaveOccurred())
+	_ = resp.Body.Close()
+	return resp.StatusCode, resp.Header
+}
 
 // windowConfig gives the backfill and retention lines of liveWindowDays.
 func windowConfig() []string {

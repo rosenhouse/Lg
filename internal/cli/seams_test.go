@@ -37,7 +37,7 @@ var _ = Describe("lg sync", Label("failures"), func() {
 				Stderr: &stderr,
 				Clock:  clock.Real{},
 				Runner: harness.TokenRunner{},
-				NewGitHub: func(api *url.URL, repo, token string, clk clock.Clock) github.Client {
+				NewGitHub: func(api *url.URL, repo, token string, _ *github.Cache, clk clock.Clock) github.Client {
 					return github.NewHTTP(github.NewTransport(short), api, repo, token, clk)
 				},
 				StoreFS: store.OSFS{},
