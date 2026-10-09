@@ -1,7 +1,6 @@
 package mirror
 
 import (
-	"bytes"
 	"encoding/json"
 	"maps"
 
@@ -21,14 +20,7 @@ type etags struct {
 
 func loadETags(s *store.Store) (e *etags, discarded, err error) {
 	var earlier map[string]github.Answer
-	discarded, err = s.ReadState(etagsFile, func(raw []byte) error {
-		var decoded map[string]github.Answer
-		if err := json.Unmarshal(raw, &decoded); err != nil {
-			return err
-		}
-		earlier = decoded
-		return nil
-	})
+	discarded, err = s.ReadState(etagsFile, func(raw []byte) error { return json.Unmarshal(raw, &earlier) })
 	if err != nil {
 		return nil, nil, err
 	}
@@ -43,12 +35,8 @@ func (e *etags) save(completed bool) error {
 	if completed {
 		answers = e.cache.Asked()
 	}
-	if maps.EqualFunc(answers, e.earlier, sameAnswer) {
+	if maps.EqualFunc(answers, e.earlier, func(a, b github.Answer) bool { return a.ETag == b.ETag }) {
 		return nil
 	}
 	return e.store.WriteState(etagsFile, answers)
-}
-
-func sameAnswer(a, b github.Answer) bool {
-	return a.ETag == b.ETag && a.Link == b.Link && bytes.Equal(a.Body, b.Body)
 }

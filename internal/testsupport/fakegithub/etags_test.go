@@ -34,6 +34,13 @@ var _ = Describe("Server conditional requests", Label("etags"), func() {
 		Entry("a page of an artifact listing", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100"),
 	)
 
+	It("sends an ETag with each blob, as blob storage does", func() {
+		blob := fetch(fetch(fake.URL() + logPath).header.Get("Location"))
+
+		Expect(blob.status).To(Equal(http.StatusOK))
+		Expect(blob.header.Get("ETag")).NotTo(BeEmpty())
+	})
+
 	It("answers If-None-Match with an earlier ETag in full", func() {
 		path := "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100"
 		earlier := fetch(fake.URL() + path)

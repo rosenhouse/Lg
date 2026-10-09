@@ -109,6 +109,12 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 		Expect(again).To(Equal(changed))
 	})
 
+	It("refuses a 304 to a GET that sent no If-None-Match", func() {
+		fake.Fail("api", "/jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusNotModified})
+
+		Expect(client.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{})).To(MatchError(ContainSubstring("304")))
+	})
+
 	It("keeps no answer that has no ETag", func() {
 		fake.Fail("api", repoURL, fakegithub.Fault{Status: http.StatusOK, Body: `{"full_name":"rosenhouse/Lg"}`, Times: 1})
 

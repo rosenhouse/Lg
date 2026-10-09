@@ -78,6 +78,18 @@ var _ = Describe("state/etags.json", Label("etags"), func() {
 		Expect(slices.Collect(maps.Keys(read()))).To(ConsistOf(revalidated()))
 	}, cycleTimeout)
 
+	It("replaces an answer that changed", func(ctx SpecContext) {
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.Sync(ctx)).To(Succeed())
+		current := read()
+		stale := maps.Clone(current)
+		stale[repoURL] = github.Answer{ETag: `"stale"`, Body: []byte(`{}`)}
+		write(stale)
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(read()).To(Equal(current))
+	}, cycleTimeout)
+
 	It("keeps every answer after a cycle that stopped early", func(ctx SpecContext) {
 		write(map[string]github.Answer{unrelated: {ETag: `"stale"`, Body: []byte(`{}`)}})
 		env.Fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusUnauthorized})
