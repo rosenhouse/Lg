@@ -235,7 +235,9 @@ func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(body)))
+	if d.Final == http.StatusOK {
+		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(body)))
+	}
 	w.WriteHeader(d.Final)
 	_, _ = w.Write(body)
 }

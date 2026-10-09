@@ -44,7 +44,8 @@ func (c *Cache) Asked() map[string]Answer {
 // All gives every answer it holds.
 func (c *Cache) All() map[string]Answer { return maps.Clone(c.answers) }
 
-// answer gives the answer held for rawURL, if any. A nil Cache holds none.
+// answer records that rawURL was asked for, and gives the answer held for
+// it, if any. A nil Cache holds none.
 func (c *Cache) answer(rawURL string) Answer {
 	if c == nil {
 		return Answer{}
