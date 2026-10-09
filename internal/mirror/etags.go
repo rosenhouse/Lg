@@ -27,8 +27,8 @@ func loadETags(s *store.Store) (e *etags, discarded, err error) {
 			return err
 		}
 		for rawURL, a := range decoded {
-			if len(a.Body) == 0 {
-				return fmt.Errorf("%s has no body", rawURL)
+			if !json.Valid(a.Body) {
+				return fmt.Errorf("%s has no JSON body", rawURL)
 			}
 		}
 		earlier = decoded

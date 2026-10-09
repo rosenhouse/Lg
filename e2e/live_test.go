@@ -309,7 +309,7 @@ var _ = Describe("the GitHub API", Label("live"), func() {
 		}
 	})
 
-	It("answers If-None-Match with a 304 that has no Link and costs no rate limit, as the fake does", func() {
+	It("answers If-None-Match with a 304 that has no Link and costs no rate limit, as the fake does", Serial, func() {
 		fake := fakegithub.Start(fixtureRun, fixtureStage)
 		Expect(fake.Load(logsDeletedRun, logsDeletedStage)).To(Succeed())
 		token, err := exec.Command("gh", "auth", "token").Output()

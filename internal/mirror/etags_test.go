@@ -1,6 +1,7 @@
 package mirror_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -128,6 +129,9 @@ var _ = Describe("state/etags.json", Label("etags"), func() {
 		}, cycleTimeout),
 		Entry("with an answer without a body", func(u string) string {
 			return fmt.Sprintf(`{%q:{"etag":"\"x\""}}`, u)
+		}, cycleTimeout),
+		Entry("with a body that is not JSON", func(u string) string {
+			return fmt.Sprintf(`{%q:{"etag":"\"x\"","body":%q}}`, u, base64.StdEncoding.EncodeToString([]byte("not json")))
 		}, cycleTimeout),
 	)
 })
