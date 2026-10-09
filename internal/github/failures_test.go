@@ -296,7 +296,7 @@ var _ = Describe("DefaultTimeouts", Label("failures"), func() {
 	})
 
 	It("are NewDefault's", func() {
-		Expect(github.TimeoutsOf(github.NewDefault(mustParse("https://api.github.com"), "o/r", "lg-test-token", clock.Real{}))).To(Equal(github.DefaultTimeouts()))
+		Expect(github.TimeoutsOf(github.NewDefault(mustParse("https://api.github.com"), "o/r", "lg-test-token", nil, clock.Real{}))).To(Equal(github.DefaultTimeouts()))
 	})
 })
 

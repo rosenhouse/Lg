@@ -64,8 +64,8 @@ var _ = Describe("mirror.Cycle", Label("sync"), func() {
 		tokens = &staticTokens{token: "gho_cycle"}
 		m = mirror.Mirror{
 			Tokens: tokens,
-			NewGitHub: func(token string) github.Client {
-				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock)
+			NewGitHub: func(token string, cache *github.Cache) github.Client {
+				return github.NewHTTP(http.DefaultTransport, mustParse(fake.URL()), "rosenhouse/lg", token, m.Clock).WithCache(cache)
 			},
 			Store:            s,
 			Host:             "github.com",
@@ -190,6 +190,8 @@ var _ = Describe("mirror.Cycle", Label("sync"), func() {
 	)
 
 	It("requests only the repo and the run listings, and writes nothing, when the attempt and artifacts are already on disk", func() {
+		Expect(cycleErr(context.Background(), &m)).To(Succeed())
+		// This cycle drops from state/etags.json the answers it no longer asks for.
 		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		before := len(fake.Requests())
 		fsys := faultfs.New()

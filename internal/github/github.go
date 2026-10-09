@@ -244,8 +244,8 @@ func NewHTTP(transport http.RoundTripper, api *url.URL, repo, token string, clk 
 }
 
 // NewDefault is the Client lg sync uses, with DefaultTimeouts.
-func NewDefault(api *url.URL, repo, token string, clk clock.Clock) Client {
-	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk)
+func NewDefault(api *url.URL, repo, token string, cache *Cache, clk clock.Clock) Client {
+	return NewHTTP(NewTransport(DefaultTimeouts()), api, repo, token, clk).WithCache(cache)
 }
 
 // Repo is a repository as GET /repos/{owner}/{repo} describes it.

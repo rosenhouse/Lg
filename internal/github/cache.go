@@ -64,14 +64,6 @@ func (c *Cache) keep(rawURL string, a Answer) {
 	}
 }
 
-func (a Answer) response() *http.Response {
-	header := http.Header{}
-	if a.Link != "" {
-		header.Set("Link", a.Link)
-	}
-	return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(bytes.NewReader(a.Body))}
-}
-
 // WithCache makes h revalidate its GETs of the repo, runs, run listings by
 // status and artifact listings, whose URLs a later cycle repeats.
 func (h *HTTP) WithCache(c *Cache) *HTTP {
@@ -85,15 +77,20 @@ func (h *HTTP) WithCache(c *Cache) *HTTP {
 func (h *HTTP) revalidate(ctx context.Context, rawURL string, read func(*http.Response) error) error {
 	earlier := h.cache.answer(rawURL)
 	return h.getIfNoneMatch(ctx, rawURL, earlier.ETag, func(resp *http.Response) error {
-		if resp.StatusCode == http.StatusNotModified {
-			return read(earlier.response())
+		answer := earlier
+		if resp.StatusCode == http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			answer = Answer{ETag: resp.Header.Get("ETag"), Link: resp.Header.Get("Link"), Body: body}
 		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
+		answered := *resp
+		answered.StatusCode, answered.Header, answered.Body = http.StatusOK, http.Header{}, io.NopCloser(bytes.NewReader(answer.Body))
+		if answer.Link != "" {
+			answered.Header.Set("Link", answer.Link)
 		}
-		answer := Answer{ETag: resp.Header.Get("ETag"), Link: resp.Header.Get("Link"), Body: body}
-		if err := read(answer.response()); err != nil {
+		if err := read(&answered); err != nil {
 			return err
 		}
 		h.cache.keep(rawURL, answer)

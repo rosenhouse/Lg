@@ -28,7 +28,7 @@ import (
 
 type Mirror struct {
 	Tokens           auth.TokenSource
-	NewGitHub        func(token string) github.Client
+	NewGitHub        func(token string, cache *github.Cache) github.Client
 	Store            *store.Store
 	Host             string
 	Repo             string
@@ -116,7 +116,15 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	gh := m.NewGitHub(token)
+	e, discardedETags, err := loadETags(m.Store)
+	if err != nil {
+		return Report{}, err
+	}
+	report, err := m.cycleWith(ctx, m.NewGitHub(token, e.cache))
+	return report, errors.Join(err, discardedETags, e.save(report.Completed))
+}
+
+func (m *Mirror) cycleWith(ctx context.Context, gh github.Client) (Report, error) {
 	repo, err := m.getRepo(ctx, gh)
 	if err != nil {
 		return Report{}, err

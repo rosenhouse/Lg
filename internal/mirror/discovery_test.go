@@ -67,7 +67,7 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 			env.Fake.AddListed(scenario.ListedRun(i+1, from.Add(time.Duration(i)*10*time.Minute)))
 		}
 
-		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), from, to)
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token, nil), from, to)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(capped).NotTo(HaveOccurred())
 		ids := map[int64]bool{}
@@ -83,7 +83,7 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 		body := fmt.Sprintf(`{"total_count":%d,"workflow_runs":[%s]}`, github.ListingCap, scenario.ListedRun(1, to.Add(-scenario.Day)))
 		env.Fake.Fail("api", "/actions/runs", fakegithub.Fault{Status: http.StatusOK, Body: body})
 
-		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), to.Add(-7*scenario.Day), to)
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token, nil), to.Add(-7*scenario.Day), to)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(capped).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1))
@@ -97,7 +97,7 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 			env.Fake.AddListed(scenario.ListedRun(i+1, burst))
 		}
 
-		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), burst.Add(-900*time.Millisecond), burst.Add(time.Second))
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token, nil), burst.Add(-900*time.Millisecond), burst.Add(time.Second))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1000))
 		second := burst.Format(time.RFC3339)
@@ -111,7 +111,7 @@ var _ = Describe("mirror.Discover", Label("discovery"), func() {
 			env.Fake.AddListed(scenario.ListedRun(i+1, burst))
 		}
 
-		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token), burst.Add(-7*scenario.Day), burst.Add(scenario.Day))
+		runs, capped, err := mirror.Discover(ctx, env.Mirror.NewGitHub(fakegh.Token, nil), burst.Add(-7*scenario.Day), burst.Add(scenario.Day))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runs).To(HaveLen(1000))
 		Expect(capped).To(MatchError(MatchRegexp(`^1001 runs were created in \[[0-9TZ:-]+, ` + burst.Format(time.RFC3339) + `\], and GitHub lists at most 1000$`)))

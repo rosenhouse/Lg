@@ -133,8 +133,8 @@ func runCycle(ctx context.Context, t target, deps *Deps) (mirror.Report, error) 
 	}
 	m := mirror.Mirror{
 		Tokens: auth.GhTokenSource{Runner: deps.Runner, Env: deps.Env},
-		NewGitHub: func(token string) github.Client {
-			return deps.NewGitHub(t.api, cfg.Repo, token, deps.Clock)
+		NewGitHub: func(token string, cache *github.Cache) github.Client {
+			return deps.NewGitHub(t.api, cfg.Repo, token, cache, deps.Clock)
 		},
 		Store:            s,
 		Host:             cfg.Host,
