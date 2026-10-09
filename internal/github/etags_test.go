@@ -88,7 +88,9 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 			_, _, err := c.CommitPulls(context.Background(), "1a51097dadb5b55978ac401b93f1ca9d8d317b02")
 			return err
 		}),
-		Entry("DownloadJobLog", func(c *github.HTTP) error { return c.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{}) }),
+		Entry("DownloadJobLog", func(c *github.HTTP) error {
+			return c.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{})
+		}),
 	)
 
 	It("reads a changed answer, and keeps it in place of the earlier one", func() {
