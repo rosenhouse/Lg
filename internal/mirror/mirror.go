@@ -121,7 +121,11 @@ func (m *Mirror) cycle(ctx context.Context) (Report, error) {
 		return Report{}, err
 	}
 	report, err := m.cycleWith(ctx, m.NewGitHub(token, e.cache))
-	return report, errors.Join(err, discardedETags, e.save(report.Completed))
+	if saveErr := e.save(report.Completed); saveErr != nil {
+		report.Completed = false
+		err = errors.Join(err, saveErr)
+	}
+	return report, errors.Join(err, discardedETags)
 }
 
 func (m *Mirror) cycleWith(ctx context.Context, gh github.Client) (Report, error) {

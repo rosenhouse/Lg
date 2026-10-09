@@ -256,7 +256,7 @@ type Repo struct {
 
 func (h *HTTP) GetRepo(ctx context.Context) (Repo, error) {
 	var repo Repo
-	if err := h.getJSON(ctx, h.revalidate, h.repoURL, &repo); err != nil {
+	if err := getJSON(ctx, h.revalidate, h.repoURL, &repo); err != nil {
 		return Repo{}, err
 	}
 	if !layout.IsRepo(repo.FullName) {
@@ -277,7 +277,7 @@ type RunQuery struct {
 // Values encodes the query as GitHub reads it, leaving out what is unset.
 func (q RunQuery) Values() url.Values {
 	v := url.Values{}
-	if !q.From.IsZero() || !q.To.IsZero() {
+	if q.created() {
 		v.Set("created", q.From.UTC().Format(time.RFC3339)+".."+q.To.UTC().Format(time.RFC3339))
 	}
 	if q.Status != "" {
@@ -296,8 +296,10 @@ func (q RunQuery) Values() url.Values {
 // created range when it has none, and by halving one whose bounds are
 // different seconds, since GitHub filters created at whole seconds.
 func (q RunQuery) Narrowable() bool {
-	return q.From.IsZero() && q.To.IsZero() || q.To.After(q.From)
+	return !q.created() || q.To.After(q.From)
 }
+
+func (q RunQuery) created() bool { return !q.From.IsZero() || !q.To.IsZero() }
 
 // ListingCap is the most results GitHub serves for a filtered run listing.
 const ListingCap = 1000
@@ -316,7 +318,8 @@ type RunListing struct {
 // whose total_count reaches ListingCap stops after its first page when q is
 // Narrowable, since GitHub serves no more of it and the caller narrows q;
 // otherwise it pages through what GitHub serves. It revalidates a listing
-// without a created range, since lg's ranges move with the clock.
+// without a created range. lg's created ranges end at now, so their URLs do
+// not repeat.
 func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 	if q.PerPage == 0 {
 		q.PerPage = 100
@@ -326,7 +329,7 @@ func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 		limit = ListingCap
 	}
 	get := h.revalidate
-	if !q.From.IsZero() || !q.To.IsZero() {
+	if q.created() {
 		get = h.get
 	}
 	l, err := h.list(ctx, get, h.repoURL+"/actions/runs?"+q.Values().Encode(), "workflow_runs", limit)
@@ -345,14 +348,14 @@ func (h *HTTP) ListRuns(ctx context.Context, q RunQuery) (RunListing, error) {
 
 func (h *HTTP) GetRun(ctx context.Context, runID int64) (Run, error) {
 	var run Run
-	err := h.getJSON(ctx, h.revalidate, h.repoURL+fmt.Sprintf("/actions/runs/%d", runID), &run)
+	err := getJSON(ctx, h.get, h.repoURL+fmt.Sprintf("/actions/runs/%d", runID), &run)
 	return run, err
 }
 
 func (h *HTTP) GetAttempt(ctx context.Context, runID int64, attempt int) (Run, Source, error) {
 	source := Source{URL: h.repoURL + fmt.Sprintf("/actions/runs/%d/attempts/%d", runID, attempt)}
 	var run Run
-	if err := h.getJSON(ctx, h.get, source.URL, &run.Raw); err != nil {
+	if err := getJSON(ctx, h.get, source.URL, &run.Raw); err != nil {
 		return Run{}, Source{}, err
 	}
 	if err := json.Unmarshal(run.Raw, &run.Run); err != nil {
@@ -398,7 +401,7 @@ func (h *HTTP) JobLogURL(jobID int64) string {
 
 func (h *HTTP) ListArtifacts(ctx context.Context, runID int64) ([]Artifact, Source, error) {
 	listURL := h.repoURL + fmt.Sprintf("/actions/runs/%d/artifacts?per_page=100", runID)
-	artifacts, source, err := listByID(ctx, h, h.revalidate, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
+	artifacts, source, err := listByID(ctx, h, h.get, listURL, "artifacts", "artifact", func(raw json.RawMessage) (Artifact, int64, error) {
 		var artifact Artifact
 		err := json.Unmarshal(raw, &artifact)
 		return artifact, artifact.ID, err
@@ -555,7 +558,7 @@ func port(u *url.URL) string {
 	}
 }
 
-func (h *HTTP) getJSON(ctx context.Context, get getter, rawURL string, v any) error {
+func getJSON(ctx context.Context, get getter, rawURL string, v any) error {
 	return get(ctx, rawURL, func(resp *http.Response) error {
 		if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
 			return &MalformedError{Err: err}

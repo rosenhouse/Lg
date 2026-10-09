@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/rosenhouse/lg/internal/testsupport/fakegithub"
 )
@@ -14,13 +15,15 @@ var _ = Describe("Server conditional requests", Label("etags"), func() {
 
 	BeforeEach(func() {
 		fake = fakegithub.Start(runID, "after-attempt-1")
+		Expect(fake.Load(logsDeletedRun, "logs-deleted")).To(Succeed())
 		fake.SetPageCap(1)
 	})
 
 	DescribeTable("answers If-None-Match with the current ETag with a 304 that has no body or Link",
-		func(path string) {
+		func(path string, link types.GomegaMatcher) {
 			answer := fetch(fake.URL() + path)
-			Expect(answer.header.Get("ETag")).To(MatchRegexp(`^"[0-9a-f]{64}"$`))
+			Expect(answer.header.Get("ETag")).To(MatchRegexp(`^W/"[0-9a-f]{64}"$`))
+			Expect(answer.header).To(link)
 
 			again := fetch(fake.URL()+path, "If-None-Match", answer.header.Get("ETag"))
 			Expect(again.status).To(Equal(http.StatusNotModified))
@@ -28,10 +31,10 @@ var _ = Describe("Server conditional requests", Label("etags"), func() {
 			Expect(again.header.Get("ETag")).To(Equal(answer.header.Get("ETag")))
 			Expect(again.header).NotTo(HaveKey("Link"))
 		},
-		Entry("the repo", "/repos/rosenhouse/lg"),
-		Entry("a run", "/repos/rosenhouse/lg/actions/runs/37129390741"),
-		Entry("a page of a run listing", "/repos/rosenhouse/lg/actions/runs?status=completed&per_page=100"),
-		Entry("a page of an artifact listing", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100"),
+		Entry("the repo", "/repos/rosenhouse/lg", Not(HaveKey("Link"))),
+		Entry("a run", "/repos/rosenhouse/lg/actions/runs/37129390741", Not(HaveKey("Link"))),
+		Entry("a page of a run listing", "/repos/rosenhouse/lg/actions/runs?status=completed&per_page=100", HaveKey("Link")),
+		Entry("a page of an artifact listing", "/repos/rosenhouse/lg/actions/runs/37129390741/artifacts?per_page=100", HaveKey("Link")),
 	)
 
 	It("sends an ETag with each blob it has, as blob storage does", func() {
@@ -55,7 +58,7 @@ var _ = Describe("Server conditional requests", Label("etags"), func() {
 		Expect(answer.header.Get("ETag")).NotTo(Equal(earlier.header.Get("ETag")))
 	})
 
-	It("counts a 304 not against the rate limit, as GitHub does", func() {
+	It("does not count a 304 against the rate limit, as GitHub does", func() {
 		answer := fetch(fake.URL() + "/repos/rosenhouse/lg")
 		Expect(answer.header.Get("X-RateLimit-Remaining")).To(Equal("4999"))
 

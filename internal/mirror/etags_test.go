@@ -2,12 +2,14 @@ package mirror_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -63,8 +65,7 @@ var _ = Describe("state/etags.json", Label("etags"), func() {
 	It("holds the answers to the GETs that a cycle revalidates", func(ctx SpecContext) {
 		Expect(env.Sync(ctx)).To(Succeed())
 
-		run := fmt.Sprintf("%s/actions/runs/%d", repoURL, runID)
-		Expect(slices.Collect(maps.Keys(read()))).To(ConsistOf(revalidated(run, run+"/artifacts?per_page=100")))
+		Expect(slices.Collect(maps.Keys(read()))).To(ConsistOf(revalidated()))
 		Expect(read()).To(HaveEach(HaveField("ETag", Not(BeEmpty()))))
 	}, cycleTimeout)
 
@@ -79,7 +80,6 @@ var _ = Describe("state/etags.json", Label("etags"), func() {
 	}, cycleTimeout)
 
 	It("replaces an answer that changed", func(ctx SpecContext) {
-		Expect(env.Sync(ctx)).To(Succeed())
 		Expect(env.Sync(ctx)).To(Succeed())
 		current := read()
 		stale := maps.Clone(current)
@@ -98,14 +98,36 @@ var _ = Describe("state/etags.json", Label("etags"), func() {
 		Expect(read()).To(SatisfyAll(HaveLen(2), HaveKey(unrelated), HaveKey(repoURL)))
 	}, cycleTimeout)
 
-	It("is moved aside when it does not parse, and the cycle syncs as if it were empty and reports it", func(ctx SpecContext) {
-		Expect(os.WriteFile(etags, []byte("["), 0o644)).To(Succeed())
+	It("leaves a cycle not completed when it cannot be written", func(ctx SpecContext) {
+		env.FS.FailOnUnder("rename", etags, syscall.ENOSPC)
 
-		err := env.Sync(ctx)
-		Expect(err).To(MatchError(ContainSubstring(etags)))
-		Expect(mirror.RunScoped(err)).To(BeTrue())
-		Expect(env.AttemptDirs(runID)).To(HaveLen(1))
-		Expect(os.ReadFile(etags + ".corrupt")).To(Equal([]byte("[")))
-		Expect(read()).To(HaveKey(repoURL))
+		report, err := env.Mirror.Cycle(ctx)
+		Expect(err).To(BeBlocked(failure.LocalIO))
+		Expect(report.Completed).To(BeFalse())
 	}, cycleTimeout)
+
+	DescribeTable("is moved aside when it does not parse, and the cycle reports it and syncs as if it were empty",
+		func(ctx SpecContext, content func(repoURL string) string) {
+			Expect(os.WriteFile(etags, []byte(content(repoURL)), 0o644)).To(Succeed())
+
+			err := env.Sync(ctx)
+			Expect(err).To(MatchError(ContainSubstring(etags)))
+			Expect(mirror.RunScoped(err)).To(BeTrue())
+			Expect(errors.As(err, new(*github.MalformedError))).To(BeFalse(), "a local file is not a GitHub response")
+			Expect(env.Fake.Requests()).To(HaveEach(HaveField("IfNoneMatch", "")))
+			Expect(env.AttemptDirs(runID)).To(HaveLen(1))
+			Expect(os.ReadFile(etags + ".corrupt")).To(Equal([]byte(content(repoURL))))
+			Expect(read()).To(HaveKey(repoURL))
+		},
+		Entry("truncated", func(string) string { return "[" }, cycleTimeout),
+		Entry("with an answer that is an array", func(u string) string {
+			return fmt.Sprintf(`{%q:{"etag":"\"x\"","body":"e30="},"x":[]}`, u)
+		}, cycleTimeout),
+		Entry("with a body that is not base64", func(u string) string {
+			return fmt.Sprintf(`{%q:{"etag":"\"x\"","body":"!!!"}}`, u)
+		}, cycleTimeout),
+		Entry("with an answer without a body", func(u string) string {
+			return fmt.Sprintf(`{%q:{"etag":"\"x\""}}`, u)
+		}, cycleTimeout),
+	)
 })

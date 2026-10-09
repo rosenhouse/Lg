@@ -55,17 +55,12 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 			)))
 		},
 		Entry("GetRepo", func(c *github.HTTP) (any, error) { return c.GetRepo(context.Background()) }, 1),
-		Entry("GetRun", func(c *github.HTTP) (any, error) { return c.GetRun(context.Background(), runID) }, 1),
 		Entry("ListRuns by status, on every page", func(c *github.HTTP) (any, error) {
 			return c.ListRuns(context.Background(), github.RunQuery{Status: "completed"})
 		}, 2),
-		Entry("ListArtifacts, on every page", func(c *github.HTTP) (any, error) {
-			artifacts, source, err := c.ListArtifacts(context.Background(), runID)
-			return []any{artifacts, source}, err
-		}, 4),
 	)
 
-	DescribeTable("sends no If-None-Match on a GET whose URL is not repeated",
+	DescribeTable("sends no If-None-Match on the GETs it does not revalidate",
 		func(call func(*github.HTTP) error) {
 			Expect(call(client)).To(Succeed())
 			Expect(call(client)).To(Succeed())
@@ -74,6 +69,14 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 		},
 		Entry("ListRuns by created range", func(c *github.HTTP) error {
 			_, err := c.ListRuns(context.Background(), github.RunQuery{From: day, To: day.Add(24 * time.Hour)})
+			return err
+		}),
+		Entry("GetRun", func(c *github.HTTP) error {
+			_, err := c.GetRun(context.Background(), runID)
+			return err
+		}),
+		Entry("ListArtifacts", func(c *github.HTTP) error {
+			_, _, err := c.ListArtifacts(context.Background(), runID)
 			return err
 		}),
 		Entry("GetAttempt", func(c *github.HTTP) error {
@@ -94,25 +97,43 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 	)
 
 	It("reads a changed answer, and keeps it in place of the earlier one", func() {
-		earlier, _, err := client.ListArtifacts(context.Background(), runID)
+		completed := github.RunQuery{Status: "completed"}
+		earlier, err := client.ListRuns(context.Background(), completed)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(fake.Advance(runID, "after-attempt-3")).To(Succeed())
+		Expect(fake.Advance(runID, "after-attempt-2")).To(Succeed())
 		before := len(fake.Requests())
 
-		changed, _, err := client.ListArtifacts(context.Background(), runID)
+		changed, err := client.ListRuns(context.Background(), completed)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(changed).NotTo(Equal(earlier))
-		Expect(since(before)[0]).To(SatisfyAll(HaveField("IfNoneMatch", Not(BeEmpty())), HaveField("Status", http.StatusOK)))
+		Expect(since(before)).To(ContainElement(SatisfyAll(HaveField("IfNoneMatch", Not(BeEmpty())), HaveField("Status", http.StatusOK))))
+		before = len(fake.Requests())
 
-		again, _, err := client.ListArtifacts(context.Background(), runID)
+		again, err := client.ListRuns(context.Background(), completed)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(again).To(Equal(changed))
+		Expect(since(before)).To(HaveEach(HaveField("Status", http.StatusNotModified)))
 	})
 
 	It("refuses a 304 to a GET that sent no If-None-Match", func() {
 		fake.Fail("api", "/jobs/111221289888/logs", fakegithub.Fault{Status: http.StatusNotModified})
 
 		Expect(client.DownloadJobLog(context.Background(), 111221289888, &bytes.Buffer{})).To(MatchError(ContainSubstring("304")))
+	})
+
+	It("forgets an answer that read rejects, so that the next GET asks in full", func() {
+		Expect(client.GetRepo(context.Background())).Error().NotTo(HaveOccurred())
+		answer := cache.Asked()[fake.URL()+repoURL]
+		answer.Body = []byte("not json")
+		client.WithCache(github.NewCache(map[string]github.Answer{fake.URL() + repoURL: answer}))
+
+		Expect(client.GetRepo(context.Background())).Error().To(MatchError(ContainSubstring("invalid character")))
+		Expect(client.GetRepo(context.Background())).To(HaveField("DefaultBranch", "main"))
+		Expect(fake.Requests()).To(HaveExactElements(
+			HaveField("Status", http.StatusOK),
+			HaveField("Status", http.StatusNotModified),
+			SatisfyAll(HaveField("IfNoneMatch", ""), HaveField("Status", http.StatusOK)),
+		))
 	})
 
 	It("keeps no answer that has no ETag", func() {
@@ -135,7 +156,7 @@ var _ = Describe("HTTP with a Cache", Label("etags"), func() {
 		))
 	})
 
-	It("gives as Asked the answers it was asked for, not the other answers it was made with", func() {
+	It("leaves out of Asked the answers that no GET asked for", func() {
 		Expect(client.GetRepo(context.Background())).Error().NotTo(HaveOccurred())
 		answers := cache.Asked()
 		Expect(answers).To(HaveLen(1))

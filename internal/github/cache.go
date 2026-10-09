@@ -44,29 +44,9 @@ func (c *Cache) Asked() map[string]Answer {
 // All gives every answer it holds.
 func (c *Cache) All() map[string]Answer { return maps.Clone(c.answers) }
 
-// answer records that rawURL was asked for, and gives the answer held for
-// it, if any. A nil Cache holds none.
-func (c *Cache) answer(rawURL string) Answer {
-	if c == nil {
-		return Answer{}
-	}
-	c.asked[rawURL] = true
-	return c.answers[rawURL]
-}
-
-// keep holds a for rawURL, or nothing when a has no ETag.
-func (c *Cache) keep(rawURL string, a Answer) {
-	switch {
-	case c == nil:
-	case a.ETag == "":
-		delete(c.answers, rawURL)
-	default:
-		c.answers[rawURL] = a
-	}
-}
-
-// WithCache makes h revalidate its GETs of the repo, runs, run listings by
-// status and artifact listings, whose URLs a later cycle repeats.
+// WithCache makes h revalidate its GETs of the repo and of run listings
+// without a created range, whose URLs repeat. h is then not safe for
+// concurrent use.
 func (h *HTTP) WithCache(c *Cache) *HTTP {
 	h.cache = c
 	return h
@@ -74,9 +54,14 @@ func (h *HTTP) WithCache(c *Cache) *HTTP {
 
 // revalidate GETs rawURL as get does. When the cache holds an answer for
 // rawURL, it sends that answer's ETag, and reads that answer on a 304. It
-// caches a 200 that read accepts.
+// caches a 200 with an ETag that read accepts, and forgets an answer that
+// read rejects.
 func (h *HTTP) revalidate(ctx context.Context, rawURL string, read func(*http.Response) error) error {
-	earlier := h.cache.answer(rawURL)
+	if h.cache == nil {
+		return h.get(ctx, rawURL, read)
+	}
+	h.cache.asked[rawURL] = true
+	earlier := h.cache.answers[rawURL]
 	return h.getIfNoneMatch(ctx, rawURL, earlier.ETag, func(resp *http.Response) error {
 		answer := earlier
 		if resp.StatusCode == http.StatusOK {
@@ -86,15 +71,16 @@ func (h *HTTP) revalidate(ctx context.Context, rawURL string, read func(*http.Re
 			}
 			answer = Answer{ETag: resp.Header.Get("ETag"), Link: resp.Header.Get("Link"), Body: body}
 		}
+		// A copy, since getIfNoneMatch closes resp.Body.
 		answered := *resp
-		answered.StatusCode, answered.Header, answered.Body = http.StatusOK, http.Header{}, io.NopCloser(bytes.NewReader(answer.Body))
-		if answer.Link != "" {
-			answered.Header.Set("Link", answer.Link)
-		}
+		answered.Header, answered.Body = http.Header{"Link": {answer.Link}}, io.NopCloser(bytes.NewReader(answer.Body))
 		if err := read(&answered); err != nil {
+			delete(h.cache.answers, rawURL)
 			return err
 		}
-		h.cache.keep(rawURL, answer)
+		if answer.ETag != "" {
+			h.cache.answers[rawURL] = answer
+		}
 		return nil
 	})
 }

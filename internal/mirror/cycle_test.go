@@ -191,8 +191,6 @@ var _ = Describe("mirror.Cycle", Label("sync"), func() {
 
 	It("requests only the repo and the run listings, and writes nothing, when the attempt and artifacts are already on disk", func() {
 		Expect(cycleErr(context.Background(), &m)).To(Succeed())
-		// This cycle drops from state/etags.json the answers it no longer asks for.
-		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		before := len(fake.Requests())
 		fsys := faultfs.New()
 		var err error

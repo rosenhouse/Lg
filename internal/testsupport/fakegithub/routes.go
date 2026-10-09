@@ -278,10 +278,11 @@ func writeReadError(w http.ResponseWriter, err error) bool {
 	return err != nil
 }
 
-// writeJSON sends body with its SHA-256 as its ETag, as GitHub does. To an
-// If-None-Match naming that ETag, it sends a 304 with no body or Link.
+// writeJSON sends body with a weak ETag, as GitHub does to a client that
+// accepts gzip. To an If-None-Match naming that ETag, it sends a 304 with no
+// body or Link.
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, body []byte) {
-	etag := fmt.Sprintf(`"%x"`, sha256.Sum256(body))
+	etag := fmt.Sprintf(`W/"%x"`, sha256.Sum256(body))
 	w.Header().Set("ETag", etag)
 	if r.Header.Get("If-None-Match") == etag {
 		w.Header().Del("Link")

@@ -49,8 +49,6 @@ type Server struct {
 	clock     clock.Clock
 	limit     int
 	remaining int
-	// counted is how many requests countRequest counted since SetRateLimit.
-	counted   int
 	token     string
 	requests  []Request
 	faults    []*fault
@@ -263,29 +261,29 @@ func (s *Server) SetClock(c clock.Clock) {
 }
 
 // SetRateLimit makes X-RateLimit-Limit limit and X-RateLimit-Remaining
-// remaining, less one for each later API request.
+// remaining, less one for each later API request but a 304.
 func (s *Server) SetRateLimit(limit, remaining int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.limit, s.remaining, s.counted = limit, remaining, 0
+	s.limit, s.remaining = limit, remaining
 }
 
 // countRequest counts an API request against the rate limit and sets the
 // headers GitHub sends about it. Callers hold mu.
 func (s *Server) countRequest(header http.Header) {
-	s.counted++
+	s.remaining--
 	s.setRateLimit(header)
 }
 
 // uncountRequest takes back countRequest's count, as GitHub does not count
 // a 304. Callers hold mu.
 func (s *Server) uncountRequest(header http.Header) {
-	s.counted--
+	s.remaining++
 	s.setRateLimit(header)
 }
 
 func (s *Server) setRateLimit(header http.Header) {
-	remaining := max(s.remaining-s.counted, 0)
+	remaining := max(s.remaining, 0)
 	header.Set("X-RateLimit-Limit", strconv.Itoa(s.limit))
 	header.Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
 	header.Set("X-RateLimit-Used", strconv.Itoa(s.limit-remaining))
