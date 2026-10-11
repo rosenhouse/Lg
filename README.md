@@ -30,7 +30,7 @@ lg status
 ```
 
 `lg sync` fetches the runs created within `backfill`, 7d by default. To fetch more, add `backfill: 30d` to `~/.config/lg/config.yaml`; it must not exceed `retention`.
-After a pause in syncing longer than `backfill`, lg does not fetch the runs created more than `backfill` before the next sync; raise `backfill` to cover them.
+After a pause in syncing longer than `backfill`, the next sync fetches the runs created since the last successful sync, up to `retention` ago.
 The first `lg sync` can take several minutes. It warns that lg never synced, then prints nothing more unless it fails.
 `lg status` shows the last sync, the lag, pending units and why syncs are blocked.
 A unit is a run, attempt, job, log, artifact or `extracted/` dir.

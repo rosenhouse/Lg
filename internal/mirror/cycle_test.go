@@ -189,16 +189,19 @@ var _ = Describe("mirror.Cycle", Label("sync"), func() {
 		Entry("no name", ""),
 	)
 
-	It("requests only the repo and the run listings, and writes nothing, when the attempt and artifacts are already on disk", func() {
+	It("requests only the repo and the run listings, and writes only state/listed.json, when the attempt and artifacts are already on disk", func() {
 		Expect(cycleErr(context.Background(), &m)).To(Succeed())
 		before := len(fake.Requests())
 		fsys := faultfs.New()
 		var err error
 		m.Store, err = store.OpenFS(fsys, root)
 		Expect(err).NotTo(HaveOccurred())
+		m.Clock.(*clock.Fake).Set(harness.DefaultNow().Add(10 * time.Minute))
 
 		Expect(cycleErr(context.Background(), &m)).To(Succeed())
-		Expect(fsys.Journal()).To(BeEmpty())
+		listed := filepath.Join(root, "state", "listed.json")
+		Expect(fsys.Journal()).To(HaveEach(HaveField("Path", BeElementOf(listed+".tmp", filepath.Dir(listed)))))
+		Expect(fsys.Journal()).To(ContainElement(faultfs.Op{Name: "rename", Path: listed + ".tmp", To: listed}))
 		Expect(fake.Requests()[before:]).To(HaveLen(2+len(mirror.NonTerminal)), "the repo, the backfill window and one listing per non-terminal status")
 		Expect(fake.Requests()[before:]).To(HaveEach(HaveField("Path", BeElementOf("/repos/rosenhouse/lg", "/repos/rosenhouse/lg/actions/runs"))))
 	})

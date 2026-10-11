@@ -280,6 +280,7 @@ var _ = DescribeTable("lg sync that discards a corrupt hint file", Label("status
 	Entry("watch.json", "watch.json"),
 	Entry("pending-artifacts.json", "pending-artifacts.json"),
 	Entry("rescan.json", "rescan.json"),
+	Entry("listed.json", "listed.json"),
 )
 
 var _ = Describe("lg sync with a watched run GitHub fails to serve", Label("status"), func() {
