@@ -295,6 +295,61 @@ var _ = Describe("mirror.Cycle's hourly rescan", Label("discovery"), func() {
 	}, cycleTimeout)
 })
 
+var _ = Describe("mirror.Cycle after a pause in syncing longer than backfill", Label("discovery"), func() {
+	last := harness.DefaultNow()
+	now := last.Add(10 * scenario.Day)
+
+	It("publishes a run created during the pause", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Sync(ctx)).To(Succeed())
+		env.Clock.Set(now)
+		Expect(env.Fake.AddRun(scenario.CloneAt(1, "after-attempt-1", last.Add(scenario.Day)))).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
+	}, cycleTimeout)
+
+	It("lists from the last cycle that completed, past a cycle that stopped", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Sync(ctx)).To(Succeed())
+		env.Clock.Set(now)
+		Expect(env.Fake.AddRun(scenario.CloneAt(1, "after-attempt-1", last.Add(scenario.Day)))).To(Succeed())
+		Expect(env.Fake.AddRun(scenario.CloneAt(2, "after-attempt-1", now.Add(-time.Hour)))).To(Succeed())
+		env.Fake.Fail("api", "/runs/2/artifacts", fakegithub.Fault{Status: http.StatusUnauthorized, Times: 1})
+		Expect(env.Sync(ctx)).To(HaveOccurred())
+		Expect(env.AttemptDirs(1)).To(BeEmpty())
+
+		env.Clock.Set(now.Add(scenario.Day))
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
+	}, cycleTimeout)
+
+	It("lists from no earlier than now−retention", func(ctx SpecContext) {
+		env := harness.InProcess()
+		Expect(env.Sync(ctx)).To(Succeed())
+		env.Clock.Set(last.Add(100 * scenario.Day))
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(last.Add(10*scenario.Day), last.Add(100*scenario.Day))))
+	}, cycleTimeout)
+
+	It("lists only backfill for a repo that state/listed.json does not name, and keeps the repos it does", func(ctx SpecContext) {
+		env := harness.InProcess()
+		other := last.Add(-20 * scenario.Day).Format(time.RFC3339)
+		listedJSON := filepath.Join(env.State(), "listed.json")
+		Expect(os.MkdirAll(env.State(), 0o755)).To(Succeed())
+		Expect(os.WriteFile(listedJSON, fmt.Appendf(nil, `{"github.com/other/repo":%q}`, other), 0o644)).To(Succeed())
+
+		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(last.Add(-7*scenario.Day), last)))
+		Expect(createdRanges(env.Fake.Requests())).NotTo(ContainElement(HavePrefix(other)))
+		Expect(readJSONFile(listedJSON)).To(Equal(map[string]any{
+			"github.com/other/repo":    other,
+			"github.com/rosenhouse/Lg": last.Format(time.RFC3339),
+		}))
+	}, cycleTimeout)
+})
+
 func listedAt(id int64, at time.Time) github.Run {
 	return github.Run{Run: model.Run{ID: id, CreatedAt: at}}
 }

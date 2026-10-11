@@ -98,6 +98,36 @@ func rescanWindow(now time.Time, backfill, retention time.Duration) (from, to ti
 	return now.Add(-lookback), now.Add(-backfill), true
 }
 
+// listedFile is state/listed.json. It maps each repo, as retention.RepoKey
+// names it, to the end of the created range that its last completed cycle
+// listed.
+const listedFile = "listed.json"
+
+// readListed gives an empty map when state/listed.json is missing, or when
+// it does not parse, which it moves aside and gives as discarded.
+func (m *Mirror) readListed() (through map[string]time.Time, discarded, err error) {
+	discarded, err = m.Store.ReadState(listedFile, func(raw []byte) error { return json.Unmarshal(raw, &through) })
+	if discarded != nil || through == nil {
+		through = map[string]time.Time{}
+	}
+	return through, discarded, err
+}
+
+// backfillFrom is where a cycle's listing by created range starts: at
+// now−backfill, or at last when that is earlier, so that a pause in syncing
+// leaves no runs unlisted. It is no earlier than now−retention, whose runs
+// the cycle leaves out anyway.
+func backfillFrom(now, last time.Time, backfill, retention time.Duration) time.Time {
+	from := now.Add(-backfill)
+	if !last.IsZero() && last.Before(from) {
+		from = last
+	}
+	if floor := now.Add(-retention); from.Before(floor) {
+		return floor
+	}
+	return from
+}
+
 const rescanEvery = time.Hour
 
 // rescan is state/rescan.json.
@@ -111,14 +141,17 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
+	// listedThrough is state/listed.json with the end of this cycle's
+	// listing, and nil when that end is already recorded.
+	listedThrough map[string]time.Time
 	// failed joins the errors that runScoped accepts, except watchFailed's.
 	failed error
 	// watchFailed are the watched runs that GitHub failed to serve.
 	watchFailed []UnitError
 }
 
-// discover lists the runs the cycle syncs: those created in the backfill
-// window, those in a non-terminal status, hourly the runs on disk that a
+// discover lists the runs the cycle syncs: those created since backfillFrom,
+// those in a non-terminal status, hourly the runs on disk that a
 // rerun could still change, and the watched runs and the runs with pending
 // artifacts that no listing named. It leaves out the runs that retention
 // would evict or that disk_cap evicted, and reports a listed run without
@@ -133,11 +166,19 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	evicted := func(createdAt time.Time) bool {
 		return retention.Expired(createdAt, now, m.Retention) || horizons.Skips(repoKey, createdAt)
 	}
-	listed, capped, err := Discover(ctx, gh, now.Add(-m.Backfill), now)
+	through, discardedListed, err := m.readListed()
 	if err != nil {
 		return discovery{}, err
 	}
-	d := discovery{failed: errors.Join(discarded, capped)}
+	listed, capped, err := Discover(ctx, gh, backfillFrom(now, through[repoKey], m.Backfill, m.Retention), now)
+	if err != nil {
+		return discovery{}, err
+	}
+	d := discovery{failed: errors.Join(discarded, discardedListed, capped)}
+	if end := now.UTC().Truncate(time.Second); !through[repoKey].Equal(end) {
+		through[repoKey] = end
+		d.listedThrough = through
+	}
 	for _, status := range nonTerminal {
 		runs, capped, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {
@@ -239,6 +280,15 @@ func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo,
 		}
 	}
 	return onDisk, now, reported, nil
+}
+
+// recordListed writes state/listed.json when the end of the cycle's listing
+// is not recorded yet.
+func (m *Mirror) recordListed(through map[string]time.Time) error {
+	if through == nil {
+		return nil
+	}
+	return m.Store.WriteState(listedFile, through)
 }
 
 // recordRescan writes state/rescan.json when the cycle rescanned.
