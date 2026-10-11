@@ -99,30 +99,39 @@ func rescanWindow(now time.Time, backfill, retention time.Duration) (from, to ti
 }
 
 // listedFile is state/listed.json. It maps each repo, as retention.RepoKey
-// names it, to the end of the created range that its last completed cycle
-// listed.
+// names it, to the end of the created range listed by the last cycle whose
+// syncing ran to its end.
 const listedFile = "listed.json"
+
+// listedOverlap is how far before the recorded end a cycle lists again,
+// since GitHub may list a run late.
+const listedOverlap = time.Hour
 
 // readListed gives an empty map when state/listed.json is missing, or when
 // it does not parse, which it moves aside and gives as discarded.
 func (m *Mirror) readListed() (through map[string]time.Time, discarded, err error) {
-	discarded, err = m.Store.ReadState(listedFile, func(raw []byte) error { return json.Unmarshal(raw, &through) })
-	if discarded != nil || through == nil {
-		through = map[string]time.Time{}
-	}
+	through = map[string]time.Time{}
+	discarded, err = m.Store.ReadState(listedFile, func(raw []byte) error {
+		var decoded map[string]time.Time
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return err
+		}
+		maps.Copy(through, decoded)
+		return nil
+	})
 	return through, discarded, err
 }
 
 // backfillFrom is where a cycle's listing by created range starts: at
-// now−backfill, or at last when that is earlier, so that a pause in syncing
-// leaves no runs unlisted. It is no earlier than now−retention, whose runs
-// the cycle leaves out anyway.
+// now−backfill, or at listedOverlap before last when that is earlier, so
+// that a pause in syncing leaves no runs unlisted. It is no earlier than the
+// oldest date that retention keeps.
 func backfillFrom(now, last time.Time, backfill, retention time.Duration) time.Time {
 	from := now.Add(-backfill)
-	if !last.IsZero() && last.Before(from) {
-		from = last
+	if !last.IsZero() && last.Add(-listedOverlap).Before(from) {
+		from = last.Add(-listedOverlap)
 	}
-	if floor := now.Add(-retention); from.Before(floor) {
+	if floor := now.UTC().Add(-retention).Truncate(24 * time.Hour); from.Before(floor) {
 		return floor
 	}
 	return from
@@ -141,8 +150,7 @@ type discovery struct {
 	runs []listedRun
 	// rescannedAt is when the rescan window was listed, and zero when it was not.
 	rescannedAt time.Time
-	// listedThrough is state/listed.json with the end of this cycle's
-	// listing, and nil when that end is already recorded.
+	// listedThrough is state/listed.json with the end of this cycle's listing.
 	listedThrough map[string]time.Time
 	// failed joins the errors that runScoped accepts, except watchFailed's.
 	failed error
@@ -174,11 +182,8 @@ func (m *Mirror) discover(ctx context.Context, gh github.Client, repo github.Rep
 	if err != nil {
 		return discovery{}, err
 	}
-	d := discovery{failed: errors.Join(discarded, discardedListed, capped)}
-	if end := now.UTC().Truncate(time.Second); !through[repoKey].Equal(end) {
-		through[repoKey] = end
-		d.listedThrough = through
-	}
+	through[repoKey] = now.UTC().Truncate(time.Second)
+	d := discovery{failed: errors.Join(discarded, discardedListed, capped), listedThrough: through}
 	for _, status := range nonTerminal {
 		runs, capped, err := m.listStatus(ctx, gh, status, now)
 		if err != nil {
@@ -280,15 +285,6 @@ func (m *Mirror) rescan(ctx context.Context, gh github.Client, repo github.Repo,
 		}
 	}
 	return onDisk, now, reported, nil
-}
-
-// recordListed writes state/listed.json when the end of the cycle's listing
-// is not recorded yet.
-func (m *Mirror) recordListed(through map[string]time.Time) error {
-	if through == nil {
-		return nil
-	}
-	return m.Store.WriteState(listedFile, through)
 }
 
 // recordRescan writes state/rescan.json when the cycle rescanned.

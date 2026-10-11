@@ -306,6 +306,7 @@ var _ = Describe("mirror.Cycle after a pause in syncing longer than backfill", L
 		Expect(env.Fake.AddRun(scenario.CloneAt(1, "after-attempt-1", last.Add(scenario.Day)))).To(Succeed())
 
 		Expect(env.Sync(ctx)).To(Succeed())
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(last.Add(-time.Hour), now)))
 		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
 	}, cycleTimeout)
 
@@ -324,13 +325,13 @@ var _ = Describe("mirror.Cycle after a pause in syncing longer than backfill", L
 		Expect(env.AttemptDirs(1)).To(ConsistOf(HaveSuffix("/attempt-1")))
 	}, cycleTimeout)
 
-	It("lists from no earlier than now−retention", func(ctx SpecContext) {
+	It("lists from no earlier than the oldest date that retention keeps", func(ctx SpecContext) {
 		env := harness.InProcess()
 		Expect(env.Sync(ctx)).To(Succeed())
 		env.Clock.Set(last.Add(100 * scenario.Day))
 
 		Expect(env.Sync(ctx)).To(Succeed())
-		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(last.Add(10*scenario.Day), last.Add(100*scenario.Day))))
+		Expect(createdRanges(env.Fake.Requests())).To(ContainElement(createdRange(last.Add(10*scenario.Day).Truncate(scenario.Day), last.Add(100*scenario.Day))))
 	}, cycleTimeout)
 
 	It("lists only backfill for a repo that state/listed.json does not name, and keeps the repos it does", func(ctx SpecContext) {

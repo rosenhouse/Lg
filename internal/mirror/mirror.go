@@ -163,7 +163,7 @@ func (m *Mirror) cycleWith(ctx context.Context, gh github.Client) (Report, error
 	if err := m.recordRescan(d.rescannedAt); err != nil {
 		return report, err
 	}
-	if err := m.recordListed(d.listedThrough); err != nil {
+	if err := m.Store.WriteState(listedFile, d.listedThrough); err != nil {
 		return report, err
 	}
 	report.Completed = true
